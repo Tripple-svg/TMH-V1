@@ -1,101 +1,85 @@
-// src/components/HeroSection.jsx
+// src/components/sections/HeroSection.jsx
 import React from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight } from 'lucide-react';
 
-export default function HeroSection({ onOpenReview }) {
+export default function HeroSection({ onOpenReview, onOpenHaven }) {
   return (
-    <section className="relative w-full min-h-screen overflow-hidden flex items-center justify-center pt-20 bg-[#09090b]">
-      {/* Background Media & Overlay */}
-      <div className="absolute inset-0 z-0">
-        <video 
-          autoPlay 
-          loop 
-          muted 
-          playsInline 
-          className="w-full h-full object-cover opacity-40"
-          poster="https://images.unsplash.com/photo-1557804506-669a67965ba0?q=80&w=2574&auto=format&fit=crop"
+    <section className="relative w-full min-h-[85vh] flex flex-col justify-center pt-28 pb-12 sm:pt-36 sm:pb-20 px-4 sm:px-6 lg:px-8 overflow-hidden bg-zinc-950">
+      {/* Background Video Layer */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/80 via-zinc-950/60 to-zinc-950 z-10" />
+
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          className="w-full h-full object-cover opacity-45 scale-105"
         >
-          <source 
-            src="https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-a-city-at-night-12654-large.mp4" 
-            type="video/mp4" 
-          />
+          <source src="/HeroSection.mp4" type="video/mp4" />
         </video>
-        <div className="absolute inset-0 bg-gradient-to-b from-[#09090b]/80 via-[#09090b]/60 to-[#09090b]" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#09090b]/40 via-transparent to-[#09090b]/40" />
       </div>
 
-      {/* Hero Glass Card Container */}
-      <motion.div 
-        className="relative z-10 mx-4 sm:mx-6 md:mx-8 w-full max-w-4xl"
-        initial={{ opacity: 0, scale: 0.95, y: 30 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.8, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <div className="group relative rounded-2xl sm:rounded-3xl bg-white/5 backdrop-blur-md border border-white/10 p-8 sm:p-12 md:p-16 text-center transition-all duration-500 ease-out hover:border-blue-600/40 hover:shadow-[0_0_60px_-12px_rgba(37,99,235,0.25)]">
-          <div className="absolute inset-0 rounded-2xl sm:rounded-3xl border border-white/5 pointer-events-none" />
-          <div 
-            className="absolute -inset-[1px] rounded-2xl sm:rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" 
-            style={{ background: 'radial-gradient(600px circle at 50% 50%, rgba(37,99,235,0.12), transparent 40%)' }} 
-          />
-          
-          <div className="relative z-10 flex flex-col items-center gap-5 sm:gap-6">
-            <motion.div
-              className="font-bold text-white leading-[0.85] tracking-tighter text-center"
-              initial={{ opacity: 0, y: 20 }}
+      {/* Hero Content Glass Card */}
+      <div className="relative z-20 max-w-3xl w-full mx-auto my-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          className="backdrop-blur-2xl bg-zinc-900/70 dark:bg-zinc-900/60 border border-zinc-200/20 dark:border-zinc-800/60 rounded-3xl py-12 px-6 sm:py-16 sm:px-12 text-center shadow-2xl flex flex-col justify-between min-h-[500px] sm:min-h-0"
+        >
+          <div className="flex flex-col justify-center my-auto">
+            <motion.h1
+              initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+              className="text-3xl sm:text-5xl md:text-6xl font-black tracking-tight text-white uppercase leading-snug sm:leading-tight"
             >
-              <span className="block text-6xl sm:text-7xl md:text-8xl lg:text-9xl">THE</span>
-              <span className="block text-5xl sm:text-6xl md:text-7xl lg:text-8xl mt-1 sm:mt-2">MARKETING</span>
-              <span className="block text-6xl sm:text-7xl md:text-8xl lg:text-9xl mt-1 sm:mt-2">HAVEN</span>
-            </motion.div>
+              HERE TO TRANSFORM YOUR BRAND.
+            </motion.h1>
 
-            <motion.h2 
-              className="text-lg sm:text-xl md:text-2xl text-gray-200 font-medium tracking-wide text-center"
-              initial={{ opacity: 0, y: 20 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              transition={{ duration: 0.6, delay: 0.55 }}
-            >
-              Here to transform your brand.
-            </motion.h2>
-
-            <motion.h3 
-              className="text-sm sm:text-base md:text-lg text-gray-400 font-light tracking-widest uppercase text-center"
-              initial={{ opacity: 0, y: 20 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              transition={{ duration: 0.6, delay: 0.7 }}
+            <motion.h2
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+              className="bg-gradient-to-r from-blue-500 to-emerald-400 bg-clip-text text-transparent font-semibold text-xl sm:text-2xl mt-4 sm:mt-5"
             >
               Everything starts from you.
-            </motion.h3>
+            </motion.h2>
 
-            <motion.div 
-              className="w-16 h-[1px] bg-gradient-to-r from-transparent via-blue-500/60 to-transparent my-2" 
-              initial={{ scaleX: 0 }} 
-              animate={{ scaleX: 1 }} 
-              transition={{ duration: 0.8, delay: 0.85 }} 
-            />
-            
-            <motion.button 
-              onClick={onOpenReview} 
-              className="relative mt-2 px-8 py-3.5 sm:px-10 sm:py-4 rounded-full text-white font-semibold text-sm sm:text-base tracking-wide uppercase border border-blue-500/50 overflow-hidden transition-all duration-300 hover:bg-blue-500 hover:scale-105 hover:shadow-[0_0_30px_rgba(37,99,235,0.4)] active:scale-95 bg-blue-600" 
-              initial={{ opacity: 0, y: 20 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              transition={{ duration: 0.6, delay: 1.0 }} 
-              whileTap={{ scale: 0.97 }}
+            <motion.p
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
+              className="text-zinc-300 text-sm sm:text-base max-w-lg mx-auto mt-5 sm:mt-6 leading-relaxed"
             >
-              <span className="absolute inset-0 rounded-full border border-blue-400/30 animate-pulse" />
-              <span className="relative z-10 flex items-center gap-2 whitespace-nowrap">
-                Request a Free Brand Review
-                <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-300 group-hover:translate-x-1" />
-              </span>
-            </motion.button>
+              Get to know where your brand really stands in today's market by requesting a free brand review.
+            </motion.p>
           </div>
-        </div>
-      </motion.div>
 
-      {/* Bottom transition gradient into the next section */}
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#09090b] to-transparent z-10 pointer-events-none" />
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-8 sm:mt-12"
+          >
+            <button
+              onClick={onOpenReview}
+              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-8 rounded-xl shadow-lg shadow-blue-600/30 transition-all hover:scale-[1.02] active:scale-[0.98] text-sm sm:text-base"
+            >
+              Request a Free Brand Review →
+            </button>
+
+            <button
+              onClick={onOpenHaven}
+              className="w-full sm:w-auto bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-100 border border-zinc-700/50 font-bold py-4 px-8 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] text-sm sm:text-base"
+            >
+              Talk to Our Team
+            </button>
+          </motion.div>
+        </motion.div>
+      </div>
     </section>
   );
 }

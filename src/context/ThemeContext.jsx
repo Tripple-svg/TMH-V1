@@ -1,34 +1,36 @@
 // src/context/ThemeContext.jsx
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
-const ThemeContext = createContext(undefined);
+const ThemeContext = createContext(null);
 
 export function ThemeProvider({ children }) {
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    const saved = localStorage.getItem('tmh_theme');
-    // Default to dark (obsidian) on first visit
-    return saved ? saved === 'dark' : true;
+  const [theme, setTheme] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('tmh_theme');
+      if (stored === 'light' || stored === 'dark') return stored;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return 'dark';
   });
 
   useEffect(() => {
     const root = document.documentElement;
-    if (darkMode) {
+    if (theme === 'dark') {
       root.classList.add('dark');
-      root.style.backgroundColor = '#09090b';
       root.style.colorScheme = 'dark';
     } else {
       root.classList.remove('dark');
-      root.style.backgroundColor = '#fafafa';
       root.style.colorScheme = 'light';
     }
-    localStorage.setItem('tmh_theme', darkMode ? 'dark' : 'light');
-  }, [darkMode]);
+    localStorage.setItem('tmh_theme', theme);
+  }, [theme]);
 
-  const toggleDarkMode = () => setDarkMode((prev) => !prev);
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
 
   return (
-    <ThemeContext.Provider value={{ darkMode, toggleDarkMode }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

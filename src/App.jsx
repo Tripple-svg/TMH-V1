@@ -1,161 +1,145 @@
-// src/App.jsx (Root Layout Wrapper)
+// src/App.jsx
 import React, { useState, useEffect } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { Sparkles } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
 import { ThemeProvider } from './context/ThemeContext';
-import { UserProvider } from './context/UserContext';
-
-// Navigation & Header Component
 import Header from './components/layout/Header';
-
-// Section & Feature Components
-import ReviewForm from './components/review/ReviewForm';
-import HavenChat from './components/review/HavenChat';
+import HeroSection from './components/HeroSection';
+import AboutSection from './components/AboutSection';
 import ServiceGrid from './components/services/ServiceGrid';
-import ServiceDetail from './components/services/ServiceDetail';
 import MasterclassBanner from './components/MasterclassBanner';
 import ShopSection from './components/ShopSection';
 import TestimonialsSection from './components/TestimonialsSection';
-import AboutSection from './components/AboutSection';
-import Footer from './components/Footer';
+import Footer from './components/layout/Footer';
+import BrandReviewModal from './components/modals/BrandReviewModal';
+import HavenChat from './components/review/HavenChat';
 import Preloader from './components/Preloader';
-import HeroSection from './components/HeroSection';
 
-export default function App() {
+function AppContent() {
   const [loading, setLoading] = useState(true);
   const [showReview, setShowReview] = useState(false);
   const [showHaven, setShowHaven] = useState(false);
-  const [selectedService, setSelectedService] = useState(null);
-  const [reviewPayload, setReviewPayload] = useState(null);
+  const [showPolicy, setShowPolicy] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [userPayload, setUserPayload] = useState(null);
+  const [havenMode, setHavenMode] = useState('scan');
 
-  // Fallback safety timer: ensures loader releases after 2.2s no matter what
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 2200);
-    return () => clearTimeout(timer);
+    try {
+      const raw = localStorage.getItem('tmh_user_data');
+      if (raw) {
+        setUserPayload(JSON.parse(raw));
+      }
+    } catch {
+      setUserPayload(null);
+    }
   }, []);
 
-  // Lock body scroll reliably across mobile & desktop when any modal or drawer is active
   useEffect(() => {
-    const isLocked = showReview || showHaven || Boolean(selectedService);
-    if (isLocked) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
+    const isLocked = loading || showReview || showHaven || showPolicy || showTerms;
+    document.body.style.overflow = isLocked ? 'hidden' : '';
     return () => {
       document.body.style.overflow = '';
     };
-  }, [showReview, showHaven, selectedService]);
+  }, [loading, showReview, showHaven, showPolicy, showTerms]);
 
-  const handleLaunchHaven = (data) => {
-    if (data) setReviewPayload(data);
+  const handleOpenReview = () => {
+    if (userPayload) {
+      setShowReview(false);
+      setHavenMode('returning');
+      setShowHaven(true);
+    } else {
+      setHavenMode('scan');
+      setShowReview(true);
+    }
+  };
+
+  const handleReviewSubmit = (payload) => {
+    localStorage.setItem('tmh_user_data', JSON.stringify(payload));
+    setUserPayload(payload);
     setShowReview(false);
+    setHavenMode('scan');
     setShowHaven(true);
   };
 
   return (
+    <div className="min-h-screen overflow-x-hidden bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 transition-colors duration-300">
+      {/* Preloader Implementation */}
+      <AnimatePresence mode="wait">
+        {loading && (
+          <Preloader 
+            key="preloader" 
+            onComplete={() => setLoading(false)} 
+          />
+        )}
+      </AnimatePresence>
+
+      <Header
+        onOpenReview={handleOpenReview}
+        onOpenPolicy={() => setShowPolicy(true)}
+        onOpenTerms={() => setShowTerms(true)}
+      />
+
+      <main className="relative w-full">
+        <section id="hero">
+          <HeroSection 
+            onOpenReview={handleOpenReview} 
+            onOpenHaven={() => setShowHaven(true)}
+          />
+        </section>
+
+        <section id="about">
+          <AboutSection />
+        </section>
+
+        <section id="services">
+  <ServiceGrid onOpenReview={handleOpenReview} />
+</section>
+
+        <section id="free-class">
+          <MasterclassBanner />
+        </section>
+
+        <section id="shop">
+          <ShopSection />
+        </section>
+
+        <section id="testimonials">
+          <TestimonialsSection />
+        </section>
+      </main>
+
+      <Footer
+        onOpenReview={handleOpenReview}
+        onOpenPolicy={() => setShowPolicy(true)}
+        onOpenTerms={() => setShowTerms(true)}
+      />
+
+      {/* Brand Review Modal */}
+      <BrandReviewModal
+        isOpen={showReview}
+        onClose={() => setShowReview(false)}
+        onSubmit={handleReviewSubmit}
+      />
+
+      {/* Haven Chat Drawer */}
+      <AnimatePresence>
+        {showHaven && (
+          <HavenChat
+            key="haven-drawer"
+            mode={havenMode}
+            userPayload={userPayload}
+            onClose={() => setShowHaven(false)}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
     <ThemeProvider>
-      <UserProvider>
-        {/* Main Wrapper: Enforces theme background colors & zero horizontal scroll overflow */}
-        <div className="relative w-full overflow-x-hidden min-h-screen bg-[#09090b] dark:bg-[#09090b] text-gray-900 dark:text-white transition-colors duration-300 selection:bg-blue-600/30 selection:text-blue-200">
-          
-          <AnimatePresence mode="wait">
-            {loading && (
-              <Preloader key="preloader" onComplete={() => setLoading(false)} />
-            )}
-          </AnimatePresence>
-
-          {!loading && (
-            <>
-              {/* Header with dark/light mode toggle & mobile drawer */}
-              <Header onOpenReview={() => setShowReview(true)} />
-
-              <main className="relative w-full pt-16 sm:pt-20">
-                <section id="hero">
-                  <HeroSection onOpenReview={() => setShowReview(true)} />
-                </section>
-
-                <section id="services" className="scroll-mt-20">
-                  <ServiceGrid onSelect={setSelectedService} />
-                </section>
-
-                <section id="free-class" className="scroll-mt-20">
-                  <MasterclassBanner />
-                </section>
-
-                <section id="shop" className="scroll-mt-20">
-                  <ShopSection />
-                </section>
-
-                <section id="about" className="scroll-mt-20">
-                  <AboutSection />
-                </section>
-
-                <section id="testimonials" className="scroll-mt-20">
-                  <TestimonialsSection />
-                </section>
-
-                <Footer onOpenReview={() => setShowReview(true)} />
-              </main>
-
-              {/* Floating Haven AI Quick Trigger (Displays when session payload exists) */}
-              {!showHaven && !showReview && reviewPayload && (
-                <motion.button
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0, opacity: 0 }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setShowHaven(true)}
-                  className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-blue-600 border border-blue-400/30 text-white font-medium text-xs sm:text-sm shadow-[0_0_25px_rgba(37,99,235,0.4)] backdrop-blur-md transition-all"
-                >
-                  <Sparkles className="w-4 h-4 text-blue-200 animate-pulse" />
-                  <span>Resume Haven Scan</span>
-                </motion.button>
-              )}
-
-              {/* Modals & Overlays */}
-              <AnimatePresence>
-                {showReview && (
-                  <ReviewForm
-                    key="review-modal"
-                    onClose={() => setShowReview(false)}
-                    onSubmitForm={handleLaunchHaven}
-                    onLaunchHaven={handleLaunchHaven}
-                  />
-                )}
-              </AnimatePresence>
-
-              <AnimatePresence>
-                {showHaven && (
-                  <HavenChat
-                    key="haven-modal"
-                    userData={reviewPayload}
-                    mode={
-                      reviewPayload?.platformType === 'none'
-                        ? 'newbie'
-                        : 'scan'
-                    }
-                    onClose={() => setShowHaven(false)}
-                  />
-                )}
-              </AnimatePresence>
-
-              <AnimatePresence>
-                {selectedService && (
-                  <ServiceDetail
-                    key="service-detail"
-                    service={selectedService}
-                    onClose={() => setSelectedService(null)}
-                  />
-                )}
-              </AnimatePresence>
-            </>
-          )}
-        </div>
-      </UserProvider>
+      <AppContent />
     </ThemeProvider>
   );
 }
