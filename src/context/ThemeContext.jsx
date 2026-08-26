@@ -1,4 +1,3 @@
-// src/context/ThemeContext.jsx
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
 const ThemeContext = createContext(null);
@@ -15,13 +14,16 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     const root = document.documentElement;
+
+    // Correct Tailwind dark mode class management
     if (theme === 'dark') {
       root.classList.add('dark');
-      root.style.colorScheme = 'dark';
+      root.classList.remove('light');
     } else {
+      root.classList.add('light');
       root.classList.remove('dark');
-      root.style.colorScheme = 'light';
     }
+
     localStorage.setItem('tmh_theme', theme);
   }, [theme]);
 

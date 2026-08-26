@@ -1,4 +1,5 @@
 import React from 'react';
+import { useHaven } from '../haven/HavenContext'; // 1. Imported useHaven
 
 const InstagramIcon = () => (
   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -31,7 +32,14 @@ const EmailIcon = () => (
   </svg>
 );
 
-export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpenHaven }) {
+export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpenSupport }) {
+  const { toggleDrawer } = useHaven(); // 2. Connected toggleDrawer here
+
+  const handleSupportClick = () => {
+    if (onOpenSupport) onOpenSupport();
+    toggleDrawer(); // Opens Haven drawer on click
+  };
+
   const handleNav = (e, href) => {
     e.preventDefault();
     if (href === '#hero') {
@@ -114,7 +122,7 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpen
                   </a>
                 </li>
                 <li>
-                  <button onClick={onOpenReview} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                  <button onClick={onOpenReview} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer">
                     Request Review
                   </button>
                 </li>
@@ -128,12 +136,12 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpen
               </h4>
               <ul className="space-y-3">
                 <li>
-                  <button onClick={onOpenPolicy} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                  <button onClick={onOpenPolicy} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer">
                     Privacy Policy
                   </button>
                 </li>
                 <li>
-                  <button onClick={onOpenTerms} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                  <button onClick={onOpenTerms} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer">
                     Terms of Service
                   </button>
                 </li>
@@ -145,7 +153,7 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpen
           <div className="mt-16 pt-8 border-t border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-xs text-zinc-500 dark:text-zinc-500">
               Built with precision. Engineered for performance.
-            </p><br></br>
+            </p>
             <p className="text-xs text-zinc-500 dark:text-zinc-500">
               © 2026 The Marketing Haven. All rights reserved.
             </p>
@@ -153,16 +161,16 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpen
         </div>
       </footer>
 
-      {/* Persistent Floating Care Trigger */}
+      {/* Persistent Floating Support Trigger */}
       <button
-        onClick={onOpenHaven}
-        className="fixed bottom-6 left-6 z-30 bg-zinc-900/90 dark:bg-zinc-900/90 bg-white/90 border border-zinc-700/50 text-xs text-zinc-200 dark:text-zinc-200 text-zinc-800 py-2.5 px-4 rounded-full shadow-xl backdrop-blur-md flex items-center gap-2.5 hover:scale-105 transition-all cursor-pointer"
+        onClick={handleSupportClick}
+        className="fixed bottom-6 left-6 z-30 bg-zinc-950/90 text-white border border-zinc-700/60 text-xs py-2.5 px-4 rounded-full shadow-2xl backdrop-blur-md flex items-center gap-2.5 hover:scale-105 hover:border-emerald-500/50 transition-all cursor-pointer group"
       >
         <span className="relative flex h-2.5 w-2.5">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
         </span>
-        Customer Support
+        <span className="font-medium tracking-wide">Customer Support</span>
       </button>
     </>
   );

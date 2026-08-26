@@ -12,8 +12,8 @@ export default {
           dark: '#111827',
           blue: '#2563EB',
           green: '#059669',
-        }
-      }
+        },
+      },
     },
   },
   plugins: [],

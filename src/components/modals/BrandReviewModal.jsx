@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 
-export default function BrandReviewModal({ isOpen, onClose }) {
+export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
   const [formData, setFormData] = useState({
     name: '',
     whatsapp: '',
@@ -18,9 +18,11 @@ export default function BrandReviewModal({ isOpen, onClose }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Connect to Haven lead routing when ready
-    console.log('Brand Review Request Data:', formData);
-    onClose();
+    if (onSubmit) {
+      onSubmit(formData);
+    } else {
+      onClose();
+    }
   };
 
   return (
@@ -47,6 +49,7 @@ export default function BrandReviewModal({ isOpen, onClose }) {
               </h3>
               <button
                 onClick={onClose}
+                type="button"
                 className="p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500"
               >
                 <X className="w-5 h-5" />
@@ -132,7 +135,7 @@ export default function BrandReviewModal({ isOpen, onClose }) {
 
               <button
                 type="submit"
-                className="w-full mt-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all shadow-md shadow-blue-600/30 active:scale-95"
+                className="w-full mt-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all shadow-md shadow-blue-600/30 active:scale-95 cursor-pointer"
               >
                 Submit for Review
               </button>

@@ -5,25 +5,24 @@ import { BookOpen, CheckCircle2, ArrowRight, X, ShieldCheck, Zap } from 'lucide-
 const PAYSTACK_PUBLIC_KEY = 'pk_live_bb9d07c83cbd8bc94ee9c7fb5fb95e14a35fa93b';
 
 const features = [
-  'Brand architecture frameworks used by 7-figure businesses',
-  'Positioning strategies that separate you from competitors',
-  'Conversion blueprints for high-ticket sales funnels',
-  'Social proof systems that build instant trust'
+  'Stop guessing with marketing and build deep audience clarity',
+  'Master the strategy filter: learn what to say no to',
+  'Uncover the hidden drivers of influence and real consumer decisions',
+  'Shift from knowing to doing with the TMH execution framework'
 ];
 
 const playbookModules = [
-  { title: "Chapter 1-3: Fundamentals & Positioning", desc: "Define your market core, audience psychology, and non-negotiable brand authority." },
-  { title: "Chapter 4-6: Funnels & System Mechanics", desc: "Build offer structures that convert cold traffic without desperate discounting." },
-  { title: "Chapter 7-8: Content Architecture & Scaling", desc: "Platform distribution strategies to automate inbound brand demand." },
-  { title: "Chapter 9: The Brand Is You", desc: "Personal positioning frameworks to leverage founder authority for maximum impact." },
+  { title: "Chapter 1-3: The Setup & Strategy", desc: "Expose marketing's biggest lies, navigate the illusion of more, and use strategy as a ruthless filter." },
+  { title: "Chapter 4-6: The Execution Engine", desc: "Discover the hidden drivers of influence, shift from knowing to doing, and realize why the brand is you." },
+  { title: "Chapter 7-8: The Final Plays", desc: "Overcome everyday brand roadblocks and execute your unseen playbook step-by-step." },
+  { title: "Chapter 9: The Wrap Up & Action Plan", desc: "Execute your immediate 24-hour action plan to turn attention into real conversions." },
 ];
 
 export default function ShopSection() {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Load Paystack Inline JS dynamically without npm
   const loadPaystackScript = () => {
     return new Promise((resolve) => {
       if (window.PaystackPop) {
@@ -40,8 +39,8 @@ export default function ShopSection() {
 
   const handlePaystackCheckout = async (e) => {
     if (e) e.preventDefault();
-    if (!email) {
-      alert('Please enter a valid email address to proceed.');
+    if (!identifier) {
+      alert('Please enter a valid WhatsApp number or email address to proceed.');
       return;
     }
 
@@ -56,7 +55,7 @@ export default function ShopSection() {
 
     const handler = window.PaystackPop.setup({
       key: PAYSTACK_PUBLIC_KEY,
-      email: email,
+      email: identifier.includes('@') ? identifier : 'customer@themarketingheaven.xyz',
       amount: 963900, // ₦9,639 in kobo
       currency: 'NGN',
       ref: 'UNSEEN_' + Math.floor(Math.random() * 1000000000 + 1),
@@ -66,14 +65,19 @@ export default function ShopSection() {
             display_name: "Product Name",
             variable_name: "product_name",
             value: "The Unseen Playbook"
+          },
+          {
+            display_name: "Delivery Contact",
+            variable_name: "delivery_contact",
+            value: identifier
           }
         ]
       },
       callback: function (response) {
         setLoading(false);
-        alert(`Transaction successful! Reference: ${response.reference}. Check your email for instant download access.`);
+        alert(`Transaction successful! Reference: ${response.reference}. Access dispatched to ${identifier}.`);
         setIsPreviewOpen(false);
-        setEmail('');
+        setIdentifier('');
       },
       onClose: function () {
         setLoading(false);
@@ -84,59 +88,77 @@ export default function ShopSection() {
   };
 
   return (
-    <section id="shop" className="relative w-full py-24 sm:py-32 px-4 sm:px-6 lg:px-8 bg-gray-950">
-      <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-gray-900 to-transparent pointer-events-none" />
+    <section 
+      id="shop" 
+      className="relative w-full py-24 sm:py-32 px-4 sm:px-6 lg:px-8 bg-white text-zinc-900 dark:bg-zinc-950 dark:text-white transition-colors duration-300"
+    >
+      {/* Background Top Gradient Overlay */}
+      <div className="absolute top-0 left-0 right-0 h-32 pointer-events-none bg-gradient-to-b from-zinc-100 to-transparent dark:from-zinc-900 dark:to-transparent transition-colors duration-300" />
+
       <div className="max-w-5xl mx-auto relative z-10">
-        
-        {/* Section Title */}
-        <motion.div className="text-center mb-12" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}>
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white tracking-tight mb-4">Digital Products</h2>
-          <p className="text-gray-400 max-w-2xl mx-auto">Tools and templates built by strategists, for strategists.</p>
+        {/* Section Header */}
+        <motion.div 
+          className="text-center mb-12" 
+          initial={{ opacity: 0, y: 20 }} 
+          whileInView={{ opacity: 1, y: 0 }} 
+          viewport={{ once: true }} 
+          transition={{ duration: 0.6 }}
+        >
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-4 text-zinc-900 dark:text-white">
+            Digital Products
+          </h2>
+          <p className="max-w-2xl mx-auto text-sm sm:text-base text-zinc-600 dark:text-zinc-400">
+            Tools and templates built by strategists, for strategists.
+          </p>
         </motion.div>
 
         {/* Product Card */}
         <motion.div
-          className="relative rounded-2xl sm:rounded-3xl bg-white/5 border border-white/10 backdrop-blur-sm overflow-hidden hover:border-blue-500/30 transition-all duration-500 shadow-xl"
-          initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}>
+          className="relative rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/5 backdrop-blur-sm shadow-xl dark:shadow-none overflow-hidden transition-colors duration-300"
+          initial={{ opacity: 0, y: 30 }} 
+          whileInView={{ opacity: 1, y: 0 }} 
+          viewport={{ once: true }} 
+          transition={{ duration: 0.6 }}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2">
-            
-            {/* Playbook Visual */}
-            <div className="relative aspect-square md:aspect-auto bg-gradient-to-br from-blue-900/40 via-gray-900 to-black flex items-center justify-center p-8">
-              <div className="relative w-48 h-64 sm:w-56 sm:h-72 rounded-lg shadow-2xl shadow-black/80 transform rotate-[-2deg] hover:rotate-0 transition-transform duration-500">
-                <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-900 flex flex-col items-center justify-center text-center p-6 border border-white/20">
-                  <BookOpen className="w-12 h-12 text-white/90 mb-4" />
-                  <h4 className="text-white font-bold text-xl leading-tight tracking-wide">The Unseen<br/>Playbook</h4>
-                  <p className="text-blue-200 text-xs mt-3 uppercase tracking-widest font-semibold">How Marketing<br/>Really Works</p>
-                </div>
+            {/* Playbook Visual Container */}
+            <div className="relative aspect-square md:aspect-auto flex items-center justify-center p-8 bg-gradient-to-br from-blue-50 via-zinc-100 to-blue-100/50 dark:from-blue-950/40 dark:via-zinc-900 dark:to-black transition-colors duration-300">
+              <div className="relative w-48 h-64 sm:w-56 sm:h-72 rounded-lg shadow-2xl transform rotate-[-2deg] hover:rotate-0 transition-transform duration-500 overflow-hidden">
+                <img 
+                  src="/Playbook.jpeg" 
+                  alt="The Unseen Playbook" 
+                  className="w-full h-full object-cover rounded-lg"
+                />
               </div>
             </div>
 
-            {/* Content Details */}
+            {/* Product Meta Details */}
             <div className="p-8 sm:p-10 flex flex-col justify-center">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 text-xs font-semibold uppercase tracking-wider w-fit mb-4">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider w-fit mb-4 bg-blue-100 border border-blue-200 text-blue-700 dark:bg-blue-600/10 dark:border-blue-500/20 dark:text-blue-400">
                 Featured Playbook
               </div>
-              <h3 className="text-2xl sm:text-3xl font-bold text-white mb-2">The Unseen Playbook</h3>
-              <p className="text-sm text-gray-400 mb-6 font-medium">How Marketing Really Works</p>
+
+              <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-zinc-900 dark:text-white">
+                The Unseen Playbook
+              </h3>
+              
+              <p className="text-sm mb-6 font-medium text-zinc-500 dark:text-zinc-400">
+                How Marketing Really Works
+              </p>
 
               <ul className="space-y-3 mb-8">
                 {features.map((f, i) => (
-                  <li key={i} className="flex items-start gap-3 text-sm text-gray-300">
-                    <CheckCircle2 className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
+                  <li key={i} className="flex items-start gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                    <CheckCircle2 className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
                     {f}
                   </li>
                 ))}
               </ul>
 
-              <div className="flex items-center gap-4 mb-6">
-                <span className="text-3xl font-bold text-blue-500">₦9,639</span>
-                <span className="text-sm text-gray-500 line-through">₦15,000</span>
-              </div>
-
-              {/* Action Trigger */}
               <button 
                 onClick={() => setIsPreviewOpen(true)}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-500 hover:shadow-[0_0_30px_rgba(37,99,235,0.35)] transition-all active:scale-95">
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-600/25 transition-all active:scale-95"
+              >
                 Get The Unseen Playbook <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -144,83 +166,99 @@ export default function ShopSection() {
         </motion.div>
       </div>
 
-      {/* Playbook Preview & Direct Paystack Modal */}
+      {/* Modal View */}
       <AnimatePresence>
         {isPreviewOpen && (
-          <motion.div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div 
+            className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+          >
             <div className="fixed inset-0 bg-black/80 backdrop-blur-md" onClick={() => setIsPreviewOpen(false)} />
 
-            <motion.div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl bg-gray-900 text-white border border-white/10 shadow-2xl overflow-hidden my-auto z-10"
-              initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}>
-              
-              {/* Modal Header */}
-              <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5">
+            <motion.div 
+              className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-2xl overflow-hidden my-auto z-10 transition-colors duration-300"
+              initial={{ scale: 0.95, y: 20 }} 
+              animate={{ scale: 1, y: 0 }} 
+              exit={{ scale: 0.95, y: 20 }}
+            >
+              <div className="flex items-center justify-between p-6 border-b border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
-                    <BookOpen className="w-5 h-5 text-blue-400" />
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-blue-100 border border-blue-200 dark:bg-blue-600/20 dark:border-blue-500/30">
+                    <BookOpen className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-white">The Unseen Playbook</h3>
-                    <p className="text-xs text-blue-400">Digital Blueprint & Strategy Guide</p>
+                    <h3 className="text-lg font-bold text-zinc-900 dark:text-white">The Unseen Playbook</h3>
+                    <p className="text-xs text-blue-600 font-medium">Digital Blueprint & Strategy Guide</p>
                   </div>
                 </div>
-                <button onClick={() => setIsPreviewOpen(false)} className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all">
+                <button 
+                  onClick={() => setIsPreviewOpen(false)} 
+                  className="w-9 h-9 rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center transition-all"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Modal Body */}
-              <div className="p-6 sm:p-8 overflow-y-auto space-y-6 custom-scrollbar">
+              <div className="p-6 sm:p-8 overflow-y-auto space-y-6">
                 <div>
-                  <h4 className="text-base font-semibold text-white mb-2">What's Inside The Playbook?</h4>
-                  <p className="text-sm text-gray-300 leading-relaxed">
-                    A comprehensive breakdown of modern marketing execution. Designed specifically for founders, creators, and strategists seeking to build high-converting brand ecosystems.
+                  <h4 className="text-base font-semibold mb-2 text-zinc-900 dark:text-white">
+                    What's Inside The Playbook?
+                  </h4>
+                  <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
+                    Remove the fluff and noise. This playbook gives founders, creators, and marketers the exact lenses needed to stop guessing and build systems with absolute clarity.
                   </p>
                 </div>
 
-                {/* Chapter breakdown */}
                 <div className="space-y-3">
                   {playbookModules.map((m, idx) => (
-                    <div key={idx} className="p-4 rounded-xl bg-white/5 border border-white/10">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-blue-400 mb-1">
+                    <div 
+                      key={idx} 
+                      className="p-4 rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5"
+                    >
+                      <div className="flex items-center gap-2 text-sm font-semibold text-blue-600 mb-1">
                         <Zap className="w-4 h-4" />
                         {m.title}
                       </div>
-                      <p className="text-xs text-gray-300 leading-relaxed">{m.desc}</p>
+                      <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+                        {m.desc}
+                      </p>
                     </div>
                   ))}
                 </div>
 
-                {/* Email Form Field */}
                 <form id="paystack-form" onSubmit={handlePaystackCheckout} className="space-y-3 pt-2">
-                  <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                    Enter Email Address for Delivery *
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+                    Enter WhatsApp Number or Email for Delivery *
                   </label>
                   <input
-                    type="email"
+                    type="text"
                     required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="your@email.com"
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="e.g. 08012345678 or your@email.com"
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-white/10 bg-zinc-50 dark:bg-white/5 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-600 transition-colors"
                   />
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    We will dispatch your copy directly to your WhatsApp or email upon successful payment.
+                  </p>
                 </form>
 
-                {/* Secure Payment Assurance */}
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
-                  <ShieldCheck className="w-5 h-5 shrink-0" />
-                  <span>Instant PDF download link dispatched upon successful transaction via Paystack.</span>
+                <div className="flex items-center gap-3 p-4 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 text-xs">
+                  <ShieldCheck className="w-5 h-5 shrink-0 text-emerald-600" />
+                  <span>Instant delivery access dispatched upon successful transaction via Paystack.</span>
                 </div>
               </div>
 
-              {/* Modal Footer / Purchase Action */}
-              <div className="p-6 border-t border-white/10 bg-white/5 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="p-6 border-t border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
-                  <span className="text-xs text-gray-400 uppercase tracking-wider block">Total Investment</span>
+                  <span className="text-xs uppercase tracking-wider block text-zinc-500 dark:text-zinc-400">
+                    Total Investment
+                  </span>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-bold text-white">₦9,639</span>
-                    <span className="text-xs text-gray-500 line-through">₦15,000</span>
+                    <span className="text-2xl font-bold text-zinc-900 dark:text-white">₦9,639</span>
+                    <span className="text-xs text-zinc-400 line-through">₦15,000</span>
                   </div>
                 </div>
 
@@ -228,11 +266,11 @@ export default function ShopSection() {
                   type="button"
                   onClick={handlePaystackCheckout}
                   disabled={loading}
-                  className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition-all shadow-lg shadow-blue-600/30 active:scale-95 flex items-center justify-center gap-2">
+                  className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition-all shadow-lg shadow-blue-600/30 active:scale-95 flex items-center justify-center gap-2"
+                >
                   {loading ? 'Opening Checkout...' : 'Confirm & Pay via Paystack'}
                 </button>
               </div>
-
             </motion.div>
           </motion.div>
         )}

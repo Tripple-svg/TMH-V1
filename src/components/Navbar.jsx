@@ -13,20 +13,23 @@ const navLinks = [
 ];
 
 export default function Navbar({ onOpenReview }) {
-  const { darkMode, toggleDarkMode } = useTheme();
+  // Correctly destruct properties matching ThemeContext.jsx
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
+
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', onScroll);
+    window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   const handleNav = (e, href) => {
     e.preventDefault();
     setMobileOpen(false);
-    
+
     if (href === '#hero') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
@@ -42,40 +45,41 @@ export default function Navbar({ onOpenReview }) {
   return (
     <>
       <nav
-        className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 border-b ${
-          darkMode
-            ? 'bg-[#09090b]/80 backdrop-blur-md border-white/10'
-            : 'bg-white/80 backdrop-blur-md border-gray-200'
+        className={`fixed top-0 left-0 right-0 z-40 transition-colors duration-200 border-b ${
+          isDark
+            ? 'bg-zinc-950/80 backdrop-blur-xl border-white/10 text-white'
+            : 'bg-white/80 backdrop-blur-xl border-zinc-200 text-zinc-900'
         } ${scrolled ? 'shadow-lg shadow-black/10' : ''}`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 sm:h-20">
-            
-            {/* Logo */}
-            <a 
-              href="#hero" 
+            {/* Brand Logo */}
+            <a
+              href="#hero"
               onClick={(e) => handleNav(e, '#hero')}
-              className="flex items-center gap-3 group"
+              className="flex items-center gap-2.5 sm:gap-3 shrink-0"
             >
-              <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-md shadow-blue-600/30 transition-transform group-hover:scale-105">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-base sm:text-lg shadow-md shadow-blue-600/30">
                 T
               </div>
-              <span className={`hidden sm:block font-bold text-sm tracking-widest uppercase transition-colors ${
-                darkMode ? 'text-white' : 'text-gray-900'
-              }`}>
+              <span
+                className={`font-bold text-xs sm:text-sm tracking-wider uppercase transition-colors ${
+                  isDark ? 'text-white' : 'text-zinc-900'
+                }`}
+              >
                 The Marketing Haven
               </span>
             </a>
 
-            {/* Desktop Navigation */}
-            <div className="hidden lg:flex items-center gap-8">
+            {/* Navigation - Hidden on iPad/Tablets (<1280px) to prevent clustering */}
+            <div className="hidden xl:flex items-center gap-6 2xl:gap-8">
               {navLinks.map((link) => (
                 <a
                   key={link.href}
                   href={link.href}
                   onClick={(e) => handleNav(e, link.href)}
                   className={`relative text-sm font-medium tracking-wide transition-colors hover:text-blue-500 group ${
-                    darkMode ? 'text-gray-300' : 'text-gray-600'
+                    isDark ? 'text-zinc-300' : 'text-zinc-600'
                   }`}
                 >
                   {link.label}
@@ -84,45 +88,41 @@ export default function Navbar({ onOpenReview }) {
               ))}
             </div>
 
-            {/* Right Actions */}
-            <div className="flex items-center gap-3 sm:gap-4">
-              {/* Theme Toggle Button */}
+            {/* Right Header Actions */}
+            <div className="flex items-center gap-2.5 sm:gap-4">
+              {/* Ultra-Smooth Theme Switcher */}
               <button
-                onClick={toggleDarkMode}
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 border ${
-                  darkMode
-                    ? 'border-white/10 text-gray-300 hover:bg-white/10 hover:border-blue-500/30'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-100 hover:border-blue-500/30'
+                onClick={toggleTheme}
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-transform active:scale-90 border ${
+                  isDark
+                    ? 'border-white/15 bg-zinc-900/50 text-amber-400 hover:border-amber-400/40'
+                    : 'border-zinc-300 bg-zinc-100 text-zinc-700 hover:border-blue-500/40'
                 }`}
-                aria-label="Toggle theme"
+                aria-label="Toggle Theme"
               >
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={darkMode ? 'moon' : 'sun'}
-                    initial={{ y: -10, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    exit={{ y: 10, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-gray-700" />}
-                  </motion.div>
-                </AnimatePresence>
+                {isDark ? (
+                  <Sun className="w-4 h-4 text-amber-400 transition-transform duration-200 rotate-0 hover:rotate-45" />
+                ) : (
+                  <Moon className="w-4 h-4 text-zinc-700 transition-transform duration-200 rotate-0 hover:-rotate-12" />
+                )}
               </button>
 
-              {/* Primary Header CTA */}
+              {/* Header Primary CTA */}
               <button
                 onClick={onOpenReview}
-                className="hidden sm:flex items-center gap-2 px-5 py-2.5 rounded-full bg-blue-600 text-white text-sm font-semibold tracking-wide hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-600/25 transition-all active:scale-95 border border-blue-400/30 group"
+                className="hidden sm:flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full bg-blue-600 text-white text-xs sm:text-sm font-semibold tracking-wide hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-600/30 transition-all active:scale-95 border border-blue-400/30 group whitespace-nowrap"
               >
                 <span>Request a Free Brand Review</span>
                 <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
               </button>
 
-              {/* Mobile Hamburger Icon */}
+              {/* Tablet & Mobile Menu Button */}
               <button
                 onClick={() => setMobileOpen(true)}
-                className={`lg:hidden w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
-                  darkMode ? 'text-white hover:bg-white/10' : 'text-gray-900 hover:bg-gray-100'
+                className={`xl:hidden w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center transition-colors border ${
+                  isDark
+                    ? 'border-white/10 text-white hover:bg-white/10'
+                    : 'border-zinc-200 text-zinc-900 hover:bg-zinc-100'
                 }`}
               >
                 <Menu className="w-5 h-5" />
@@ -132,63 +132,60 @@ export default function Navbar({ onOpenReview }) {
         </div>
       </nav>
 
-      {/* Mobile Drawer */}
+      {/* Drawer Overlay & Panel */}
       <AnimatePresence>
         {mobileOpen && (
           <>
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
               onClick={() => setMobileOpen(false)}
-              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+              className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm xl:hidden"
             />
 
-            {/* Drawer Side Panel */}
             <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-              className={`fixed top-0 right-0 bottom-0 z-50 w-[70%] sm:w-[60%] md:w-[50%] max-w-sm shadow-2xl border-l backdrop-blur-xl ${
-                darkMode
-                  ? 'bg-[#09090b]/95 border-white/10'
-                  : 'bg-white/95 border-gray-200'
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className={`fixed top-0 right-0 bottom-0 z-50 w-[80%] sm:w-[60%] md:w-[45%] max-w-sm shadow-2xl border-l backdrop-blur-2xl ${
+                isDark
+                  ? 'bg-zinc-950/95 border-white/10 text-white'
+                  : 'bg-white/95 border-zinc-200 text-zinc-900'
               }`}
             >
               <div className="flex flex-col h-full p-6">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-10">
-                  <span className={`font-bold text-sm tracking-widest uppercase ${
-                    darkMode ? 'text-white' : 'text-gray-900'
-                  }`}>
+                <div className="flex items-center justify-between mb-8 pb-4 border-b border-zinc-500/10">
+                  <span className="font-bold text-xs tracking-widest uppercase opacity-70">
                     Menu
                   </span>
                   <button
                     onClick={() => setMobileOpen(false)}
-                    className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
-                      darkMode ? 'text-white hover:bg-white/10' : 'text-gray-900 hover:bg-gray-100'
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors border ${
+                      isDark
+                        ? 'border-white/10 text-white hover:bg-white/10'
+                        : 'border-zinc-200 text-zinc-900 hover:bg-zinc-100'
                     }`}
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
 
-                {/* Nav Links with Stagger Animations */}
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
                   {navLinks.map((link, i) => (
                     <motion.a
                       key={link.href}
                       href={link.href}
                       onClick={(e) => handleNav(e, link.href)}
-                      initial={{ opacity: 0, x: 20 }}
+                      initial={{ opacity: 0, x: 15 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.05 }}
+                      transition={{ delay: i * 0.03 }}
                       className={`px-4 py-3 rounded-xl text-base font-medium transition-colors ${
-                        darkMode
-                          ? 'text-gray-200 hover:bg-white/5 hover:text-white'
-                          : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                        isDark
+                          ? 'text-zinc-200 hover:bg-white/10 hover:text-white'
+                          : 'text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900'
                       }`}
                     >
                       {link.label}
@@ -196,21 +193,17 @@ export default function Navbar({ onOpenReview }) {
                   ))}
                 </div>
 
-                {/* Drawer CTA Button */}
-                <div className="mt-auto pt-6">
-                  <motion.button
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
+                <div className="mt-auto pt-6 border-t border-zinc-500/10">
+                  <button
                     onClick={() => {
                       setMobileOpen(false);
                       onOpenReview();
                     }}
-                    className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm tracking-wide hover:bg-blue-500 transition-all active:scale-95 shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+                    className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm tracking-wide hover:bg-blue-500 transition-all active:scale-95 shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
                   >
                     <span>Request a Free Brand Review</span>
                     <ArrowRight className="w-4 h-4" />
-                  </motion.button>
+                  </button>
                 </div>
               </div>
             </motion.div>
