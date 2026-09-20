@@ -6,23 +6,57 @@ import {
   AtSign, X, AlertCircle
 } from 'lucide-react';
 import { useUser } from '../../context/UserContext';
+import {
+  loadReviewFormData,
+  saveReviewFormData,
+  clearReviewFormData,
+  DEFAULT_FORM_DATA,
+} from '../haven/utils/reviewPersistence';
 
 const socialPlatforms = [
   'Instagram', 'TikTok', 'Facebook', 'LinkedIn',
   'Twitter / X', 'YouTube', 'Pinterest', 'WhatsApp Business', 'Other'
 ];
 
+// Map our canonical persistence shape → this form's field names.
+function canonicalToLocalShape(c) {
+  return {
+    fullName:     c.fullName     || '',
+    whatsapp:     c.whatsapp     || '',
+    brandName:    c.brandName    || '',
+    email:        c.email        || '',
+    platformType: c.platformType || 'website',
+    websiteUrl:   c.websiteUrl   || '',
+    socialPlatform: c.socialPlatform || '',
+    socialHandle: c.socialLink   || '',
+  };
+}
+function localShapeToCanonical(f) {
+  return {
+    ...DEFAULT_FORM_DATA,
+    fullName:       f.fullName     || '',
+    whatsapp:       f.whatsapp     || '',
+    brandName:      f.brandName    || '',
+    email:          f.email        || '',
+    platformType:   f.platformType || 'social',
+    websiteUrl:     f.websiteUrl   || '',
+    socialPlatform: f.socialPlatform || '',
+    socialLink:     f.socialHandle || '',
+  };
+}
+
 export default function ReviewForm({ onClose, onSubmitForm, onLaunchHaven }) {
   const { saveUserData } = useUser();
-  const [form, setForm] = useState({
-    fullName: '', whatsapp: '', brandName: '', email: '',
-    platformType: 'website',
-    websiteUrl: '', socialPlatform: '', socialHandle: ''
-  });
+  const [form, setForm] = useState(() => canonicalToLocalShape(loadReviewFormData()));
   const [files, setFiles] = useState([]);
   const [filePreviews, setFilePreviews] = useState([]);
   const [dragging, setDragging] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Persist form fields to localStorage on every change
+  useEffect(() => {
+    saveReviewFormData(localShapeToCanonical(form));
+  }, [form]);
 
   // Sync previews safely to avoid memory leaks with createObjectURL
   useEffect(() => {
@@ -54,9 +88,9 @@ export default function ReviewForm({ onClose, onSubmitForm, onLaunchHaven }) {
 
   const onDragOver = useCallback(e => { e.preventDefault(); setDragging(true); }, []);
   const onDragLeave = useCallback(e => { e.preventDefault(); setDragging(false); }, []);
-  
+
   const onDrop = useCallback(e => {
-    e.preventDefault(); 
+    e.preventDefault();
     setDragging(false);
     const dropped = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
     setFiles(prev => [...prev, ...dropped].slice(0, 4));
@@ -65,7 +99,7 @@ export default function ReviewForm({ onClose, onSubmitForm, onLaunchHaven }) {
   const onFileInput = e => {
     const selected = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
     setFiles(prev => [...prev, ...selected].slice(0, 4));
-    e.target.value = ''; // Reset input to allow re-selecting same file if needed
+    e.target.value = '';
   };
 
   const removeFile = i => setFiles(prev => prev.filter((_, idx) => idx !== i));
@@ -83,6 +117,8 @@ export default function ReviewForm({ onClose, onSubmitForm, onLaunchHaven }) {
       saveUserData(payload);
       onSubmitForm(payload);
     }
+    // Clear stored data only after a successful submit
+    clearReviewFormData();
   };
 
   const inputBase = `w-full rounded-xl backdrop-blur-sm border px-4 py-3.5 pl-11 text-sm sm:text-base outline-none transition-all duration-300 focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20`;
@@ -93,11 +129,11 @@ export default function ReviewForm({ onClose, onSubmitForm, onLaunchHaven }) {
     <motion.div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
       <div className="fixed inset-0 bg-black/80 backdrop-blur-md" onClick={onClose} />
-      
+
       <motion.div className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl sm:rounded-3xl bg-[#111827]/95 backdrop-blur-xl border border-white/10 shadow-2xl my-auto"
         initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}>
-        
+
         <button onClick={onClose} aria-label="Close modal"
           className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all">
           <X className="w-5 h-5" />

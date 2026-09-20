@@ -1,5 +1,10 @@
+// src/components/layout/Footer.jsx
+// FIX: handleSupportClick now calls openDrawer('support') instead of toggleDrawer()
+// This ensures the customer support button always opens Haven in the support scope,
+// never bleeding into whatever service or audit session was last active.
+
 import React from 'react';
-import { useHaven } from '../haven/HavenContext'; // 1. Imported useHaven
+import { useHaven } from '../haven/context/HavenContext';
 
 const InstagramIcon = () => (
   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -32,12 +37,15 @@ const EmailIcon = () => (
   </svg>
 );
 
-export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpenSupport }) {
-  const { toggleDrawer } = useHaven(); // 2. Connected toggleDrawer here
+export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms }) {
+  // FIX: use openDrawer, not toggleDrawer
+  // toggleDrawer just flips isOpen — it doesn't set scope to 'support'
+  // so if you were last in a service or audit session, it reopens that instead
+  const { openDrawer } = useHaven();
 
+  // Always opens Haven in support scope — completely isolated from service/audit
   const handleSupportClick = () => {
-    if (onOpenSupport) onOpenSupport();
-    toggleDrawer(); // Opens Haven drawer on click
+    openDrawer('support');
   };
 
   const handleNav = (e, href) => {
@@ -63,7 +71,7 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpen
       <footer className="relative w-full border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-12 md:gap-8">
-            
+
             {/* Brand Column */}
             <div className="md:col-span-5">
               <h3 className="text-xl font-extrabold tracking-tight text-zinc-900 dark:text-white mb-3">
@@ -73,7 +81,6 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpen
                 Digital marketing and brand strategy agency built on systems, clarity, and performance.
               </p>
 
-              {/* Social Icons */}
               <div className="flex items-center gap-3 mt-6">
                 {socialLinks.map((social) => (
                   <a
@@ -96,33 +103,29 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpen
                 Quick Navigation
               </h4>
               <ul className="space-y-3">
+                {[
+                  { label: 'Home', href: '#hero' },
+                  { label: 'About Us', href: '#about' },
+                  { label: 'Services', href: '#services' },
+                  { label: 'Free Class', href: '#free-class' },
+                  { label: 'Testimonials', href: '#testimonials' },
+                ].map(({ label, href }) => (
+                  <li key={label}>
+                    <a
+                      href={href}
+                      onClick={(e) => handleNav(e, href)}
+                      className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    >
+                      {label}
+                    </a>
+                  </li>
+                ))}
                 <li>
-                  <a href="#hero" onClick={(e) => handleNav(e, '#hero')} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                    Home
-                  </a>
-                </li>
-                <li>
-                  <a href="#about" onClick={(e) => handleNav(e, '#about')} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                    About Us
-                  </a>
-                </li>
-                <li>
-                  <a href="#services" onClick={(e) => handleNav(e, '#services')} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                    Services
-                  </a>
-                </li>
-                <li>
-                  <a href="#free-class" onClick={(e) => handleNav(e, '#free-class')} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                    Free Class
-                  </a>
-                </li>
-                <li>
-                  <a href="#testimonials" onClick={(e) => handleNav(e, '#testimonials')} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                    Testimonials
-                  </a>
-                </li>
-                <li>
-                  <button onClick={onOpenReview} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer">
+                  <button
+                    onClick={onOpenReview}
+                    type="button"
+                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                  >
                     Request Review
                   </button>
                 </li>
@@ -136,12 +139,20 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpen
               </h4>
               <ul className="space-y-3">
                 <li>
-                  <button onClick={onOpenPolicy} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer">
+                  <button
+                    onClick={onOpenPolicy}
+                    type="button"
+                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                  >
                     Privacy Policy
                   </button>
                 </li>
                 <li>
-                  <button onClick={onOpenTerms} className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer">
+                  <button
+                    onClick={onOpenTerms}
+                    type="button"
+                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                  >
                     Terms of Service
                   </button>
                 </li>
@@ -162,8 +173,10 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms, onOpen
       </footer>
 
       {/* Persistent Floating Support Trigger */}
+      {/* FIX: onClick calls openDrawer('support') directly — always forces support scope */}
       <button
         onClick={handleSupportClick}
+        type="button"
         className="fixed bottom-6 left-6 z-30 bg-zinc-950/90 text-white border border-zinc-700/60 text-xs py-2.5 px-4 rounded-full shadow-2xl backdrop-blur-md flex items-center gap-2.5 hover:scale-105 hover:border-emerald-500/50 transition-all cursor-pointer group"
       >
         <span className="relative flex h-2.5 w-2.5">
