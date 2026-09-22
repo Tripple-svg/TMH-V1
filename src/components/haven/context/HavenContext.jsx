@@ -1,5 +1,5 @@
 // src/components/haven/context/HavenContext.jsx
-// VERSION 4.2 — Website scraping wired into audit flow.
+// VERSION 4.4 — Score cache (24h TTL).
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { buildHavenSystemPrompt, STEPS } from '../config/prompts';
@@ -12,21 +12,33 @@ const STORAGE_KEYS = {
   audit:   'tmh_haven_audit_sessions',
 };
 
-const PROFILE_STORAGE_KEY = 'tmh_haven_user_profile_v1';
+const PROFILE_STORAGE_KEY   = 'tmh_haven_user_profile_v1';
+const PREFLIGHT_STORAGE_KEY = 'tmh_haven_audit_preflight_v1';
+const SCORE_CACHE_KEY       = 'tmh_haven_score_cache_v1';
+const SCORE_CACHE_TTL       = 24 * 60 * 60 * 1000;
 
 const DEFAULT_USER_PROFILE = {
   name: '', brandName: '', email: '', whatsapp: '',
   businessDomain: '', mainGoal: '', platform: '', handle: '',
   screenshot: null, screenshotFileName: null, websiteUrl: null,
-  scrapedWebSummary: null,       // NEW — set after scraper runs
-  scrapeInProgress: false,        // NEW — UI can show "reading site..."
-  scrapeFailed: false,            // NEW — tells the prompt scraping failed
-  auditScore: null, assessmentSummary: null, biggestLeak: null,
+  scrapedWebSummary: null, scrapeFailed: false,
+  auditScore: null, scoreBreakdown: null, biggestIssue: null,
+  assessmentSummary: null, biggestLeak: null,
   biggestProblems: [], silentAccountId: null, exchangeCount: 0,
   currentStep: STEPS.GREETING, isReturningUser: false,
 };
 
-// ─── Nav chip classifier ─────────────────────────────────────────────────────
+const DEFAULT_PREFLIGHT = {
+  status: 'idle',
+  url: null,
+  score: null,
+  breakdown: null,
+  biggestIssue: null,
+  summary: null,
+  error: null,
+  dismissed: false,
+};
+
 const NAV_ACTION_RULES = [
   { test: /\b(upload|attach)\b.*\b(screenshot|image|photo|file)\b/i, action: 'upload' },
   { test: /\bshare\b.*\b(screenshot|image|photo)\b/i,                 action: 'upload' },
@@ -37,9 +49,7 @@ const NAV_ACTION_RULES = [
 
 function classifyChipAction(text) {
   if (!text || typeof text !== 'string') return null;
-  for (const rule of NAV_ACTION_RULES) {
-    if (rule.test.test(text)) return rule.action;
-  }
+  for (const rule of NAV_ACTION_RULES) if (rule.test.test(text)) return rule.action;
   return null;
 }
 
@@ -54,22 +64,13 @@ function parseNavChipsFromText(rawText) {
       if (cleaned) navChips.push(cleaned);
     });
   }
-  const cleanedText = rawText.replace(regex, '').trim();
-  return { navChips, cleanedText };
+  return { navChips, cleanedText: rawText.replace(regex, '').trim() };
 }
-
-// ─── Storage helpers ─────────────────────────────────────────────────────────
 
 function makeDefaultSupportSession() {
   return {
-    id: 'session-default',
-    title: 'General Support Chat',
-    scope: 'support',
-    serviceId: null,
-    isPinned: false,
-    createdAt: Date.now(),
-    messages: [],
-    hasGreeted: false,
+    id: 'session-default', title: 'General Support Chat', scope: 'support',
+    serviceId: null, isPinned: false, createdAt: Date.now(), messages: [], hasGreeted: false,
   };
 }
 
@@ -87,8 +88,7 @@ function loadSessionsForScope(scope) {
 function saveSessionsForScope(scope, sessions) {
   try {
     const clean = sessions.map(s => ({
-      ...s,
-      messages: s.messages.map(m => ({ ...m, image: null })),
+      ...s, messages: s.messages.map(m => ({ ...m, image: null })),
     }));
     localStorage.setItem(STORAGE_KEYS[scope], JSON.stringify(clean));
   } catch (e) { console.warn(`Haven: Failed to save ${scope} sessions`, e); }
@@ -107,6 +107,43 @@ function saveUserProfile(profile) {
     const { screenshot, ...rest } = profile;
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(rest));
   } catch (e) { console.warn('Haven: Failed to save user profile', e); }
+}
+
+function loadPreflight() {
+  try {
+    const raw = localStorage.getItem(PREFLIGHT_STORAGE_KEY);
+    if (raw) return { ...DEFAULT_PREFLIGHT, ...JSON.parse(raw) };
+  } catch (e) { console.warn('Haven: Failed to load preflight', e); }
+  return { ...DEFAULT_PREFLIGHT };
+}
+
+function savePreflight(pf) {
+  try { localStorage.setItem(PREFLIGHT_STORAGE_KEY, JSON.stringify(pf)); }
+  catch (e) { console.warn('Haven: Failed to save preflight', e); }
+}
+
+function loadScoreCache() {
+  try {
+    const raw = localStorage.getItem(SCORE_CACHE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+function getCachedScore(url) {
+  const cache = loadScoreCache();
+  const hit = cache[url];
+  if (!hit) return null;
+  if (Date.now() - hit.timestamp > SCORE_CACHE_TTL) return null;
+  return hit;
+}
+
+function setCachedScore(url, result) {
+  try {
+    const cache = loadScoreCache();
+    cache[url] = { ...result, timestamp: Date.now() };
+    localStorage.setItem(SCORE_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
 }
 
 async function callHavenAPI({ systemPrompt, messages, screenshot, scope, signal }) {
@@ -129,7 +166,6 @@ async function callHavenAPI({ systemPrompt, messages, screenshot, scope, signal 
   return { text: data.text || '', chips: data.chips || [], model: data.model || null };
 }
 
-// ─── NEW: Website scraper ────────────────────────────────────────────────────
 async function callScrapeWebsite(url) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -145,12 +181,8 @@ async function callScrapeWebsite(url) {
     body: JSON.stringify({ url }),
   });
   if (!response.ok) throw new Error(`Scraper error ${response.status}: ${await response.text()}`);
-  const data = await response.json();
-  if (!data.ok) throw new Error(data.error || 'Scraper returned ok: false');
-  return data.summary || '';
+  return await response.json();
 }
-
-// ─── PROVIDER ────────────────────────────────────────────────────────────────
 
 export function HavenProvider({ children }) {
   const [isOpen, setIsOpen]               = useState(false);
@@ -171,6 +203,7 @@ export function HavenProvider({ children }) {
   const [activeSessionId, setActiveSessionId] = useState('session-default');
   const [viewState, setViewState]             = useState('landing');
   const [userProfile, setUserProfile]         = useState({ ...DEFAULT_USER_PROFILE });
+  const [auditPreflight, setAuditPreflight]   = useState({ ...DEFAULT_PREFLIGHT });
 
   const abortControllerRef = useRef(null);
 
@@ -179,6 +212,7 @@ export function HavenProvider({ children }) {
     setServiceSessions(loadSessionsForScope('service'));
     setAuditSessions(loadSessionsForScope('audit'));
     setUserProfile(loadUserProfile());
+    setAuditPreflight(loadPreflight());
     setMounted(true);
     return () => { if (abortControllerRef.current) abortControllerRef.current.abort(); };
   }, []);
@@ -187,6 +221,7 @@ export function HavenProvider({ children }) {
   useEffect(() => { if (mounted) saveSessionsForScope('service', serviceSessions); }, [serviceSessions, mounted]);
   useEffect(() => { if (mounted) saveSessionsForScope('audit', auditSessions); },    [auditSessions,   mounted]);
   useEffect(() => { if (mounted) saveUserProfile(userProfile); },                    [userProfile,     mounted]);
+  useEffect(() => { if (mounted) savePreflight(auditPreflight); },                   [auditPreflight,  mounted]);
 
   const getSessionsForScope = useCallback((scope) => {
     if (scope === 'support') return supportSessions;
@@ -231,9 +266,7 @@ export function HavenProvider({ children }) {
           session.title === 'New Chat' ||
           session.title === 'General Support Chat'
         )) {
-          title = content?.length > 28
-            ? `${content.substring(0, 28)}...`
-            : (content || 'Strategy Discussion');
+          title = content?.length > 28 ? `${content.substring(0, 28)}...` : (content || 'Strategy Discussion');
         }
         return { ...session, title, messages: updatedMessages };
       })
@@ -256,33 +289,106 @@ export function HavenProvider({ children }) {
     return newSession.id;
   }, [setSessionsForScope]);
 
-  // ─── Website scraping trigger ─────────────────────────────────────────────
-  // Fires when the audit drawer opens with a website URL. Runs in background.
-  // By the time the user replies to the greeting, the summary should be ready.
-  const runScraper = useCallback(async (url) => {
+  const runScraper = useCallback(async (url, { force = false } = {}) => {
     if (!url) return;
-    setUserProfile(prev => ({ ...prev, scrapeInProgress: true, scrapeFailed: false }));
+    if (!force && auditPreflight.status === 'ready' && auditPreflight.url === url) return;
+
+    // Cache hit?
+    if (!force) {
+      const cached = getCachedScore(url);
+      if (cached) {
+        console.log('[Haven] Score cache hit for', url);
+        setAuditPreflight({
+          status: 'ready',
+          url,
+          score: cached.score,
+          breakdown: cached.breakdown,
+          biggestIssue: cached.biggestIssue,
+          summary: cached.summary,
+          error: null,
+          dismissed: false,
+        });
+        setUserProfile(prev => ({
+          ...prev,
+          scrapedWebSummary: cached.summary,
+          scrapeFailed: false,
+          auditScore: cached.score,
+          scoreBreakdown: cached.breakdown,
+          biggestIssue: cached.biggestIssue,
+        }));
+        return;
+      }
+    }
+
+    setAuditPreflight({
+      status: 'scraping',
+      url,
+      score: null,
+      breakdown: null,
+      biggestIssue: null,
+      summary: null,
+      error: null,
+      dismissed: false,
+    });
+    setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: false }));
+
     try {
-      const summary = await callScrapeWebsite(url);
+      const result = await callScrapeWebsite(url);
+      if (!result.ok) throw new Error(result.error || 'Scraper returned ok: false');
+
+      setAuditPreflight({
+        status: 'ready',
+        url,
+        score: result.score ?? null,
+        breakdown: result.breakdown ?? null,
+        biggestIssue: result.biggestIssue ?? null,
+        summary: result.summary || '',
+        error: null,
+        dismissed: false,
+      });
       setUserProfile(prev => ({
         ...prev,
-        scrapedWebSummary: summary,
-        scrapeInProgress: false,
-        scrapeFailed: !summary,
+        scrapedWebSummary: result.summary || null,
+        scrapeFailed: false,
+        auditScore: result.score ?? null,
+        scoreBreakdown: result.breakdown ?? null,
+        biggestIssue: result.biggestIssue ?? null,
       }));
-      console.log('[Haven] Scrape complete:', summary.slice(0, 120) + '…');
+
+      // Cache it
+      if (result.score != null) {
+        setCachedScore(url, {
+          score: result.score,
+          breakdown: result.breakdown,
+          biggestIssue: result.biggestIssue,
+          summary: result.summary || '',
+        });
+      }
+
+      console.log('[Haven] Scrape + score complete:', result.score);
     } catch (err) {
       console.warn('[Haven] Scrape failed:', err);
-      setUserProfile(prev => ({
-        ...prev,
-        scrapedWebSummary: null,
-        scrapeInProgress: false,
-        scrapeFailed: true,
-      }));
+      setAuditPreflight({
+        status: 'failed',
+        url,
+        score: null,
+        breakdown: null,
+        biggestIssue: null,
+        summary: null,
+        error: err instanceof Error ? err.message : 'Unknown error',
+        dismissed: false,
+      });
+      setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true }));
     }
+  }, [auditPreflight.status, auditPreflight.url]);
+
+  const proceedFromPreflight = useCallback(() => {
+    setAuditPreflight(prev => ({ ...prev, dismissed: true }));
   }, []);
 
-  // ─── openDrawer ───────────────────────────────────────────────────────────
+  const resetPreflight = useCallback(() => {
+    setAuditPreflight({ ...DEFAULT_PREFLIGHT });
+  }, []);
 
   const openDrawer = useCallback((targetMode = 'support', payload = {}) => {
     const { profileData, serviceData } = payload;
@@ -293,18 +399,12 @@ export function HavenProvider({ children }) {
 
     if (profileData) {
       setUserProfile(prev => ({
-        ...prev,
-        ...profileData,
-        // Reset scraper state on new submission so a fresh URL re-fetches
-        scrapedWebSummary: null,
-        scrapeInProgress: false,
-        scrapeFailed: false,
+        ...prev, ...profileData,
         exchangeCount: prev.exchangeCount || 0,
         currentStep: STEPS.GREETING,
       }));
     }
 
-    // ── SERVICE INQUIRY ──
     if (targetMode === 'service_inquiry' && serviceData) {
       const sid = serviceData.id || serviceData.title;
       const existing = serviceSessions.find(s => s.serviceId === sid);
@@ -324,8 +424,6 @@ export function HavenProvider({ children }) {
           },
         });
       }
-
-    // ── AUDIT ──
     } else if (targetMode === 'audit') {
       const name           = profileData?.name           || userProfile.name;
       const brandName      = profileData?.brandName      || userProfile.brandName;
@@ -335,15 +433,10 @@ export function HavenProvider({ children }) {
       const websiteUrl     = profileData?.websiteUrl     || userProfile.websiteUrl;
 
       let platform;
-      if (businessDomain === 'website') {
-        platform = websiteUrl ? `your website (${websiteUrl})` : 'your website';
-      } else if (businessDomain === 'website_and_social') {
-        platform = 'your website and social media';
-      } else if (businessDomain === 'none') {
-        platform = 'your brand';
-      } else {
-        platform = profileData?.platform || userProfile.platform || 'your social media';
-      }
+      if (businessDomain === 'website') platform = websiteUrl ? `your website (${websiteUrl})` : 'your website';
+      else if (businessDomain === 'website_and_social') platform = 'your website and social media';
+      else if (businessDomain === 'none') platform = 'your brand';
+      else platform = profileData?.platform || userProfile.platform || 'your social media';
 
       if (isReturning) {
         const existingAudit = auditSessions.length > 0
@@ -361,9 +454,7 @@ export function HavenProvider({ children }) {
         }
       }
 
-      // ─── NEW: Kick off the scraper if this is a website submission ───
       if (businessDomain === 'website' && websiteUrl) {
-        // Fire and forget — don't block the drawer opening.
         runScraper(websiteUrl);
       }
 
@@ -375,6 +466,8 @@ export function HavenProvider({ children }) {
         greetingContent = `${greetingName}! I've received your details${brand}.\n\nYou mentioned you're starting from scratch — that's actually a great position to be in. Before anything else, tell me: what are you building, and who is it for?`;
       } else if (screenshot) {
         greetingContent = `${greetingName}! I've received your submission${brand} and I can see the screenshot you uploaded.\n\nI'm going to go through it properly. But first — what's been the single biggest challenge with getting sales or enquiries from ${platform} lately?`;
+      } else if (websiteUrl) {
+        greetingContent = `${greetingName}! I've been through your site${brand} — I've got a good read on what's working and what's leaking. Before I share what I noticed, what's been the single biggest challenge with getting sales or enquiries lately?`;
       } else {
         greetingContent = `${greetingName}! I've received your submission${brand}.\n\nI'm initialising the diagnostic review for ${platform}. Before I share what I'm seeing, what's been the single biggest challenge with getting sales or enquiries lately?`;
       }
@@ -387,13 +480,9 @@ export function HavenProvider({ children }) {
           content: greetingContent, image: null, timestamp: Date.now(),
         },
       });
-
-    // ── BOOKING ──
     } else if (targetMode === 'booking') {
       setBookingNoticeOpen(true);
       return;
-
-    // ── SUPPORT (includes team inquiry and customer support) ──
     } else {
       setActiveScope('support');
       const isTeamInquiry = profileData?.entryContext === 'team_inquiry';
@@ -405,8 +494,7 @@ export function HavenProvider({ children }) {
           setViewState('chatting');
         } else {
           createSession('support', {
-            title: 'Talk to Our Team',
-            serviceId: 'team-inquiry',
+            title: 'Talk to Our Team', serviceId: 'team-inquiry',
             initialMessage: {
               id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
               content: `Hey there! I'm Haven — I help connect people to the right TMH team member.\n\nBefore I do, what's this about? Tell me a bit about your brand and what you're looking to discuss, and I'll make sure we route you properly.`,
@@ -420,7 +508,6 @@ export function HavenProvider({ children }) {
 
         if (target) {
           setActiveSessionId(target.id);
-
           if (target.messages.length === 0 && !target.hasGreeted) {
             const greeting = {
               id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
@@ -428,10 +515,7 @@ export function HavenProvider({ children }) {
               content: `Hi there! I'm Haven — TMH's elite digital marketing strategist.\n\nI help brands cut through the noise, fix the exact thing killing their sales, and turn attention into real revenue. What's going on with your brand right now?`,
             };
             setSessionsForScope('support', prev =>
-              prev.map(s => s.id === target.id
-                ? { ...s, messages: [greeting], hasGreeted: true }
-                : s
-              )
+              prev.map(s => s.id === target.id ? { ...s, messages: [greeting], hasGreeted: true } : s)
             );
             setViewState('chatting');
           } else {
@@ -474,9 +558,8 @@ export function HavenProvider({ children }) {
 
   const deleteSession = useCallback((sessionId) => {
     setSessionsForScope(activeScope, prev => {
-      const filtered  = prev.filter(s => s.id !== sessionId);
+      const filtered = prev.filter(s => s.id !== sessionId);
       const wasActive = activeSessionId === sessionId;
-
       if (activeScope === 'support') {
         if (filtered.length === 0) {
           const fresh = makeDefaultSupportSession();
@@ -490,7 +573,6 @@ export function HavenProvider({ children }) {
         }
         return filtered;
       }
-
       if (wasActive) {
         setActiveScope('support');
         const fallback = supportSessions.find(s => s.id === 'session-default') || supportSessions[0];
@@ -519,11 +601,8 @@ export function HavenProvider({ children }) {
     addMessage('user', text, null, { isChipIntent: true });
   }, [addMessage]);
 
-  // ─── sendMessage ──────────────────────────────────────────────────────────
-
   const sendMessage = useCallback(async (content, image = null, options = {}) => {
     if (!content?.trim() && !image) return;
-
     const bucket = getSessionsForScope(activeScope);
     if (!bucket.some(s => s.id === activeSessionId)) {
       createSession('support', { title: 'New Chat' });
@@ -555,14 +634,15 @@ export function HavenProvider({ children }) {
         handle:            userProfile.handle,
         isReturningUser:   isReturningInThisScope,
         mainGoal:          userProfile.mainGoal,
-        // NEW — feeds the site summary into the prompt
         scrapedWebSummary: userProfile.scrapedWebSummary || null,
         scrapeFailed:      userProfile.scrapeFailed || false,
+        score:             userProfile.auditScore ?? null,
+        scoreBreakdown:    userProfile.scoreBreakdown ?? null,
+        biggestIssue:      userProfile.biggestIssue ?? null,
       },
     });
 
     const sessionMessages = currentSession?.messages || [];
-
     const priorUserMessages = sessionMessages
       .slice(0, Math.max(0, sessionMessages.length - 1))
       .filter(m => m.role === 'user' && !m.isChipIntent);
@@ -574,7 +654,6 @@ export function HavenProvider({ children }) {
       .map(m => ({ role: m.role, content: m.content }));
 
     const allMessages = [...aiMessages, { role: 'user', content: content || '' }];
-
     const isFirstAuditMessage = activeScope === 'audit' && priorUserMessages.length === 0;
     const screenshotToSend = image || (isFirstAuditMessage ? userProfile.screenshot : null);
 
@@ -591,7 +670,6 @@ export function HavenProvider({ children }) {
       });
 
       const { navChips: navChipsFromTag, cleanedText } = parseNavChipsFromText(result.text);
-
       const regularChips = [];
       const navChipObjects = [];
 
@@ -600,7 +678,6 @@ export function HavenProvider({ children }) {
         if (action) navChipObjects.push({ text, action });
         else regularChips.push(text);
       };
-
       navChipsFromTag.forEach(considerAsNav);
       (result.chips || []).forEach(considerAsNav);
 
@@ -610,15 +687,11 @@ export function HavenProvider({ children }) {
       if (result.text.includes('[[TIKTOK_CONTENT]]'))  specialChips.push('__TIKTOK_CONTENT__');
 
       const agentExtraProps = {};
-      if (specialChips.length > 0) {
-        agentExtraProps.chips = specialChips;
-      } else if (regularChips.length > 0) {
-        agentExtraProps.chips = regularChips;
-      }
+      if (specialChips.length > 0) agentExtraProps.chips = specialChips;
+      else if (regularChips.length > 0) agentExtraProps.chips = regularChips;
       if (navChipObjects.length > 0) agentExtraProps.navChips = navChipObjects;
 
       addMessage('agent', cleanedText, null, agentExtraProps);
-
     } catch (err) {
       if (err.name === 'AbortError') {
         console.log('Haven: Response cancelled');
@@ -652,33 +725,30 @@ export function HavenProvider({ children }) {
     return hasProfile || hasAuditSession;
   }, [userProfile, auditSessions]);
 
-  const getSavedReviewFormData = useCallback(() => {
-    return {
-      name:           userProfile.name           || '',
-      brandName:      userProfile.brandName      || '',
-      email:          userProfile.email          || '',
-      whatsapp:       userProfile.whatsapp       || '',
-      mainGoal:       userProfile.mainGoal       || '',
-      businessDomain: userProfile.businessDomain || '',
-      websiteUrl:     userProfile.websiteUrl     || '',
-      platform:       userProfile.platform       || '',
-      handle:         userProfile.handle         || '',
-      screenshot:     null,
-    };
-  }, [userProfile]);
+  const getSavedReviewFormData = useCallback(() => ({
+    name:           userProfile.name           || '',
+    brandName:      userProfile.brandName      || '',
+    email:          userProfile.email          || '',
+    whatsapp:       userProfile.whatsapp       || '',
+    mainGoal:       userProfile.mainGoal       || '',
+    businessDomain: userProfile.businessDomain || '',
+    websiteUrl:     userProfile.websiteUrl     || '',
+    platform:       userProfile.platform       || '',
+    handle:         userProfile.handle         || '',
+    screenshot:     null,
+  }), [userProfile]);
 
   const clearExistingReview = useCallback(() => {
     setAuditSessions([]);
     setUserProfile(prev => ({
       ...DEFAULT_USER_PROFILE,
-      name:     prev.name,
-      email:    prev.email,
-      whatsapp: prev.whatsapp,
+      name: prev.name, email: prev.email, whatsapp: prev.whatsapp,
     }));
     setActiveScope('support');
     setActiveSessionId('session-default');
     setViewState('landing');
-  }, []);
+    resetPreflight();
+  }, [resetPreflight]);
 
   const value = {
     isOpen, mode, setMode, toggleDrawer, openDrawer, closeDrawer,
@@ -691,6 +761,7 @@ export function HavenProvider({ children }) {
     showToast, toastMessage, triggerToast,
     activeMenuSessionId, setActiveMenuSessionId,
     hasExistingReview, getSavedReviewFormData, clearExistingReview,
+    auditPreflight, proceedFromPreflight, resetPreflight, runScraper,
   };
 
   return <HavenContext.Provider value={value}>{children}</HavenContext.Provider>;
