@@ -44,11 +44,11 @@ export default function MasterclassBanner() {
               </div>
 
               <h3 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white leading-tight mb-3">
-                "The Unseen System": How to Build a High-Ticket Brand
+                "The Unseen Sales System": The Hidden Principles That Make People Buy.
               </h3>
 
               <p className="text-gray-300 text-sm sm:text-base max-w-lg mb-8 leading-relaxed font-light">
-                Learn the exact framework to transition from a generic online vendor into a structured, high-conversion brand that commands respect and drives sales.
+                Learn the exact framework to transition from a basic  into a structured, high conversion & Profitable brand that commands respect and drives sales.
               </p>
 
               <a 

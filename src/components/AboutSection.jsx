@@ -5,33 +5,33 @@ import { UserCheck, Sparkles } from 'lucide-react';
 export default function AboutSection() {
   const leadership = [
     { 
-      name: 'Founder & MD', 
-      role: 'Managing Director & Lead Brand Strategist', 
-      tag: 'Leadership & Strategy',
+      name: 'Francis Fadeyi', 
+      role: 'Founder & Chief Executive Officer (CEO)', 
+      tag: 'Leadership & Execution',
       image: '/Francis.jpeg'
     },
     { 
-      name: 'Pascal', 
-      role: 'Chief Information Officer (CIO)', 
-      tag: 'Technology & Operations',
+      name: 'Paschal Ikiriko', 
+      role: 'Co-Founder & Chief Operations Officer (COO)', 
+      tag: 'Strategy & Operations',
       image: '/Paschalll.jpeg'
     }
   ];
 
   const teamRoles = [
     { 
-      title: 'Front-End & Web Engineering', 
-      lead: 'Custom Funnels & Web Systems',
+      name: 'Great Jordan', 
+      role: 'Head of Content & Communications',
       icon: UserCheck
     },
     { 
-      title: 'Brand Strategy & Growth', 
-      lead: 'TMH Strategy Collective',
+      name: 'Obabi Babalola', 
+      role: 'Brand Strategy Advisor',
       icon: UserCheck
     },
     { 
-      title: 'Community & Outreach', 
-      lead: 'Brand Ambassador Network',
+      name: 'Oshioke Dalil', 
+      role: 'CTO & Tech Lead',
       icon: UserCheck
     }
   ];
@@ -59,7 +59,7 @@ export default function AboutSection() {
               
               <div className="relative z-10 text-center p-6 sm:p-8 flex flex-col items-center">
                 {/* Crisp HD Brand Logo Container */}
-                <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-zinc-900 border border-blue-500/30 overflow-hidden mb-5 shadow-xl shadow-blue-600/20 group-hover:scale-105 transition-transform flex items-center justify-center p-1">
+                <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-zinc-900 overflow-hidden mb-5 shadow-xl group-hover:scale-105 transition-transform flex items-center justify-center p-1">
                   <img 
                     src="/Tmh.jpeg" 
                     alt="The Marketing Haven Logo" 
@@ -70,8 +70,8 @@ export default function AboutSection() {
 
                 <h3 className="text-zinc-900 dark:text-white font-bold text-2xl sm:text-3xl tracking-tight">The Marketing Haven</h3>
                 <p className="text-blue-600 dark:text-blue-400 text-xs font-mono uppercase tracking-widest mt-2 flex items-center justify-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Digital Brand Strategy Agency
+                  
+                  Digital Marketing & Brand Strategy Agency
                 </p>
               </div>
             </div>
@@ -89,18 +89,18 @@ export default function AboutSection() {
             </div>
 
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-zinc-900 dark:text-white tracking-tight mb-6">
-              Built on Systems, Clarity & Performance.
+              Built on Systems, Clarity & Structured Performance.
             </h2>
 
             <div className="space-y-4 text-zinc-600 dark:text-zinc-300 leading-relaxed font-light text-sm sm:text-base">
               <p>
-                We are a digital marketing agency obsessed with transforming generic businesses into structured, high-ticket brands.
+                We are a digital marketing agency focused on transforming generic businesses into structured, high ticket brands.
               </p>
               <p>
-                Every strategy we map out, funnel we deploy, and custom code we engineer is rooted in market data and behavioral buyer psychology—not surface-level guesswork.
+                Every strategy we map out, funnel we deploy, and custom code we engineer is rooted in market data and behavioral buyer psychology, not surface level guesswork.
               </p>
               <p>
-                Whether you're launching a new venture in Nigeria or scaling an established business globally, TMH provides the strategic blueprint you need to command authority.
+                Whether you're launching a new venture in Nigeria or scaling an established business globally, TMH provides the strategic blueprint you need to grow, the right way.
               </p>
             </div>
           </motion.div>
@@ -118,9 +118,9 @@ export default function AboutSection() {
           {/* Leadership Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto mb-10">
             {leadership.map((l, i) => (
-              <div key={i} className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm dark:shadow-none hover:border-blue-500/30 transition-all flex items-center gap-4 group">
+              <div key={i} className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm dark:shadow-none hover:transition-all flex items-center gap-4 group">
                 {/* Enhanced Profile Avatar with Crisp Aspect Ratio */}
-                <div className="w-16 h-16 rounded-full bg-zinc-800 border-2 border-blue-500/40 overflow-hidden shrink-0 group-hover:scale-105 transition-transform shadow-md">
+                <div className="w-16 h-16 rounded-full bg-zinc-800 border-2 overflow-hidden shrink-0 group-hover:scale-105 transition-transform shadow-md">
                   <img 
                     src={l.image} 
                     alt={l.name} 
@@ -129,7 +129,7 @@ export default function AboutSection() {
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-600/10 px-2.5 py-0.5 rounded-full border border-blue-500/20">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-600/10 px-2.5 py-0.5 rounded-full border">
                     {l.tag}
                   </span>
                   <h4 className="text-lg font-bold text-zinc-900 dark:text-white mt-1.5">{l.name}</h4>
@@ -148,8 +148,8 @@ export default function AboutSection() {
                   <div className="w-9 h-9 rounded-full bg-blue-600/10 border border-blue-500/20 flex items-center justify-center mx-auto mb-3">
                     <Icon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                   </div>
-                  <h5 className="text-xs font-semibold text-zinc-900 dark:text-white mb-1">{r.title}</h5>
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{r.lead}</p>
+                  <h5 className="text-xs font-semibold text-zinc-900 dark:text-white mb-1">{r.name}</h5>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{r.role}</p>
                 </div>
               );
             })}
