@@ -1,17 +1,30 @@
 // src/components/haven/components/HavenScoreCard.jsx
-// V2.0 — Restrained aesthetic. Electric blue accent. No color-coded bars.
+// V3.1 — Auto-detects website (5 categories × 20) vs social (4 × 25) scoring.
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { ArrowRight, AlertCircle, Loader2, RotateCcw } from 'lucide-react';
 
-const CATEGORY_LABELS = {
+const WEBSITE_LABELS = {
   clarity:    'Clarity & Positioning',
   trust:      'Trust Signals',
   conversion: 'Conversion Path',
   technical:  'Technical & Experience',
   content:    'Content Quality',
 };
+
+const SOCIAL_LABELS = {
+  profile:     'Profile & Bio',
+  consistency: 'Content Consistency',
+  engagement:  'Engagement Quality',
+  readiness:   'Conversion Readiness',
+};
+
+function detectKind(breakdown) {
+  if (!breakdown) return null;
+  if (breakdown.profile !== undefined || breakdown.readiness !== undefined) return 'social';
+  return 'website';
+}
 
 function ScoreBar({ value, max = 20 }) {
   const pct = Math.min(100, Math.round((value / max) * 100));
@@ -27,8 +40,66 @@ function ScoreBar({ value, max = 20 }) {
   );
 }
 
-export default function HavenScoreCard({ preflight, userName, brandName, onProceed }) {
-  const { status, score, breakdown, biggestIssue, url, error } = preflight || {};
+function FailedState({ error, onProceed, onRetry, retryCount = 0, kindLabel }) {
+  const maxRetries = 2;
+  const canRetry = retryCount < maxRetries;
+
+  return (
+    <div className="flex flex-col items-center justify-center flex-1 min-h-full text-center px-6 py-12 space-y-6">
+      <div className="w-12 h-12 rounded-full flex items-center justify-center bg-white/[0.03] border border-white/[0.08]">
+        <AlertCircle className="w-5 h-5 text-zinc-400" />
+      </div>
+      <div className="space-y-2 max-w-xs">
+        <h3 className="text-base font-semibold text-white">
+          {canRetry ? `Couldn't read your ${kindLabel}` : `Still can't read your ${kindLabel}`}
+        </h3>
+        <p className="text-[13px] text-zinc-400 leading-relaxed">
+          {error || 'Something went wrong on our end. Try again in a moment.'}
+        </p>
+        {retryCount > 0 && (
+          <p className="text-[11px] text-zinc-500 pt-1">
+            Attempt {retryCount + 1} failed
+          </p>
+        )}
+      </div>
+
+      {canRetry ? (
+        <>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all shadow-lg shadow-blue-600/20 cursor-pointer"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Try again
+          </button>
+          <button
+            type="button"
+            onClick={onProceed}
+            className="text-[12px] text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+          >
+            Skip and continue to chat
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={onProceed}
+          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all shadow-lg shadow-blue-600/20 cursor-pointer"
+        >
+          Continue to Chat <ArrowRight className="w-4 h-4" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default function HavenScoreCard({ preflight, userName, brandName, onProceed, onRetry }) {
+  const { status, score, breakdown, biggestIssue, url, error, retryCount = 0 } = preflight || {};
+
+  const kind = detectKind(breakdown);
+  const labels = kind === 'social' ? SOCIAL_LABELS : WEBSITE_LABELS;
+  const kindLabel = kind === 'social' ? 'profile' : 'site';
 
   // ─── Loading ───
   if (status === 'scraping') {
@@ -45,16 +116,18 @@ export default function HavenScoreCard({ preflight, userName, brandName, onProce
           </div>
         </div>
         <div className="space-y-2.5 max-w-xs">
-          <h3 className="text-base font-semibold text-white tracking-tight">Reading your site</h3>
+          <h3 className="text-base font-semibold text-white tracking-tight">
+            {retryCount > 0 ? 'Retrying' : (kind === 'social' ? 'Reading your profile' : 'Reading your site')}
+          </h3>
           <p className="text-[13px] text-zinc-400 leading-relaxed">
-            {url
-              ? <>Haven is going through <span className="text-zinc-200">{url}</span> — clarity, trust, conversion path.</>
-              : 'Haven is going through your website.'}
+            {kind === 'social'
+              ? 'Haven is going through the screenshot — bio, content, engagement, conversion.'
+              : (url
+                  ? <>Haven is going through <span className="text-zinc-200">{url}</span> — clarity, trust, conversion path.</>
+                  : 'Haven is going through your website.')}
           </p>
         </div>
-        <div className="flex items-center gap-1.5 text-[11px] text-zinc-600">
-          <span>Takes a few seconds</span>
-        </div>
+        <p className="text-[11px] text-zinc-600">Takes a few seconds</p>
       </div>
     );
   }
@@ -62,24 +135,13 @@ export default function HavenScoreCard({ preflight, userName, brandName, onProce
   // ─── Failed ───
   if (status === 'failed') {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 min-h-full text-center px-6 py-12 space-y-6">
-        <div className="w-12 h-12 rounded-full flex items-center justify-center bg-white/[0.03] border border-white/[0.08]">
-          <AlertCircle className="w-5 h-5 text-zinc-400" />
-        </div>
-        <div className="space-y-2 max-w-xs">
-          <h3 className="text-base font-semibold text-white">Couldn't read the site</h3>
-          <p className="text-[13px] text-zinc-400 leading-relaxed">
-            {error || 'The site may be blocking visitors or temporarily down.'}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onProceed}
-          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all"
-        >
-          Continue anyway <ArrowRight className="w-4 h-4" />
-        </button>
-      </div>
+      <FailedState
+        error={error}
+        onProceed={onProceed}
+        onRetry={onRetry}
+        retryCount={retryCount}
+        kindLabel={kindLabel}
+      />
     );
   }
 
@@ -99,7 +161,7 @@ export default function HavenScoreCard({ preflight, userName, brandName, onProce
         <button
           type="button"
           onClick={onProceed}
-          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all"
+          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all shadow-lg shadow-blue-600/20 cursor-pointer"
         >
           Continue to Chat <ArrowRight className="w-4 h-4" />
         </button>
@@ -109,10 +171,10 @@ export default function HavenScoreCard({ preflight, userName, brandName, onProce
 
   // ─── Score ready ───
   const passed = score >= 60;
+  const maxPerCategory = kind === 'social' ? 25 : 20;
 
   return (
     <div className="flex flex-col flex-1 min-h-full px-6 py-8 space-y-6">
-      {/* Score hero */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -120,7 +182,7 @@ export default function HavenScoreCard({ preflight, userName, brandName, onProce
         className="flex flex-col items-center text-center space-y-3 pt-2"
       >
         <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">
-          Website Score
+          {kind === 'social' ? 'Profile Score' : 'Website Score'}
         </span>
         <div className="flex items-baseline gap-1.5">
           <motion.span
@@ -142,7 +204,6 @@ export default function HavenScoreCard({ preflight, userName, brandName, onProce
         </span>
       </motion.div>
 
-      {/* Breakdown */}
       {breakdown && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -150,7 +211,7 @@ export default function HavenScoreCard({ preflight, userName, brandName, onProce
           transition={{ delay: 0.3 }}
           className="space-y-4 pt-2"
         >
-          {Object.entries(CATEGORY_LABELS).map(([key, label], idx) => {
+          {Object.entries(labels).map(([key, label], idx) => {
             const val = breakdown[key] ?? 0;
             return (
               <motion.div
@@ -162,16 +223,15 @@ export default function HavenScoreCard({ preflight, userName, brandName, onProce
               >
                 <div className="flex items-center justify-between text-[12px]">
                   <span className="text-zinc-400">{label}</span>
-                  <span className="text-zinc-200 font-medium tabular-nums">{val}/20</span>
+                  <span className="text-zinc-200 font-medium tabular-nums">{val}/{maxPerCategory}</span>
                 </div>
-                <ScoreBar value={val} />
+                <ScoreBar value={val} max={maxPerCategory} />
               </motion.div>
             );
           })}
         </motion.div>
       )}
 
-      {/* Biggest issue */}
       {biggestIssue && (
         <motion.div
           initial={{ opacity: 0, y: 6 }}
@@ -187,14 +247,13 @@ export default function HavenScoreCard({ preflight, userName, brandName, onProce
         </motion.div>
       )}
 
-      {/* Proceed */}
       <motion.button
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.9 }}
         type="button"
         onClick={onProceed}
-        className="mt-auto flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all"
+        className="mt-auto flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all cursor-pointer"
       >
         Proceed to Chat <ArrowRight className="w-4 h-4" />
       </motion.button>

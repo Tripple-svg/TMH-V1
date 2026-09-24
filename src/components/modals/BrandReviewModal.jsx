@@ -23,9 +23,6 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
   const [imageLoading, setImageLoading] = useState(false);
   const fileInputRef = useRef(null);
 
-  // On open: rehydrate from localStorage.
-  // React state persists between open/close because this component stays mounted,
-  // so we force a re-read from storage each time isOpen flips to true.
   useEffect(() => {
     if (isOpen) {
       setFormData(loadReviewFormData());
@@ -34,7 +31,6 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
     }
   }, [isOpen]);
 
-  // Save form data + step to localStorage on every change while modal is open.
   useEffect(() => {
     if (isOpen) saveReviewFormData(formData);
   }, [formData, isOpen]);
@@ -43,7 +39,6 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
     if (isOpen) saveReviewFormStep(step);
   }, [step, isOpen]);
 
-  // Full reset only after a successful submit (not on cancel).
   const hardReset = () => {
     setStep(1);
     setFormData(DEFAULT_FORM_DATA);
@@ -54,7 +49,6 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
     clearReviewFormData();
   };
 
-  // Cancel just closes — leaves localStorage intact so the user can resume.
   const close = () => { onClose?.(); };
 
   const change = (event) => {
@@ -120,7 +114,26 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
           <label className="block text-[10px] font-mono uppercase tracking-wider text-zinc-400">Primary Aim Right Now<select name="mainGoal" value={formData.mainGoal} onChange={change} className="mt-1.5 w-full rounded-xl border border-white/10 bg-zinc-800/80 px-4 py-3 text-sm normal-case tracking-normal text-white outline-none focus:border-blue-500">{goals.map((goal) => <option key={goal}>{goal}</option>)}</select></label>
           <div><p className="mb-2 text-[10px] font-mono uppercase tracking-wider text-zinc-400">Digital Presence Setup</p><div className="grid grid-cols-3 gap-2">{platforms.map(({ id, label, icon: Icon }) => <button type="button" key={id} onClick={() => setFormData((current) => ({ ...current, platformType: id }))} className={`flex flex-col items-center gap-1.5 rounded-xl border p-3 text-[11px] transition ${formData.platformType === id ? 'border-blue-500 bg-blue-600/20 text-white' : 'border-white/5 bg-zinc-800/40 text-zinc-400 hover:bg-zinc-800'}`}><Icon className="h-4 w-4" />{label}</button>)}</div></div>
           {formData.platformType === 'website' && <label className="block text-[10px] font-mono uppercase tracking-wider text-zinc-400">Website URL<input type="url" name="websiteUrl" value={formData.websiteUrl} onChange={change} placeholder="https://yourbrand.com" className={`mt-1.5 normal-case tracking-normal ${inputClass('websiteUrl')}`} />{errors.websiteUrl && <span className="mt-1 block normal-case tracking-normal text-red-400">{errors.websiteUrl}</span>}</label>}
-          {formData.platformType === 'social' && <div className="space-y-3"><div><p className="mb-1.5 text-[10px] font-mono uppercase tracking-wider text-zinc-400">Select Platform</p><div className="grid grid-cols-5 gap-1.5">{socialPlatforms.map(({ name, icon: Icon }) => <button type="button" key={name} onClick={() => setFormData((current) => ({ ...current, socialPlatform: name }))} className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-[9px] ${formData.socialPlatform === name ? 'border-blue-500 bg-blue-600/30 text-white' : 'border-white/5 bg-zinc-800/40 text-zinc-400'}`}><Icon className="h-3.5 w-3.5" /><span className="w-full truncate">{name}</span></button>)}</div>{errors.socialPlatform && <p className="mt-1 text-xs text-red-400">{errors.socialPlatform}</p>}</div><label className="block text-[10px] font-mono uppercase tracking-wider text-zinc-400">Handle or Profile Link<input type="text" name="socialLink" value={formData.socialLink} onChange={change} placeholder="@yourbrand or profile URL" className={`mt-1.5 normal-case tracking-normal ${inputClass('socialLink')}`} />{errors.socialLink && <span className="mt-1 block normal-case tracking-normal text-red-400">{errors.socialLink}</span>}</label><div><p className="mb-1.5 text-[10px] font-mono uppercase tracking-wider text-zinc-400">Profile Screenshot <span className="normal-case text-zinc-500">(optional — Haven can analyse it)</span></p><button type="button" onClick={() => fileInputRef.current?.click()} className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/20 bg-zinc-800/40 p-3 text-xs text-zinc-300 hover:border-blue-500">{imageLoading ? 'Reading image…' : <><Upload className="h-4 w-4 text-blue-400" />{screenshotFileName || 'Choose image file'}</>}</button><input ref={fileInputRef} type="file" accept="image/*" onChange={selectImage} className="hidden" />{screenshotBase64 && <img src={screenshotBase64} alt="Screenshot preview" className="mt-2 h-12 w-12 rounded-lg border border-white/10 object-cover" />}</div></div>}
+          {formData.platformType === 'social' && <div className="space-y-3">
+            <div>
+              <p className="mb-1.5 text-[10px] font-mono uppercase tracking-wider text-zinc-400">Select Platform</p>
+              <div className="grid grid-cols-5 gap-1.5">{socialPlatforms.map(({ name, icon: Icon }) => <button type="button" key={name} onClick={() => setFormData((current) => ({ ...current, socialPlatform: name }))} className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-[9px] ${formData.socialPlatform === name ? 'border-blue-500 bg-blue-600/30 text-white' : 'border-white/5 bg-zinc-800/40 text-zinc-400'}`}><Icon className="h-3.5 w-3.5" /><span className="w-full truncate">{name}</span></button>)}</div>
+              {errors.socialPlatform && <p className="mt-1 text-xs text-red-400">{errors.socialPlatform}</p>}
+            </div>
+            <label className="block text-[10px] font-mono uppercase tracking-wider text-zinc-400">Handle or Profile Link<input type="text" name="socialLink" value={formData.socialLink} onChange={change} placeholder="@yourbrand or profile URL" className={`mt-1.5 normal-case tracking-normal ${inputClass('socialLink')}`} />{errors.socialLink && <span className="mt-1 block normal-case tracking-normal text-red-400">{errors.socialLink}</span>}</label>
+            <div>
+              <p className="mb-1.5 text-[10px] font-mono uppercase tracking-wider text-zinc-400">
+                Profile Screenshot
+                <span className="normal-case text-zinc-500"> — required for scoring</span>
+              </p>
+              <p className="mb-2 text-[11px] leading-relaxed text-zinc-500">
+                Screenshot the <span className="text-zinc-300">top of your profile</span> so the bio, follower count, and 3–4 recent posts are visible. This is what Haven reads to score you.
+              </p>
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/20 bg-zinc-800/40 p-3 text-xs text-zinc-300 hover:border-blue-500">{imageLoading ? 'Reading image…' : <><Upload className="h-4 w-4 text-blue-400" />{screenshotFileName || 'Choose image file'}</>}</button>
+              <input ref={fileInputRef} type="file" accept="image/*" onChange={selectImage} className="hidden" />
+              {screenshotBase64 && <img src={screenshotBase64} alt="Screenshot preview" className="mt-2 h-12 w-12 rounded-lg border border-white/10 object-cover" />}
+            </div>
+          </div>}
           {formData.platformType === 'none' && <p className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-3.5 text-xs leading-relaxed text-blue-300">No setup needed. Haven will learn what you're building and guide your right first steps.</p>}
           <div className="flex gap-2 pt-2"><button type="button" onClick={() => { setStep(1); setErrors({}); }} className="w-1/3 rounded-xl bg-zinc-800 py-3.5 text-xs font-bold uppercase tracking-wider text-zinc-300 hover:bg-zinc-700">Back</button><button type="button" disabled={imageLoading} onClick={submit} className="flex w-2/3 items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-blue-600/20 hover:bg-blue-500 disabled:bg-zinc-700">Start Free Brand Review <ArrowRight className="h-4 w-4" /></button></div>
         </div>}

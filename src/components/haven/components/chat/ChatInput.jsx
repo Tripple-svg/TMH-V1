@@ -86,7 +86,7 @@ const ChatInput = forwardRef(function ChatInput(
     }
 
     const recognition = new SpeechRecognitionAPI();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     try {
       recognition.lang = 'en-NG'; // Nigerian English

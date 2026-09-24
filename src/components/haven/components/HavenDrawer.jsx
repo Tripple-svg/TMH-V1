@@ -1,5 +1,5 @@
 // src/components/haven/components/HavenDrawer.jsx
-// VERSION 4.2 — Blue dot removed from header logo.
+// VERSION 4.4 — Retry button wired to score card.
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -136,7 +136,7 @@ export default function HavenDrawer() {
     sendMessage, sendNavChipIntent, isThinking, userProfile = {},
     showToast, toastMessage, clearChat, stopResponse,
     bookingNoticeOpen, setBookingNoticeOpen,
-    auditPreflight, proceedFromPreflight,
+    auditPreflight, proceedFromPreflight, retryScrape,
   } = useHaven();
 
   const [showHistorySidebar, setShowHistorySidebar] = useState(false);
@@ -278,8 +278,8 @@ export default function HavenDrawer() {
               <AnimatePresence>
                 {showToast && (
                   <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-                    className="absolute top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 rounded-full bg-zinc-900/85 backdrop-blur-xl border border-white/10 text-white text-xs font-medium shadow-lg shadow-black/40 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-blue-500" /><span>{toastMessage}</span>
+                    className="absolute top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 rounded-full bg-zinc-900/85 backdrop-blur-xl border border-white/10 text-white text-xs font-medium shadow-lg shadow-black/40">
+                    <span>{toastMessage}</span>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -431,6 +431,7 @@ export default function HavenDrawer() {
                     userName={userProfile?.name}
                     brandName={userProfile?.brandName}
                     onProceed={proceedFromPreflight}
+                    onRetry={retryScrape}
                   />
                 ) : viewState === 'landing' ? (
                   <QuickPromptCards onSelectPrompt={handleQuickPrompt} />
@@ -455,6 +456,7 @@ export default function HavenDrawer() {
               {!showPreflight && (
                 <div className="relative px-4 py-4 border-t border-white/[0.06] bg-zinc-900/[0.3] backdrop-blur-xl">
                   <ChatInput
+                    key={activeSessionId}
                     ref={chatInputRef}
                     onSend={handleSend}
                     onStop={stopResponse}
