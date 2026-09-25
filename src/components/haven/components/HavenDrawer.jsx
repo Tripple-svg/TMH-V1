@@ -1,5 +1,5 @@
 // src/components/haven/components/HavenDrawer.jsx
-// VERSION 4.4 — Retry button wired to score card.
+// VERSION 4.5 — iOS keyboard fix via visualViewport tracking.
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -144,6 +144,9 @@ export default function HavenDrawer() {
   const [modalType, setModalType] = useState(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
 
+  // iOS keyboard handling — track the real visible area
+  const [viewport, setViewport] = useState({ top: 0, height: null });
+
   const scrollRef     = useRef(null);
   const endRef        = useRef(null);
   const menuRef       = useRef(null);
@@ -159,6 +162,31 @@ export default function HavenDrawer() {
     && (auditPreflight.status === 'scraping'
      || auditPreflight.status === 'ready'
      || auditPreflight.status === 'failed');
+
+  // ── iOS visualViewport tracker ──
+  // Pins the drawer to the actual visible area. When the keyboard opens,
+  // visualViewport.height shrinks and offsetTop shifts, so the drawer
+  // resizes and repositions to stay fully above the keyboard.
+  useEffect(() => {
+    if (!isOpen) return;
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    if (!vv) return;
+
+    const update = () => {
+      setViewport({
+        top: vv.offsetTop,
+        height: vv.height,
+      });
+    };
+
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? 'hidden' : '';
@@ -258,6 +286,11 @@ export default function HavenDrawer() {
     </motion.button>
   );
 
+  // Inline style overrides — only applied when visualViewport gave us a height.
+  const drawerStyle = viewport.height
+    ? { top: `${viewport.top}px`, height: `${viewport.height}px` }
+    : { top: 0, height: '100dvh' };
+
   return (
     <>
       <AnimatePresence>
@@ -268,9 +301,13 @@ export default function HavenDrawer() {
               onClick={() => { setShowHistorySidebar(false); setShowOptionsMenu(false); closeDrawer(); }}
               className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
 
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="fixed top-0 right-0 z-50 h-[100dvh] max-h-[100dvh] w-full max-w-md flex flex-col bg-zinc-950/[0.85] backdrop-blur-2xl border-l border-white/[0.08] shadow-2xl shadow-black/60 overflow-hidden overflow-x-hidden">
+              style={drawerStyle}
+              className="fixed right-0 z-50 w-full max-w-md flex flex-col bg-zinc-950/[0.85] backdrop-blur-2xl border-l border-white/[0.08] shadow-2xl shadow-black/60 overflow-hidden overflow-x-hidden">
 
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-zinc-900/20 via-transparent to-zinc-950/40" />
               <div className="pointer-events-none absolute -top-40 -right-40 w-[400px] h-[400px] rounded-full bg-blue-600/[0.03] blur-3xl" />
@@ -285,7 +322,7 @@ export default function HavenDrawer() {
               </AnimatePresence>
 
               {/* Header */}
-              <div className="relative flex items-center justify-between px-4 py-3.5 border-b border-white/[0.06] bg-zinc-900/[0.4] backdrop-blur-xl z-20">
+              <div className="relative flex items-center justify-between px-4 py-3.5 border-b border-white/[0.06] bg-zinc-900/[0.4] backdrop-blur-xl z-20 flex-shrink-0">
                 <div className="flex items-center gap-2.5">
                   {isSupportScope && (
                     <motion.button whileTap={{ scale: 0.92 }} id="haven-menu-btn"
@@ -369,7 +406,7 @@ export default function HavenDrawer() {
               <AnimatePresence>
                 {(userProfile.name || userProfile.businessDomain || userProfile.auditScore != null) && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                    className="px-5 py-2.5 bg-zinc-900/[0.3] backdrop-blur-xl border-b border-white/[0.04] flex items-center gap-2 flex-wrap overflow-hidden">
+                    className="px-5 py-2.5 bg-zinc-900/[0.3] backdrop-blur-xl border-b border-white/[0.04] flex items-center gap-2 flex-wrap overflow-hidden flex-shrink-0">
                     {userProfile.name && <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-zinc-300">{userProfile.name}</span>}
                     {userProfile.businessDomain && <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-zinc-300">{userProfile.businessDomain}</span>}
                     {userProfile.auditScore != null && (
@@ -424,7 +461,7 @@ export default function HavenDrawer() {
               </AnimatePresence>
 
               {/* Messages / Preflight */}
-              <div ref={scrollRef} className="relative flex-1 overflow-y-auto overscroll-contain px-5 py-5 space-y-5">
+              <div ref={scrollRef} className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5 space-y-5">
                 {showPreflight ? (
                   <HavenScoreCard
                     preflight={auditPreflight}
@@ -454,7 +491,7 @@ export default function HavenDrawer() {
 
               {/* Input — hidden during preflight */}
               {!showPreflight && (
-                <div className="relative px-4 py-4 border-t border-white/[0.06] bg-zinc-900/[0.3] backdrop-blur-xl">
+                <div className="relative px-4 py-4 border-t border-white/[0.06] bg-zinc-900/[0.3] backdrop-blur-xl flex-shrink-0">
                   <ChatInput
                     key={activeSessionId}
                     ref={chatInputRef}
