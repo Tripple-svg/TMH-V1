@@ -1,7 +1,5 @@
 // src/components/layout/Footer.jsx
-// FIX: handleSupportClick now calls openDrawer('support') instead of toggleDrawer()
-// This ensures the customer support button always opens Haven in the support scope,
-// never bleeding into whatever service or audit session was last active.
+// Floating support trigger renamed to "Need help?" and repositioned to bottom-right.
 
 import React from 'react';
 import { useHaven } from '../haven/context/HavenContext';
@@ -38,12 +36,8 @@ const EmailIcon = () => (
 );
 
 export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms }) {
-  // FIX: use openDrawer, not toggleDrawer
-  // toggleDrawer just flips isOpen — it doesn't set scope to 'support'
-  // so if you were last in a service or audit session, it reopens that instead
   const { openDrawer } = useHaven();
 
-  // Always opens Haven in support scope — completely isolated from service/audit
   const handleSupportClick = () => {
     openDrawer('support');
   };
@@ -172,18 +166,18 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms }) {
         </div>
       </footer>
 
-      {/* Persistent Floating Support Trigger */}
-      {/* FIX: onClick calls openDrawer('support') directly — always forces support scope */}
+      {/* Floating Need Help trigger — bottom-right for one-handed reach */}
       <button
         onClick={handleSupportClick}
         type="button"
-        className="fixed bottom-6 left-6 z-30 bg-zinc-950/90 text-white border border-zinc-700/60 text-xs py-2.5 px-4 rounded-full shadow-2xl backdrop-blur-md flex items-center gap-2.5 hover:scale-105 hover:border-emerald-500/50 transition-all cursor-pointer group"
+        aria-label="Need help?"
+        className="fixed bottom-6 right-6 z-30 bg-zinc-950/90 text-white border border-zinc-700/60 text-xs py-2.5 px-4 rounded-full shadow-2xl backdrop-blur-md flex items-center gap-2.5 hover:scale-105 hover:border-emerald-500/50 transition-all cursor-pointer group"
       >
         <span className="relative flex h-2.5 w-2.5">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
         </span>
-        <span className="font-medium tracking-wide">Customer Support</span>
+        <span className="font-medium tracking-wide">Need help?</span>
       </button>
     </>
   );

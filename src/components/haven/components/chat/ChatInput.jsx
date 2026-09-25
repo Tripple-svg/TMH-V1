@@ -2,20 +2,11 @@ import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, f
 import { motion } from 'framer-motion';
 import { Send, Paperclip, Square, X, Mic, MicOff } from 'lucide-react';
 
-// Web Speech API — Chrome, Edge, Safari. Not available in Firefox.
 const SpeechRecognitionAPI =
   typeof window !== 'undefined'
     ? (window.SpeechRecognition || window.webkitSpeechRecognition)
     : null;
 
-/**
- * ChatInput - shared input bar.
- *
- * IMPERATIVE API (via ref):
- *   ref.current.focus(placeholderOverride?)
- *   ref.current.openFilePicker()
- *   ref.current.clearPlaceholderOverride()
- */
 const ChatInput = forwardRef(function ChatInput(
   { onSend, onStop, isThinking = false, disabled = false, size = 'full', onTypingChange },
   ref
@@ -39,9 +30,7 @@ const ChatInput = forwardRef(function ChatInput(
       if (placeholderText) setPlaceholderOverride(placeholderText);
       requestAnimationFrame(() => inputRef.current?.focus());
     },
-    openFilePicker: () => {
-      fileInputRef.current?.click();
-    },
+    openFilePicker: () => { fileInputRef.current?.click(); },
     clearPlaceholderOverride: () => setPlaceholderOverride(null),
   }), []);
 
@@ -59,7 +48,6 @@ const ChatInput = forwardRef(function ChatInput(
     }
   }, [inputValue, imagePreview, onTypingChange]);
 
-  // Stop speech recognition on unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
@@ -79,22 +67,14 @@ const ChatInput = forwardRef(function ChatInput(
 
   const handleMicClick = useCallback(() => {
     if (!SpeechRecognitionAPI) return;
-
-    if (isRecording) {
-      stopRecording();
-      return;
-    }
+    if (isRecording) { stopRecording(); return; }
 
     const recognition = new SpeechRecognitionAPI();
     recognition.continuous = true;
     recognition.interimResults = true;
-    try {
-      recognition.lang = 'en-NG'; // Nigerian English
-    } catch {
-      recognition.lang = 'en-US';
-    }
+    try { recognition.lang = 'en-NG'; } catch { recognition.lang = 'en-US'; }
 
-    baseTextRef.current = inputValue;   // preserve what's already typed
+    baseTextRef.current = inputValue;
     transcriptRef.current = '';
 
     recognition.onresult = (event) => {
@@ -108,16 +88,11 @@ const ChatInput = forwardRef(function ChatInput(
         }
       }
       const combined = [baseTextRef.current, transcriptRef.current, interim]
-        .filter(Boolean)
-        .join(' ');
+        .filter(Boolean).join(' ');
       setInputValue(combined);
     };
 
-    recognition.onend = () => {
-      setIsRecording(false);
-      recognitionRef.current = null;
-    };
-
+    recognition.onend = () => { setIsRecording(false); recognitionRef.current = null; };
     recognition.onerror = (event) => {
       if (event.error === 'not-allowed') {
         alert('Microphone access was blocked. Please allow microphone permission in your browser to use voice input.');
@@ -130,9 +105,7 @@ const ChatInput = forwardRef(function ChatInput(
 
     recognitionRef.current = recognition;
     setIsRecording(true);
-    try {
-      recognition.start();
-    } catch (err) {
+    try { recognition.start(); } catch (err) {
       console.warn('ChatInput: Failed to start speech recognition:', err);
       setIsRecording(false);
       recognitionRef.current = null;
@@ -144,15 +117,8 @@ const ChatInput = forwardRef(function ChatInput(
     if (!file) return;
     setImageLoading(true);
     const reader = new FileReader();
-    reader.onload = () => {
-      setImagePreview(reader.result);
-      setImageLoading(false);
-    };
-    reader.onerror = () => {
-      console.error('ChatInput: Failed to read image file.');
-      setImageLoading(false);
-      setImagePreview(null);
-    };
+    reader.onload = () => { setImagePreview(reader.result); setImageLoading(false); };
+    reader.onerror = () => { console.error('ChatInput: Failed to read image file.'); setImageLoading(false); setImagePreview(null); };
     reader.readAsDataURL(file);
   }, []);
 
@@ -180,7 +146,6 @@ const ChatInput = forwardRef(function ChatInput(
   }, [handleSubmit]);
 
   const previewSize   = isCompact ? 'w-12 h-12' : 'w-16 h-16';
-  const inputTextSize = isCompact ? 'text-xs'    : 'text-sm';
   const inputPadding  = isCompact ? 'pl-3 pr-14 py-2' : 'pl-4 pr-16 py-3';
   const buttonSize    = isCompact ? 'w-9 h-9'    : 'w-11 h-11';
   const sendIconSize  = isCompact ? 'w-4 h-4'    : 'w-5 h-5';
@@ -190,7 +155,7 @@ const ChatInput = forwardRef(function ChatInput(
   const activePlaceholder  = placeholderOverride || defaultPlaceholder;
 
   return (
-    <div>
+    <div className="w-full max-w-full overflow-hidden">
       {imagePreview && (
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
@@ -226,7 +191,7 @@ const ChatInput = forwardRef(function ChatInput(
           className="hidden"
         />
 
-        <div className="flex-1 relative flex items-center">
+        <div className="flex-1 relative flex items-center min-w-0">
           <textarea
             ref={inputRef}
             value={inputValue}
@@ -234,7 +199,8 @@ const ChatInput = forwardRef(function ChatInput(
             onKeyDown={handleKeyDown}
             placeholder={activePlaceholder}
             rows={1}
-            className={`w-full resize-none rounded-xl bg-zinc-900/60 border border-white/[0.08] ${inputPadding} ${inputTextSize} text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20 transition-all scrollbar-none`}
+            /* text-[16px] on mobile prevents iOS auto-zoom. md:text-sm for desktop. */
+            className={`w-full resize-none rounded-xl bg-zinc-900/60 border border-white/[0.08] ${inputPadding} text-[16px] md:text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20 transition-all scrollbar-none`}
             style={{ minHeight: isCompact ? '36px' : '44px', maxHeight: isCompact ? '100px' : '120px' }}
             disabled={isThinking || disabled}
           />

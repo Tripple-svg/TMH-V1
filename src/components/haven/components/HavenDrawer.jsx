@@ -270,7 +270,7 @@ export default function HavenDrawer() {
 
             <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="fixed top-0 right-0 z-50 h-full w-full max-w-md flex flex-col bg-zinc-950/[0.85] backdrop-blur-2xl border-l border-white/[0.08] shadow-2xl shadow-black/60 overflow-hidden">
+              className="fixed top-0 right-0 z-50 h-[100dvh] max-h-[100dvh] w-full max-w-md flex flex-col bg-zinc-950/[0.85] backdrop-blur-2xl border-l border-white/[0.08] shadow-2xl shadow-black/60 overflow-hidden overflow-x-hidden">
 
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-zinc-900/20 via-transparent to-zinc-950/40" />
               <div className="pointer-events-none absolute -top-40 -right-40 w-[400px] h-[400px] rounded-full bg-blue-600/[0.03] blur-3xl" />

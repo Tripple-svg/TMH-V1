@@ -1,5 +1,5 @@
 // src/components/haven/context/HavenContext.jsx
-// VERSION 4.7 — Social scoring wired for social + screenshot path.
+// VERSION 4.8 — Neutral greetings. AI references site read only when it has real data.
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { buildHavenSystemPrompt, STEPS } from '../config/prompts';
@@ -29,15 +29,9 @@ const DEFAULT_USER_PROFILE = {
 };
 
 const DEFAULT_PREFLIGHT = {
-  status: 'idle',
-  url: null,
-  score: null,
-  breakdown: null,
-  biggestIssue: null,
-  summary: null,
-  error: null,
-  dismissed: false,
-  retryCount: 0,
+  status: 'idle', url: null, score: null, breakdown: null,
+  biggestIssue: null, summary: null, error: null,
+  dismissed: false, retryCount: 0,
 };
 
 const NAV_ACTION_RULES = [
@@ -308,7 +302,6 @@ export function HavenProvider({ children }) {
     return newSession.id;
   }, [setSessionsForScope]);
 
-  // ─── Website scraper ──────────────────────────────────────────────────────
   const runScraper = useCallback(async (url, { force = false } = {}) => {
     if (!url) return;
     if (!force && auditPreflight.status === 'ready' && auditPreflight.url === url) return;
@@ -319,22 +312,15 @@ export function HavenProvider({ children }) {
       if (cached) {
         console.log('[Haven] Website score cache hit for', url);
         setAuditPreflight(prev => ({
-          status: 'ready',
-          url,
-          score: cached.score,
-          breakdown: cached.breakdown,
-          biggestIssue: cached.biggestIssue,
-          summary: cached.summary,
-          error: null,
-          dismissed: false,
-          retryCount: prev.retryCount || 0,
+          status: 'ready', url,
+          score: cached.score, breakdown: cached.breakdown,
+          biggestIssue: cached.biggestIssue, summary: cached.summary,
+          error: null, dismissed: false, retryCount: prev.retryCount || 0,
         }));
         setUserProfile(prev => ({
           ...prev,
-          scrapedWebSummary: cached.summary,
-          scrapeFailed: false,
-          auditScore: cached.score,
-          scoreBreakdown: cached.breakdown,
+          scrapedWebSummary: cached.summary, scrapeFailed: false,
+          auditScore: cached.score, scoreBreakdown: cached.breakdown,
           biggestIssue: cached.biggestIssue,
         }));
         return;
@@ -342,15 +328,8 @@ export function HavenProvider({ children }) {
     }
 
     setAuditPreflight(prev => ({
-      status: 'scraping',
-      url,
-      score: null,
-      breakdown: null,
-      biggestIssue: null,
-      summary: null,
-      error: null,
-      dismissed: false,
-      retryCount: prev.retryCount || 0,
+      status: 'scraping', url, score: null, breakdown: null, biggestIssue: null,
+      summary: null, error: null, dismissed: false, retryCount: prev.retryCount || 0,
     }));
     setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: false }));
 
@@ -359,31 +338,22 @@ export function HavenProvider({ children }) {
       if (!result.ok) throw new Error(result.error || 'Scraper returned ok: false');
 
       setAuditPreflight(prev => ({
-        status: 'ready',
-        url,
-        score: result.score ?? null,
-        breakdown: result.breakdown ?? null,
-        biggestIssue: result.biggestIssue ?? null,
-        summary: result.summary || '',
-        error: null,
-        dismissed: false,
-        retryCount: prev.retryCount || 0,
+        status: 'ready', url,
+        score: result.score ?? null, breakdown: result.breakdown ?? null,
+        biggestIssue: result.biggestIssue ?? null, summary: result.summary || '',
+        error: null, dismissed: false, retryCount: prev.retryCount || 0,
       }));
       setUserProfile(prev => ({
         ...prev,
-        scrapedWebSummary: result.summary || null,
-        scrapeFailed: false,
-        auditScore: result.score ?? null,
-        scoreBreakdown: result.breakdown ?? null,
+        scrapedWebSummary: result.summary || null, scrapeFailed: false,
+        auditScore: result.score ?? null, scoreBreakdown: result.breakdown ?? null,
         biggestIssue: result.biggestIssue ?? null,
       }));
 
       if (result.score != null) {
         setCachedScore(cacheKey, {
-          score: result.score,
-          breakdown: result.breakdown,
-          biggestIssue: result.biggestIssue,
-          summary: result.summary || '',
+          score: result.score, breakdown: result.breakdown,
+          biggestIssue: result.biggestIssue, summary: result.summary || '',
         });
       }
 
@@ -391,25 +361,17 @@ export function HavenProvider({ children }) {
     } catch (err) {
       console.warn('[Haven] Website scrape failed:', err);
       setAuditPreflight(prev => ({
-        status: 'failed',
-        url,
-        score: null,
-        breakdown: null,
-        biggestIssue: null,
+        status: 'failed', url, score: null, breakdown: null, biggestIssue: null,
         summary: null,
         error: err instanceof Error ? err.message : 'Unknown error',
-        dismissed: false,
-        retryCount: (prev.retryCount || 0) + 1,
+        dismissed: false, retryCount: (prev.retryCount || 0) + 1,
       }));
       setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true }));
     }
   }, [auditPreflight.status, auditPreflight.url]);
 
-  // ─── Social scorer ────────────────────────────────────────────────────────
   const runSocialScorer = useCallback(async (screenshot, { force = false } = {}) => {
     if (!screenshot) return;
-
-    // Social screenshots aren't cached by URL (no URL). Cache by hash of first 200 chars of base64.
     const fingerprint = screenshot.slice(0, 200);
     const cacheKey = `social:${fingerprint}`;
 
@@ -418,20 +380,14 @@ export function HavenProvider({ children }) {
       if (cached) {
         console.log('[Haven] Social score cache hit');
         setAuditPreflight(prev => ({
-          status: 'ready',
-          url: null,
-          score: cached.score,
-          breakdown: cached.breakdown,
-          biggestIssue: cached.biggestIssue,
-          summary: null,
-          error: null,
-          dismissed: false,
-          retryCount: prev.retryCount || 0,
+          status: 'ready', url: null,
+          score: cached.score, breakdown: cached.breakdown,
+          biggestIssue: cached.biggestIssue, summary: null,
+          error: null, dismissed: false, retryCount: prev.retryCount || 0,
         }));
         setUserProfile(prev => ({
           ...prev,
-          auditScore: cached.score,
-          scoreBreakdown: cached.breakdown,
+          auditScore: cached.score, scoreBreakdown: cached.breakdown,
           biggestIssue: cached.biggestIssue,
         }));
         return;
@@ -439,15 +395,8 @@ export function HavenProvider({ children }) {
     }
 
     setAuditPreflight(prev => ({
-      status: 'scraping',
-      url: null,
-      score: null,
-      breakdown: null,
-      biggestIssue: null,
-      summary: null,
-      error: null,
-      dismissed: false,
-      retryCount: prev.retryCount || 0,
+      status: 'scraping', url: null, score: null, breakdown: null, biggestIssue: null,
+      summary: null, error: null, dismissed: false, retryCount: prev.retryCount || 0,
     }));
 
     try {
@@ -455,28 +404,20 @@ export function HavenProvider({ children }) {
       if (!result.ok) throw new Error(result.error || 'Social scorer returned ok: false');
 
       setAuditPreflight(prev => ({
-        status: 'ready',
-        url: null,
-        score: result.score ?? null,
-        breakdown: result.breakdown ?? null,
-        biggestIssue: result.biggestIssue ?? null,
-        summary: null,
-        error: null,
-        dismissed: false,
-        retryCount: prev.retryCount || 0,
+        status: 'ready', url: null,
+        score: result.score ?? null, breakdown: result.breakdown ?? null,
+        biggestIssue: result.biggestIssue ?? null, summary: null,
+        error: null, dismissed: false, retryCount: prev.retryCount || 0,
       }));
       setUserProfile(prev => ({
         ...prev,
-        auditScore: result.score ?? null,
-        scoreBreakdown: result.breakdown ?? null,
+        auditScore: result.score ?? null, scoreBreakdown: result.breakdown ?? null,
         biggestIssue: result.biggestIssue ?? null,
       }));
 
       if (result.score != null) {
         setCachedScore(cacheKey, {
-          score: result.score,
-          breakdown: result.breakdown,
-          biggestIssue: result.biggestIssue,
+          score: result.score, breakdown: result.breakdown, biggestIssue: result.biggestIssue,
         });
       }
 
@@ -484,20 +425,14 @@ export function HavenProvider({ children }) {
     } catch (err) {
       console.warn('[Haven] Social score failed:', err);
       setAuditPreflight(prev => ({
-        status: 'failed',
-        url: null,
-        score: null,
-        breakdown: null,
-        biggestIssue: null,
+        status: 'failed', url: null, score: null, breakdown: null, biggestIssue: null,
         summary: null,
         error: err instanceof Error ? err.message : 'Unknown error',
-        dismissed: false,
-        retryCount: (prev.retryCount || 0) + 1,
+        dismissed: false, retryCount: (prev.retryCount || 0) + 1,
       }));
     }
   }, []);
 
-  // Retry dispatch: decides which scorer to retry
   const retryScrape = useCallback(() => {
     if (userProfile.businessDomain === 'social' && userProfile.screenshot) {
       runSocialScorer(userProfile.screenshot, { force: true });
@@ -578,31 +513,25 @@ export function HavenProvider({ children }) {
         }
       }
 
-      // Reset preflight for fresh submission
       setAuditPreflight({ ...DEFAULT_PREFLIGHT });
 
-      // Route to the right scorer
       if (businessDomain === 'website' && websiteUrl) {
         runScraper(websiteUrl);
       } else if (businessDomain === 'social' && screenshot) {
         runSocialScorer(screenshot);
       }
-      // else: no scorer — chat runs without score card (businessDomain 'none' or social without screenshot)
 
       const greetingName = name ? `Hi ${name}` : 'Hi there';
       const brand        = brandName ? ` for **${brandName}**` : '';
 
+      // NEUTRAL greetings. Never claim to have read anything here.
+      // The AI will reference the actual site read in its NEXT response
+      // when it has real data (scrapedWebSummary or score in the SESSION block).
       let greetingContent = '';
       if (businessDomain === 'none') {
         greetingContent = `${greetingName}! I've received your details${brand}.\n\nYou mentioned you're starting from scratch — that's actually a great position to be in. Before anything else, tell me: what are you building, and who is it for?`;
-      } else if (businessDomain === 'social' && screenshot) {
-        greetingContent = `${greetingName}! I've gone through the screenshot you uploaded${brand} and I've scored your profile.\n\nBefore I share what I noticed, what's been the single biggest challenge with getting sales or enquiries from ${platform} lately?`;
-      } else if (screenshot) {
-        greetingContent = `${greetingName}! I've received your submission${brand} and I can see the screenshot you uploaded.\n\nI'm going to go through it properly. But first — what's been the single biggest challenge with getting sales or enquiries from ${platform} lately?`;
-      } else if (websiteUrl) {
-        greetingContent = `${greetingName}! I've been through your site${brand} — I've got a good read on what's working and what's leaking. Before I share what I noticed, what's been the single biggest challenge with getting sales or enquiries lately?`;
       } else {
-        greetingContent = `${greetingName}! I've received your submission${brand}.\n\nI'm initialising the diagnostic review for ${platform}. Before I share what I'm seeing, what's been the single biggest challenge with getting sales or enquiries lately?`;
+        greetingContent = `${greetingName}! I've received your submission${brand}.\n\nBefore I share what I'm seeing, what's been the single biggest challenge with getting sales or enquiries from ${platform} lately?`;
       }
 
       createSession('audit', {
