@@ -1,5 +1,5 @@
 // src/components/haven/components/HavenScoreCard.jsx
-// V3.1 — Auto-detects website (5 categories × 20) vs social (4 × 25) scoring.
+// V3.2 — Loading state aware of website vs social path.
 
 import React from 'react';
 import { motion } from 'framer-motion';
@@ -94,10 +94,11 @@ function FailedState({ error, onProceed, onRetry, retryCount = 0, kindLabel }) {
   );
 }
 
-export default function HavenScoreCard({ preflight, userName, brandName, onProceed, onRetry }) {
+export default function HavenScoreCard({ preflight, kind: kindProp, userName, brandName, onProceed, onRetry }) {
   const { status, score, breakdown, biggestIssue, url, error, retryCount = 0 } = preflight || {};
 
-  const kind = detectKind(breakdown);
+  // Prefer the kind from the breakdown (accurate) — fall back to the prop passed by the drawer (needed during loading)
+  const kind = detectKind(breakdown) || kindProp || 'website';
   const labels = kind === 'social' ? SOCIAL_LABELS : WEBSITE_LABELS;
   const kindLabel = kind === 'social' ? 'profile' : 'site';
 

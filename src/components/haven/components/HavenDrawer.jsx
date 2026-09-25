@@ -464,12 +464,13 @@ export default function HavenDrawer() {
               <div ref={scrollRef} className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5 space-y-5">
                 {showPreflight ? (
                   <HavenScoreCard
-                    preflight={auditPreflight}
-                    userName={userProfile?.name}
-                    brandName={userProfile?.brandName}
-                    onProceed={proceedFromPreflight}
-                    onRetry={retryScrape}
-                  />
+                 preflight={auditPreflight}
+                  kind={userProfile?.businessDomain === 'social' || userProfile?.businessDomain === 'website_and_social' ? 'social' : 'website'}
+                  userName={userProfile?.name}
+                  brandName={userProfile?.brandName}
+                  onProceed={proceedFromPreflight}
+                  onRetry={retryScrape}
+                />  
                 ) : viewState === 'landing' ? (
                   <QuickPromptCards onSelectPrompt={handleQuickPrompt} />
                 ) : (
