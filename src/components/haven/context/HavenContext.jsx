@@ -1,5 +1,5 @@
 // src/components/haven/context/HavenContext.jsx
-// VERSION 4.8 — Neutral greetings. AI references site read only when it has real data.
+// VERSION 4.9 — Restores last-active support session on reopen.
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { buildHavenSystemPrompt, STEPS } from '../config/prompts';
@@ -12,10 +12,11 @@ const STORAGE_KEYS = {
   audit:   'tmh_haven_audit_sessions',
 };
 
-const PROFILE_STORAGE_KEY   = 'tmh_haven_user_profile_v1';
-const PREFLIGHT_STORAGE_KEY = 'tmh_haven_audit_preflight_v1';
-const SCORE_CACHE_KEY       = 'tmh_haven_score_cache_v1';
-const SCORE_CACHE_TTL       = 24 * 60 * 60 * 1000;
+const PROFILE_STORAGE_KEY        = 'tmh_haven_user_profile_v1';
+const PREFLIGHT_STORAGE_KEY      = 'tmh_haven_audit_preflight_v1';
+const SCORE_CACHE_KEY            = 'tmh_haven_score_cache_v1';
+const LAST_SUPPORT_SESSION_KEY   = 'tmh_haven_last_support_session';
+const SCORE_CACHE_TTL            = 24 * 60 * 60 * 1000;
 
 const DEFAULT_USER_PROFILE = {
   name: '', brandName: '', email: '', whatsapp: '',
@@ -235,6 +236,15 @@ export function HavenProvider({ children }) {
   useEffect(() => { if (mounted) saveSessionsForScope('audit', auditSessions); },    [auditSessions,   mounted]);
   useEffect(() => { if (mounted) saveUserProfile(userProfile); },                    [userProfile,     mounted]);
   useEffect(() => { if (mounted) savePreflight(auditPreflight); },                   [auditPreflight,  mounted]);
+
+  // Persist last-active support session ID so reopening returns to the same chat.
+  useEffect(() => {
+    if (!mounted) return;
+    if (activeScope !== 'support') return;
+    try {
+      localStorage.setItem(LAST_SUPPORT_SESSION_KEY, activeSessionId);
+    } catch {}
+  }, [activeScope, activeSessionId, mounted]);
 
   const getSessionsForScope = useCallback((scope) => {
     if (scope === 'support') return supportSessions;
@@ -524,15 +534,12 @@ export function HavenProvider({ children }) {
       const greetingName = name ? `Hi ${name}` : 'Hi there';
       const brand        = brandName ? ` for **${brandName}**` : '';
 
-      // NEUTRAL greetings. Never claim to have read anything here.
-      // The AI will reference the actual site read in its NEXT response
-      // when it has real data (scrapedWebSummary or score in the SESSION block).
       let greetingContent = '';
-      if (businessDomain === 'none') {
-        greetingContent = `${greetingName}! I've received your details${brand}.\n\nYou mentioned you're starting from scratch — that's actually a great position to be in. Before anything else, tell me: what are you building, and who is it for?`;
-      } else {
-        greetingContent = `${greetingName}! I've received your submission${brand}.\n\nBefore I share what I'm seeing, what's been the single biggest challenge with getting sales or enquiries from ${platform} lately?`;
-      }
+if (businessDomain === 'none') {
+  greetingContent = `${greetingName}! I've received your details${brand}.\n\nBefore we go deeper — are you building from scratch, or do you already have customers and simply haven't set up a social space yet?`;
+} else {
+  greetingContent = `${greetingName}! I've received your submission${brand}.\n\nBefore I share what I'm seeing, what's been the single biggest challenge with getting sales or enquiries from ${platform} lately?`;
+}
 
       createSession('audit', {
         title: `${brandName || 'Brand'} Review`,
@@ -565,8 +572,18 @@ export function HavenProvider({ children }) {
           });
         }
       } else {
-        const defaultSupport = supportSessions.find(s => s.id === 'session-default');
-        const target = defaultSupport || supportSessions.find(s => !s.serviceId) || supportSessions[0];
+        // Restore last active support session, or fall back to a default one.
+        let lastSupportId = null;
+        try {
+          lastSupportId = localStorage.getItem(LAST_SUPPORT_SESSION_KEY);
+        } catch {}
+
+        const lastSupport = lastSupportId
+          ? supportSessions.find((s) => s.id === lastSupportId)
+          : null;
+
+        const defaultSupport = supportSessions.find((s) => s.id === 'session-default');
+        const target = lastSupport || defaultSupport || supportSessions.find((s) => !s.serviceId) || supportSessions[0];
 
         if (target) {
           setActiveSessionId(target.id);

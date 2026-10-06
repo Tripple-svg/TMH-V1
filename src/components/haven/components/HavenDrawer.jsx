@@ -1,11 +1,12 @@
 // src/components/haven/components/HavenDrawer.jsx
-// VERSION 4.5 — iOS keyboard fix via visualViewport tracking.
+// VERSION 4.9 — Calendly re-open reminder.
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Menu, Plus, MoreVertical, Pin, MessageSquare, Sparkles,
   BarChart3, Target, Zap, Trash2, RotateCcw, Settings, ExternalLink,
+  ChevronDown, AlertCircle,
 } from 'lucide-react';
 import { useHaven } from '../hooks/useHaven';
 import ActionModals from './ActionModals';
@@ -16,6 +17,7 @@ import HavenScoreCard from './HavenScoreCard';
 const LOGO_SRC = '/Tmhh.jpeg';
 const CALENDLY_URL = 'https://calendly.com/themarketinghaven01/30min';
 const TIKTOK_URL = 'https://www.tiktok.com/@the_marketing_haven?_r=1&_t=ZS-99cNCs01SWj';
+const CALENDLY_CLICKED_KEY = 'tmh_calendly_clicked_at';
 const FRESH_MS = 3000;
 
 function isFreshMessage(msg) {
@@ -94,6 +96,45 @@ const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt }
 });
 
 function BookingModal({ isOpen, onClose }) {
+  const [hasOpenedBefore, setHasOpenedBefore] = useState(false);
+  const [lastOpenedLabel, setLastOpenedLabel] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      const raw = localStorage.getItem(CALENDLY_CLICKED_KEY);
+      if (raw) {
+        const ts = new Date(raw);
+        const now = new Date();
+        const diffMs = now - ts;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHrs = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        let label;
+        if (diffMins < 1) label = 'a moment ago';
+        else if (diffMins < 60) label = `${diffMins} min ago`;
+        else if (diffHrs < 24) label = `${diffHrs} hour${diffHrs > 1 ? 's' : ''} ago`;
+        else label = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+
+        setHasOpenedBefore(true);
+        setLastOpenedLabel(label);
+      } else {
+        setHasOpenedBefore(false);
+        setLastOpenedLabel('');
+      }
+    } catch {
+      setHasOpenedBefore(false);
+    }
+  }, [isOpen]);
+
+  const handleChooseTime = () => {
+    try {
+      localStorage.setItem(CALENDLY_CLICKED_KEY, new Date().toISOString());
+    } catch {}
+    onClose();
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -111,8 +152,21 @@ function BookingModal({ isOpen, onClose }) {
               </div>
             </div>
             <h3 className="relative text-base font-semibold text-white">Book Your Free Strategy Call</h3>
-            <p className="relative text-sm text-zinc-400 leading-relaxed">Pick a time that works. We're available Monday–Friday, 5–8 PM WAT.</p>
-            <a href={CALENDLY_URL} target="_blank" rel="noopener noreferrer" onClick={onClose}
+            <p className="relative text-sm text-zinc-400 leading-relaxed">
+              Pick a time that works. We're available Mon, Wed &amp; Fri, 6–8 PM WAT.
+            </p>
+
+            {hasOpenedBefore && (
+              <div className="relative flex items-start gap-2.5 text-left rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] leading-relaxed text-amber-200/90">
+                  You opened the booking page {lastOpenedLabel}. If you've already booked,
+                  check your email for the confirmation — no need to book again.
+                </p>
+              </div>
+            )}
+
+            <a href={CALENDLY_URL} target="_blank" rel="noopener noreferrer" onClick={handleChooseTime}
               className="relative flex items-center justify-center gap-2 w-full px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all shadow-lg shadow-blue-600/20">
               <span>Choose a Time</span><ExternalLink className="w-4 h-4" />
             </a>
@@ -144,7 +198,9 @@ export default function HavenDrawer() {
   const [modalType, setModalType] = useState(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
 
-  // iOS keyboard handling — track the real visible area
+  const [autoFollow, setAutoFollow] = useState(true);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+
   const [viewport, setViewport] = useState({ top: 0, height: null });
 
   const scrollRef     = useRef(null);
@@ -152,6 +208,8 @@ export default function HavenDrawer() {
   const menuRef       = useRef(null);
   const optsBtnRef    = useRef(null);
   const chatInputRef  = useRef(null);
+
+  const forceScrollOnNextAgentMsg = useRef(false);
 
   const isSupportScope = activeScope === 'support';
   const scopeLabel     = getScopeLabel(activeScope, activeService);
@@ -163,20 +221,13 @@ export default function HavenDrawer() {
      || auditPreflight.status === 'ready'
      || auditPreflight.status === 'failed');
 
-  // ── iOS visualViewport tracker ──
-  // Pins the drawer to the actual visible area. When the keyboard opens,
-  // visualViewport.height shrinks and offsetTop shifts, so the drawer
-  // resizes and repositions to stay fully above the keyboard.
   useEffect(() => {
     if (!isOpen) return;
     const vv = typeof window !== 'undefined' ? window.visualViewport : null;
     if (!vv) return;
 
     const update = () => {
-      setViewport({
-        top: vv.offsetTop,
-        height: vv.height,
-      });
+      setViewport({ top: vv.offsetTop, height: vv.height });
     };
 
     update();
@@ -195,20 +246,50 @@ export default function HavenDrawer() {
 
   useEffect(() => {
     if (!isOpen) return;
+    setAutoFollow(true);
+    setShowScrollBtn(false);
     requestAnimationFrame(() => {
-      if (scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      if (!scrollRef.current) return;
+      const el = scrollRef.current;
+      if (!messages || messages.length === 0) {
+        el.scrollTop = 0;
+        return;
       }
+      const hasOverflow = el.scrollHeight > el.clientHeight + 40;
+      if (!hasOverflow) return;
+      el.scrollTop = el.scrollHeight;
     });
-  }, [isOpen, activeSessionId]);
+  }, [isOpen, activeSessionId, messages.length]);
 
-  useEffect(() => {
+  const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    if (scrollHeight - scrollTop - clientHeight < 150) {
-      requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }));
-    }
-  }, [messages, isThinking]);
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const nearBottom = distanceFromBottom < 80;
+    setAutoFollow(nearBottom);
+    setShowScrollBtn(!nearBottom);
+  }, []);
+
+  useEffect(() => {
+    if (!autoFollow) return;
+    if (!scrollRef.current) return;
+    requestAnimationFrame(() => {
+      endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }, [messages, isThinking, autoFollow]);
+
+  useEffect(() => {
+    if (!forceScrollOnNextAgentMsg.current) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.role !== 'agent') return;
+    forceScrollOnNextAgentMsg.current = false;
+    if (autoFollow) return;
+    setAutoFollow(true);
+    setShowScrollBtn(false);
+    requestAnimationFrame(() => {
+      endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }, [messages, autoFollow]);
 
   useEffect(() => {
     if (!showOptionsMenu) return;
@@ -232,6 +313,12 @@ export default function HavenDrawer() {
     return () => document.removeEventListener('mousedown', h);
   }, [showHistorySidebar]);
 
+  const armForceScroll = useCallback(() => {
+    forceScrollOnNextAgentMsg.current = true;
+    setAutoFollow(true);
+    setShowScrollBtn(false);
+  }, []);
+
   const handleChipSelect = useCallback((text) => {
     if (text === '__BOOK_CALL__') { setShowBookingModal(true); return; }
 
@@ -251,8 +338,9 @@ export default function HavenDrawer() {
       return;
     }
 
+    armForceScroll();
     sendMessage(text);
-  }, [sendMessage, closeDrawer]);
+  }, [sendMessage, closeDrawer, armForceScroll]);
 
   const handleNavChipSelect = useCallback((navChip) => {
     if (!navChip || !navChip.text) return;
@@ -267,8 +355,22 @@ export default function HavenDrawer() {
     }
   }, [sendNavChipIntent]);
 
-  const handleQuickPrompt = useCallback(t => { if (t) sendMessage(t); }, [sendMessage]);
-  const handleSend = useCallback((t, img) => sendMessage(t, img), [sendMessage]);
+  const handleQuickPrompt = useCallback(t => {
+    if (!t) return;
+    armForceScroll();
+    sendMessage(t);
+  }, [sendMessage, armForceScroll]);
+
+  const handleSend = useCallback((t, img) => {
+    armForceScroll();
+    sendMessage(t, img);
+  }, [sendMessage, armForceScroll]);
+
+  const handleScrollToBottom = useCallback(() => {
+    setAutoFollow(true);
+    setShowScrollBtn(false);
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
   const pinned   = sessions.filter(s => s.isPinned);
   const unpinned = sessions.filter(s => !s.isPinned);
@@ -286,7 +388,6 @@ export default function HavenDrawer() {
     </motion.button>
   );
 
-  // Inline style overrides — only applied when visualViewport gave us a height.
   const drawerStyle = viewport.height
     ? { top: `${viewport.top}px`, height: `${viewport.height}px` }
     : { top: 0, height: '100dvh' };
@@ -321,7 +422,6 @@ export default function HavenDrawer() {
                 )}
               </AnimatePresence>
 
-              {/* Header */}
               <div className="relative flex items-center justify-between px-4 py-3.5 border-b border-white/[0.06] bg-zinc-900/[0.4] backdrop-blur-xl z-20 flex-shrink-0">
                 <div className="flex items-center gap-2.5">
                   {isSupportScope && (
@@ -402,7 +502,6 @@ export default function HavenDrawer() {
                 </div>
               </div>
 
-              {/* Profile bar */}
               <AnimatePresence>
                 {(userProfile.name || userProfile.businessDomain || userProfile.auditScore != null) && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
@@ -421,7 +520,6 @@ export default function HavenDrawer() {
                 )}
               </AnimatePresence>
 
-              {/* History sidebar */}
               <AnimatePresence>
                 {showHistorySidebar && isSupportScope && (
                   <>
@@ -460,17 +558,20 @@ export default function HavenDrawer() {
                 )}
               </AnimatePresence>
 
-              {/* Messages / Preflight */}
-              <div ref={scrollRef} className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5 space-y-5">
+              <div
+                ref={scrollRef}
+                onScroll={handleScroll}
+                className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5 space-y-5"
+              >
                 {showPreflight ? (
                   <HavenScoreCard
-                 preflight={auditPreflight}
-                  kind={userProfile?.businessDomain === 'social' || userProfile?.businessDomain === 'website_and_social' ? 'social' : 'website'}
-                  userName={userProfile?.name}
-                  brandName={userProfile?.brandName}
-                  onProceed={proceedFromPreflight}
-                  onRetry={retryScrape}
-                />  
+                    preflight={auditPreflight}
+                    kind={userProfile?.businessDomain === 'social' || userProfile?.businessDomain === 'website_and_social' ? 'social' : 'website'}
+                    userName={userProfile?.name}
+                    brandName={userProfile?.brandName}
+                    onProceed={proceedFromPreflight}
+                    onRetry={retryScrape}
+                  />
                 ) : viewState === 'landing' ? (
                   <QuickPromptCards onSelectPrompt={handleQuickPrompt} />
                 ) : (
@@ -490,7 +591,21 @@ export default function HavenDrawer() {
                 <div ref={endRef} />
               </div>
 
-              {/* Input — hidden during preflight */}
+              <AnimatePresence>
+                {showScrollBtn && (
+                  <motion.button
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    onClick={handleScrollToBottom}
+                    aria-label="Scroll to latest"
+                    className="absolute bottom-28 right-5 z-30 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-500 border border-blue-400/30 text-white flex items-center justify-center shadow-lg shadow-blue-600/40 transition-all active:scale-95"
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </motion.button>
+                )}
+              </AnimatePresence>
+
               {!showPreflight && (
                 <div className="relative px-4 py-4 border-t border-white/[0.06] bg-zinc-900/[0.3] backdrop-blur-xl flex-shrink-0">
                   <ChatInput

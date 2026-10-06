@@ -39,26 +39,28 @@ export default function Header({ onOpenReview }) {
 
   return (
     <>
-      {/* Outer wrapper to position the floating pill container */}
       <header className="fixed top-4 left-0 right-0 z-40 px-3 sm:px-6 lg:px-6 flex justify-center pointer-events-none">
-        {/* Floating Glass Capsule Navbar */}
         <div className="pointer-events-auto w-full max-w-7xl h-16 sm:h-18 px-4 sm:px-6 flex items-center justify-between rounded-full bg-white/75 dark:bg-zinc-950/40 backdrop-blur-xl border border-zinc-200/80 dark:border-zinc-700/50 shadow-lg shadow-black/10 dark:shadow-black/40 transition-all duration-300">
-          
+
           {/* Branding */}
           <a
             href="#hero"
             onClick={(e) => handleNavClick(e, '#hero')}
-            className="flex items-center gap-3 shrink-0"
+            className="flex items-center gap-2 sm:gap-3 shrink-0"
           >
             {!logoError ? (
               <img
-                src="/logo.png"
+                src="/Tmhh.jpeg"
                 alt="The Marketing Haven"
-                className="h-8 sm:h-9 w-auto transition-opacity duration-300"
+                className="h-7 sm:h-9 w-auto rounded-full object-cover transition-opacity duration-300"
                 onError={() => setLogoError(true)}
               />
-            ) : null}
-            <span className="font-bold text-base sm:text-lg tracking-tight text-zinc-900 dark:text-white transition-colors duration-300">
+            ) : (
+              <div className="h-7 w-7 sm:h-9 sm:w-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-[9px] sm:text-[10px] font-bold tracking-tight">
+                TMH
+              </div>
+            )}
+            <span className="font-bold text-sm sm:text-lg tracking-tight text-zinc-900 dark:text-white transition-colors duration-300 whitespace-nowrap">
               The Marketing Haven
             </span>
           </a>
@@ -80,7 +82,6 @@ export default function Header({ onOpenReview }) {
 
           {/* Actions & Mobile Toggle */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Theme Toggle Pill Button */}
             <button
               onClick={toggleTheme}
               type="button"
@@ -104,7 +105,6 @@ export default function Header({ onOpenReview }) {
               </AnimatePresence>
             </button>
 
-            {/* CTA Pill Button */}
             <button
               onClick={onOpenReview}
               className="hidden sm:flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium px-5 py-2.5 rounded-full transition-all duration-200 shadow-lg shadow-blue-600/25 active:scale-95 text-xs sm:text-sm border border-blue-400/30"
@@ -113,7 +113,6 @@ export default function Header({ onOpenReview }) {
               <ArrowRight className="w-4 h-4" />
             </button>
 
-            {/* Mobile / Tablet Hamburger Button */}
             <button
               onClick={() => setDrawerOpen(true)}
               className="block xl:hidden w-10 h-10 rounded-full flex items-center justify-center text-zinc-900 dark:text-white bg-white/50 dark:bg-zinc-800/50 border border-zinc-200/80 dark:border-zinc-700/60 backdrop-blur-md transition-colors duration-200 active:scale-90"
@@ -125,7 +124,7 @@ export default function Header({ onOpenReview }) {
         </div>
       </header>
 
-      {/* Mobile & Tablet Drawer */}
+      {/* Mobile & Tablet Drawer — opacity matched to header */}
       <AnimatePresence>
         {drawerOpen && (
           <>
@@ -143,7 +142,7 @@ export default function Header({ onOpenReview }) {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed top-0 right-0 bottom-0 z-50 w-[85%] sm:w-[60%] md:w-[45%] max-w-sm bg-white/90 dark:bg-zinc-900/90 backdrop-blur-2xl border-l border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col"
+              className="fixed top-0 right-0 bottom-0 z-50 w-[85%] sm:w-[60%] md:w-[45%] max-w-sm bg-white/75 dark:bg-zinc-950/40 backdrop-blur-2xl border-l border-zinc-200/80 dark:border-zinc-800/60 shadow-2xl flex flex-col"
             >
               <div className="flex items-center justify-between p-6 border-b border-zinc-200/50 dark:border-zinc-800/50">
                 <span className="font-extrabold text-lg tracking-tight text-zinc-900 dark:text-white">
@@ -151,7 +150,7 @@ export default function Header({ onOpenReview }) {
                 </span>
                 <button
                   onClick={() => setDrawerOpen(false)}
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-900 dark:text-white bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/50 transition-colors duration-200"
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-900 dark:text-white bg-white/60 dark:bg-zinc-800/50 border border-zinc-200/80 dark:border-zinc-700/50 backdrop-blur-md transition-colors duration-200"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -163,7 +162,7 @@ export default function Header({ onOpenReview }) {
                     key={link.href}
                     href={link.href}
                     onClick={(e) => handleNavClick(e, link.href)}
-                    className="block px-4 py-3 rounded-xl text-base font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-colors duration-200"
+                    className="block px-4 py-3 rounded-xl text-base font-medium text-zinc-700 dark:text-zinc-200 hover:bg-white/70 dark:hover:bg-zinc-800/60 backdrop-blur-md transition-colors duration-200"
                   >
                     {link.label}
                   </a>

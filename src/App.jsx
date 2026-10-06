@@ -36,6 +36,18 @@ function AppInner() {
     return () => { document.body.style.overflow = ''; };
   }, [loading, showReview, showPolicy, showTerms]);
 
+  // Listen for `open-legal-modal` events dispatched from the review form's
+  // consent checkbox links. Detail shape: { modal: 'privacy' | 'terms' }
+  useEffect(() => {
+    const handler = (e) => {
+      const modal = e?.detail?.modal;
+      if (modal === 'privacy') setShowPolicy(true);
+      if (modal === 'terms') setShowTerms(true);
+    };
+    window.addEventListener('open-legal-modal', handler);
+    return () => window.removeEventListener('open-legal-modal', handler);
+  }, []);
+
   // Opens the review flow.
   //  - Fresh user     → show the two-step form
   //  - Returning user → skip form, resume their existing audit session
@@ -75,6 +87,8 @@ function AppInner() {
           mainGoal:       payload.mainGoal       || null,
           isReturningUser: false,
           silentAccountId: payload.id            || null,
+          agreedToTerms:  payload.agreedToTerms  || false,
+          agreedAt:       payload.agreedAt       || null,
         },
       });
     }, 300);

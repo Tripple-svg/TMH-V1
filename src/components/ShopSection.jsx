@@ -1,26 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, CheckCircle2, ArrowRight, X, ShieldCheck, Zap,
-  Download, PartyPopper, Sparkles,
+  Download,
 } from 'lucide-react';
+import ConfirmModal from './ui/ConfirmModal';
 
 const PAYSTACK_PUBLIC_KEY = 'pk_live_bb9d07c83cbd8bc94ee9c7fb5fb95e14a35fa93b';
+const PAYSTACK_AMOUNT_KOBO = 10000; // ₦100 test — revert to 963900 before launch
 
-// ─────────────────────────────────────────────────────────────────────────
-// TESTING PRICE — currently ₦100 (10,000 kobo) for end-to-end payment tests.
-// Before launch, change this back to 963900 (₦9,639).
-// The FRONT-END display price below (in the modal footer) stays at ₦9,639
-// on purpose so the visual doesn't change during testing.
-// ─────────────────────────────────────────────────────────────────────────
-const PAYSTACK_AMOUNT_KOBO = 10000;
-
-// Public download path. NOTE (security): anyone who knows this URL can grab
-// the PDF for free. Fine during testing. Before launch we move the file to
-// a private Supabase Storage bucket and return a short-lived signed URL
-// from a Paystack webhook.
 const PLAYBOOK_DOWNLOAD_PATH = '/The_Unseen_Playbook!.pdf';
 const PLAYBOOK_FILENAME      = 'The_Unseen_Playbook.pdf';
+const PURCHASE_STORAGE_KEY   = 'tmh_playbook_purchase';
 
 const features = [
   'Stop guessing with marketing and build deep audience clarity',
@@ -38,23 +29,46 @@ const playbookModules = [
 
 export default function ShopSection() {
   const [isPreviewOpen, setIsPreviewOpen]       = useState(false);
-  const [identifier, setIdentifier]             = useState('');
+  const [email, setEmail]                       = useState('');
   const [loading, setLoading]                   = useState(false);
   const [paymentSuccess, setPaymentSuccess]     = useState(false);
   const [paymentReference, setPaymentReference] = useState('');
   const [deliveryContact, setDeliveryContact]   = useState('');
+  const [alreadyDownloaded, setAlreadyDownloaded] = useState(false);
 
-  // ─── Listen for `open-playbook-modal` events dispatched by Haven ────────
+  const [alertState, setAlertState]             = useState(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
+  const paystackHandlerRef = useRef(null);
+
   useEffect(() => {
-    const handler = () => {
-      setPaymentSuccess(false);
-      setPaymentReference('');
-      setDeliveryContact('');
-      setIsPreviewOpen(true);
-    };
+    try {
+      const raw = localStorage.getItem(PURCHASE_STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (data?.reference) {
+        setPaymentReference(data.reference);
+        setDeliveryContact(data.email || '');
+        setPaymentSuccess(true);
+        setAlreadyDownloaded(Boolean(data.downloadedAt));
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setIsPreviewOpen(true);
     window.addEventListener('open-playbook-modal', handler);
     return () => window.removeEventListener('open-playbook-modal', handler);
   }, []);
+
+  useEffect(() => {
+    if (!isPreviewOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isPreviewOpen]);
 
   const loadPaystackScript = () => {
     return new Promise((resolve) => {
@@ -70,10 +84,47 @@ export default function ShopSection() {
     });
   };
 
+  const persistPurchase = (ref, mail, downloadedAt = null) => {
+    try {
+      localStorage.setItem(
+        PURCHASE_STORAGE_KEY,
+        JSON.stringify({
+          reference: ref,
+          email: mail,
+          paidAt: new Date().toISOString(),
+          downloadedAt,
+        })
+      );
+    } catch {}
+  };
+
   const handlePaystackCheckout = async (e) => {
     if (e) e.preventDefault();
-    if (!identifier) {
-      alert('Please enter a valid WhatsApp number or email address to proceed.');
+
+    const trimmed = email.trim();
+
+    // Empty email → distinct message
+    if (!trimmed) {
+      setLoading(false);
+      setAlertState({
+        title: 'Email required',
+        message: 'Please enter your email address to continue to payment.',
+        variant: 'default',
+        confirmText: 'Got it',
+      });
+      return;
+    }
+
+    // Invalid format → distinct message
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+    if (!emailOk) {
+      setLoading(false);
+      setAlertState({
+        title: 'Check your email',
+        message: "That email doesn't look right. Double-check it and try again.",
+        variant: 'default',
+        confirmText: 'Got it',
+      });
       return;
     }
 
@@ -81,14 +132,19 @@ export default function ShopSection() {
     const scriptLoaded = await loadPaystackScript();
 
     if (!scriptLoaded) {
-      alert('Paystack SDK failed to load. Please check your network connection.');
       setLoading(false);
+      setAlertState({
+        title: 'Connection problem',
+        message: 'We could not load the payment system. Check your internet connection and try again.',
+        variant: 'danger',
+        confirmText: 'Retry',
+      });
       return;
     }
 
     const handler = window.PaystackPop.setup({
       key: PAYSTACK_PUBLIC_KEY,
-      email: identifier.includes('@') ? identifier : 'customer@themarketingheaven.xyz',
+      email: trimmed,
       amount: PAYSTACK_AMOUNT_KOBO,
       currency: 'NGN',
       ref: 'UNSEEN_' + Math.floor(Math.random() * 1000000000 + 1),
@@ -99,35 +155,46 @@ export default function ShopSection() {
             variable_name: "product_name",
             value: "The Unseen Playbook",
           },
-          {
-            display_name: "Delivery Contact",
-            variable_name: "delivery_contact",
-            value: identifier,
-          },
         ],
       },
       callback: function (response) {
+        const ref = response.reference || '';
         setLoading(false);
-        // Store the successful payment info and switch the modal into success view.
-        setPaymentReference(response.reference || '');
-        setDeliveryContact(identifier);
+        setPaymentReference(ref);
+        setDeliveryContact(trimmed);
         setPaymentSuccess(true);
-        setIdentifier('');
+        setAlreadyDownloaded(false);
+        persistPurchase(ref, trimmed, null);
+        setEmail('');
+        paystackHandlerRef.current = null;
       },
       onClose: function () {
         setLoading(false);
+        setShowCancelConfirm(true);
+        paystackHandlerRef.current = handler;
       },
     });
 
+    paystackHandlerRef.current = handler;
     handler.openIframe();
   };
 
+  const handleConfirmCancelPayment = () => {
+    setShowCancelConfirm(false);
+    paystackHandlerRef.current = null;
+  };
+
+  const handleDeclineCancelPayment = () => {
+    setShowCancelConfirm(false);
+    const h = paystackHandlerRef.current;
+    if (h) {
+      h.openIframe();
+    }
+  };
+
   const handleDownloadPlaybook = () => {
-    // Trigger a browser download. The `download` attribute on an <a> would be
-    // cleaner, but Paystack opens in an iframe context and some browsers
-    // ignore programmatic anchor downloads mid-transaction, so we use a
-    // direct window.open to the PDF — the browser will either download it
-    // or open its built-in PDF viewer, both of which are acceptable.
+    if (alreadyDownloaded) return;
+
     const a = document.createElement('a');
     a.href = PLAYBOOK_DOWNLOAD_PATH;
     a.download = PLAYBOOK_FILENAME;
@@ -136,16 +203,28 @@ export default function ShopSection() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+
+    setAlreadyDownloaded(true);
+    persistPurchase(paymentReference, deliveryContact, new Date().toISOString());
   };
 
   const handleCloseModal = () => {
     setIsPreviewOpen(false);
-    // Let the exit animation finish before we wipe success state, so the
-    // user doesn't see the purchase form flash during close.
     setTimeout(() => {
-      setPaymentSuccess(false);
-      setPaymentReference('');
-      setDeliveryContact('');
+      const hasPurchase = (() => {
+        try {
+          return Boolean(localStorage.getItem(PURCHASE_STORAGE_KEY));
+        } catch {
+          return false;
+        }
+      })();
+
+      if (!hasPurchase) {
+        setPaymentSuccess(false);
+        setPaymentReference('');
+        setDeliveryContact('');
+        setAlreadyDownloaded(false);
+      }
     }, 300);
   };
 
@@ -154,11 +233,9 @@ export default function ShopSection() {
       id="shop"
       className="relative w-full py-24 sm:py-32 px-4 sm:px-6 lg:px-8 bg-white text-zinc-900 dark:bg-zinc-950 dark:text-white transition-colors duration-300"
     >
-      {/* Background Top Gradient Overlay */}
       <div className="absolute top-0 left-0 right-0 h-32 pointer-events-none bg-gradient-to-b from-zinc-100 to-transparent dark:from-zinc-900 dark:to-transparent transition-colors duration-300" />
 
       <div className="max-w-5xl mx-auto relative z-10">
-        {/* Section Header */}
         <motion.div
           className="text-center mb-12"
           initial={{ opacity: 0, y: 20 }}
@@ -174,7 +251,6 @@ export default function ShopSection() {
           </p>
         </motion.div>
 
-        {/* Product Card */}
         <motion.div
           className="relative rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/5 backdrop-blur-sm shadow-xl dark:shadow-none overflow-hidden transition-colors duration-300"
           initial={{ opacity: 0, y: 30 }}
@@ -183,7 +259,6 @@ export default function ShopSection() {
           transition={{ duration: 0.6 }}
         >
           <div className="grid grid-cols-1 md:grid-cols-2">
-            {/* Playbook Visual Container */}
             <div className="relative aspect-square md:aspect-auto flex items-center justify-center p-8 bg-gradient-to-br from-blue-50 via-zinc-100 to-blue-100/50 dark:from-blue-950/40 dark:via-zinc-900 dark:to-black transition-colors duration-300">
               <div className="relative w-48 h-64 sm:w-56 sm:h-72 rounded-lg shadow-2xl transform rotate-[-2deg] hover:rotate-0 transition-transform duration-500 overflow-hidden">
                 <img
@@ -194,9 +269,8 @@ export default function ShopSection() {
               </div>
             </div>
 
-            {/* Product Meta Details */}
             <div className="p-8 sm:p-10 flex flex-col justify-center">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider w-fit mb-4 bg-blue-100 border border-blue-200 text-blue-700 dark:bg-blue-600/10 dark:border-blue-500/20 dark:text-blue-400">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider w-fit mb-4 bg-zinc-100 border border-zinc-200 text-zinc-700 dark:bg-white/5 dark:border-white/10 dark:text-zinc-300">
                 Featured Playbook
               </div>
 
@@ -228,11 +302,10 @@ export default function ShopSection() {
         </motion.div>
       </div>
 
-      {/* Modal View */}
       <AnimatePresence>
         {isPreviewOpen && (
           <motion.div
-            className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+            className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 overflow-y-auto overscroll-contain"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -248,21 +321,29 @@ export default function ShopSection() {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 20 }}
             >
-              {/* ───────────── HEADER ───────────── */}
               <div className="flex items-center justify-between p-6 border-b border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-blue-100 border border-blue-200 dark:bg-blue-600/20 dark:border-blue-500/30">
-                    {paymentSuccess
-                      ? <PartyPopper className="w-5 h-5 text-blue-600" />
-                      : <BookOpen className="w-5 h-5 text-blue-600" />
-                    }
+                  <div
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
+                      paymentSuccess
+                        ? 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
+                        : 'bg-blue-100 dark:bg-blue-600/20 border-blue-200 dark:border-blue-500/30'
+                    }`}
+                  >
+                    {paymentSuccess ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <BookOpen className="w-5 h-5 text-blue-600" />
+                    )}
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
                       {paymentSuccess ? "You're In." : 'The Unseen Playbook'}
                     </h3>
-                    <p className="text-xs text-blue-600 font-medium">
-                      {paymentSuccess ? 'Payment Confirmed — Download Below' : 'Digital Blueprint & Strategy Guide'}
+                    <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                      {paymentSuccess
+                        ? (alreadyDownloaded ? 'Download Delivered' : 'Payment Confirmed')
+                        : 'Digital Blueprint & Strategy Guide'}
                     </p>
                   </div>
                 </div>
@@ -274,9 +355,8 @@ export default function ShopSection() {
                 </button>
               </div>
 
-              {/* ───────────── SUCCESS VIEW ───────────── */}
               {paymentSuccess ? (
-                <div className="p-6 sm:p-8 overflow-y-auto space-y-6 text-center">
+                <div className="p-6 sm:p-8 overflow-y-auto overscroll-contain space-y-6 text-center">
                   <motion.div
                     initial={{ scale: 0.6, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
@@ -291,7 +371,7 @@ export default function ShopSection() {
                       Payment Successful
                     </h4>
                     <p className="text-sm text-zinc-600 dark:text-zinc-400 max-w-md mx-auto leading-relaxed">
-                      Thank you for grabbing The Unseen Playbook. Your copy is ready — click below to download it straight to your device.
+                      Thank you for grabbing The Unseen Playbook. Your copy is ready. Click below to download it straight to your device.
                     </p>
                   </div>
 
@@ -300,40 +380,53 @@ export default function ShopSection() {
                       <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                       <span>Reference:</span>
                       <span className="font-mono font-semibold text-zinc-900 dark:text-white">
-                        {paymentReference || 'UNSEEN_' + Math.floor(Math.random() * 1000000000 + 1)}
+                        {paymentReference || '—'}
                       </span>
                     </div>
                     {deliveryContact && (
                       <div className="text-[11px] text-zinc-500 dark:text-zinc-500">
-                        A copy will also be dispatched to <span className="font-medium text-zinc-700 dark:text-zinc-300">{deliveryContact}</span>
+                        Receipt sent to <span className="font-medium text-zinc-700 dark:text-zinc-300">{deliveryContact}</span>
                       </div>
                     )}
                   </div>
 
-                  <button
-                    onClick={handleDownloadPlaybook}
-                    className="w-full inline-flex items-center justify-center gap-3 px-8 py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-base transition-all shadow-lg shadow-emerald-600/25 active:scale-[0.98]"
-                  >
-                    <Download className="w-5 h-5" />
-                    Download The Unseen Playbook
-                  </button>
+                  {alreadyDownloaded ? (
+                    <div className="w-full inline-flex items-center justify-center gap-3 px-8 py-4 rounded-xl bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-semibold text-base cursor-not-allowed select-none border border-zinc-300 dark:border-zinc-700">
+                      <Download className="w-5 h-5" />
+                      Download Completed
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleDownloadPlaybook}
+                      className="w-full inline-flex items-center justify-center gap-3 px-8 py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-base transition-all shadow-lg shadow-emerald-600/25 active:scale-[0.98]"
+                    >
+                      <Download className="w-5 h-5" />
+                      Download The Unseen Playbook
+                    </button>
+                  )}
 
-                  <div className="flex items-center justify-center gap-2 pt-2 text-xs text-zinc-500 dark:text-zinc-500">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Save it somewhere safe — this is your copy.</span>
+                  <div className="pt-6 mt-2 border-t border-zinc-200 dark:border-white/10 text-left">
+                    <div className="flex items-center gap-2">
+                      <span className="block w-5 h-px bg-blue-500" />
+                      <span className="text-[10px] font-mono uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-500">
+                        A Note From Us
+                      </span>
+                    </div>
+                    <p className="mt-4 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
+                      Congratulations on your copy. Enjoy the read. And if you need any clarity or help applying anything, reach out to us anytime. We are here.
+                    </p>
                   </div>
 
                   <button
                     onClick={handleCloseModal}
-                    className="w-full px-4 py-2.5 rounded-xl text-sm text-zinc-500 dark:text-zinc-400 bg-white/[0.04] border border-zinc-200 dark:border-white/[0.06] hover:bg-white/[0.08] transition-all"
+                    className="w-full px-4 py-3 rounded-xl text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-600 transition-all active:scale-[0.98] shadow-md shadow-emerald-700/20"
                   >
                     Close
                   </button>
                 </div>
               ) : (
-                /* ───────────── PURCHASE VIEW ───────────── */
                 <>
-                  <div className="p-6 sm:p-8 overflow-y-auto space-y-6">
+                  <div className="p-6 sm:p-8 overflow-y-auto overscroll-contain space-y-6">
                     <div>
                       <h4 className="text-base font-semibold mb-2 text-zinc-900 dark:text-white">
                         What's Inside The Playbook?
@@ -362,24 +455,24 @@ export default function ShopSection() {
 
                     <form id="paystack-form" onSubmit={handlePaystackCheckout} className="space-y-3 pt-2">
                       <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
-                        Enter WhatsApp Number or Email for Delivery *
+                        Email for your receipt *
                       </label>
                       <input
-                        type="text"
+                        type="email"
                         required
-                        value={identifier}
-                        onChange={(e) => setIdentifier(e.target.value)}
-                        placeholder="e.g. 08012345678 or your@email.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="your@email.com"
                         className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-white/10 bg-zinc-50 dark:bg-white/5 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-600 transition-colors"
                       />
                       <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                        We will dispatch your copy directly to your WhatsApp or email upon successful payment.
+                        Your receipt will be sent here. Your download starts the moment payment confirms.
                       </p>
                     </form>
 
                     <div className="flex items-center gap-3 p-4 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 text-xs">
                       <ShieldCheck className="w-5 h-5 shrink-0 text-emerald-600" />
-                      <span>Instant delivery access dispatched upon successful transaction via Paystack.</span>
+                      <span>Instant download. Easy access after payment.</span>
                     </div>
                   </div>
 
@@ -409,6 +502,28 @@ export default function ShopSection() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        isOpen={Boolean(alertState)}
+        onClose={() => setAlertState(null)}
+        title={alertState?.title || ''}
+        message={alertState?.message || ''}
+        confirmText={alertState?.confirmText || 'OK'}
+        variant={alertState?.variant || 'default'}
+        mode="alert"
+      />
+
+      <ConfirmModal
+        isOpen={showCancelConfirm}
+        onClose={handleDeclineCancelPayment}
+        onConfirm={handleConfirmCancelPayment}
+        title="Cancel payment?"
+        message="Your payment has not gone through. If you change your mind, you can start over any time."
+        confirmText="Yes, cancel"
+        cancelText="No, continue"
+        variant="danger"
+        mode="confirm"
+      />
     </section>
   );
 }
