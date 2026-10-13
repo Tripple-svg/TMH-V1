@@ -12,6 +12,7 @@ const PAYSTACK_AMOUNT_KOBO = 10000; // ₦100 test — revert to 963900 before l
 const PLAYBOOK_DOWNLOAD_PATH = '/The_Unseen_Playbook!.pdf';
 const PLAYBOOK_FILENAME      = 'The_Unseen_Playbook.pdf';
 const PURCHASE_STORAGE_KEY   = 'tmh_playbook_purchase';
+const PAYMENT_TIMEOUT_MS     = 90 * 1000; // 90s — reset if Paystack goes silent
 
 const features = [
   'Stop guessing with marketing and build deep audience clarity',
@@ -40,6 +41,14 @@ export default function ShopSection() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   const paystackHandlerRef = useRef(null);
+  const paymentTimeoutRef  = useRef(null);
+
+  const clearPaymentTimeout = () => {
+    if (paymentTimeoutRef.current) {
+      clearTimeout(paymentTimeoutRef.current);
+      paymentTimeoutRef.current = null;
+    }
+  };
 
   useEffect(() => {
     try {
@@ -69,6 +78,11 @@ export default function ShopSection() {
       document.body.style.overflow = prev;
     };
   }, [isPreviewOpen]);
+
+  // Cleanup any pending timeout on unmount
+  useEffect(() => {
+    return () => clearPaymentTimeout();
+  }, []);
 
   const loadPaystackScript = () => {
     return new Promise((resolve) => {
@@ -103,7 +117,6 @@ export default function ShopSection() {
 
     const trimmed = email.trim();
 
-    // Empty email → distinct message
     if (!trimmed) {
       setLoading(false);
       setAlertState({
@@ -115,7 +128,6 @@ export default function ShopSection() {
       return;
     }
 
-    // Invalid format → distinct message
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
     if (!emailOk) {
       setLoading(false);
@@ -158,6 +170,7 @@ export default function ShopSection() {
         ],
       },
       callback: function (response) {
+        clearPaymentTimeout();
         const ref = response.reference || '';
         setLoading(false);
         setPaymentReference(ref);
@@ -169,6 +182,7 @@ export default function ShopSection() {
         paystackHandlerRef.current = null;
       },
       onClose: function () {
+        clearPaymentTimeout();
         setLoading(false);
         setShowCancelConfirm(true);
         paystackHandlerRef.current = handler;
@@ -177,6 +191,20 @@ export default function ShopSection() {
 
     paystackHandlerRef.current = handler;
     handler.openIframe();
+
+    // If Paystack goes silent (script hangs, network drop, iframe never
+    // loads), reset the button after 90s so the user isn't stuck.
+    clearPaymentTimeout();
+    paymentTimeoutRef.current = setTimeout(() => {
+      setLoading(false);
+      setAlertState({
+        title: 'Payment did not open',
+        message: "Something blocked the payment window. Check your connection and try again.",
+        variant: 'default',
+        confirmText: 'Got it',
+      });
+      paymentTimeoutRef.current = null;
+    }, PAYMENT_TIMEOUT_MS);
   };
 
   const handleConfirmCancelPayment = () => {
@@ -231,7 +259,7 @@ export default function ShopSection() {
   return (
     <section
       id="shop"
-      className="relative w-full py-24 sm:py-32 px-4 sm:px-6 lg:px-8 bg-white text-zinc-900 dark:bg-zinc-950 dark:text-white transition-colors duration-300"
+     className="relative w-full pt-24 pb-12 sm:py-32 px-4 sm:px-6 lg:px-8 bg-white text-zinc-900 dark:bg-zinc-950 dark:text-white transition-colors duration-300"
     >
       <div className="absolute top-0 left-0 right-0 h-32 pointer-events-none bg-gradient-to-b from-zinc-100 to-transparent dark:from-zinc-900 dark:to-transparent transition-colors duration-300" />
 
@@ -432,7 +460,7 @@ export default function ShopSection() {
                         What's Inside The Playbook?
                       </h4>
                       <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
-                        Remove the fluff and noise. This playbook gives founders, creators, and marketers the exact lenses needed to stop guessing and build systems with absolute clarity.
+                        Removes the confusion and noise. This playbook gives founders, creators, and marketers the exact lenses needed to stop guessing and build systems with absolute clarity.
                       </p>
                     </div>
 
@@ -455,7 +483,7 @@ export default function ShopSection() {
 
                     <form id="paystack-form" onSubmit={handlePaystackCheckout} className="space-y-3 pt-2">
                       <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
-                        Email for your receipt *
+                        Email for your receipt
                       </label>
                       <input
                         type="email"

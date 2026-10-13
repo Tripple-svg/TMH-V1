@@ -1,5 +1,5 @@
 // src/components/haven/components/HavenDrawer.jsx
-// VERSION 4.9 — Calendly re-open reminder.
+// VERSION 5.1 — Faster spring animations on drawer + history sidebar.
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -188,6 +188,7 @@ export default function HavenDrawer() {
     sessions = [], activeSessionId, currentSession, messages = [],
     createNewSession, switchSession, togglePinSession, deleteSession,
     sendMessage, sendNavChipIntent, isThinking, userProfile = {},
+    updateUserProfile,
     showToast, toastMessage, clearChat, stopResponse,
     bookingNoticeOpen, setBookingNoticeOpen,
     auditPreflight, proceedFromPreflight, retryScrape,
@@ -320,9 +321,14 @@ export default function HavenDrawer() {
   }, []);
 
   const handleChipSelect = useCallback((text) => {
-    if (text === '__BOOK_CALL__') { setShowBookingModal(true); return; }
+    if (text === '__BOOK_CALL__') {
+      updateUserProfile?.({ clickedBookingLink: true });
+      setShowBookingModal(true);
+      return;
+    }
 
     if (text === '__PLAYBOOK__') {
+      updateUserProfile?.({ clickedPlaybookLink: true });
       closeDrawer();
       setTimeout(() => {
         document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -340,7 +346,7 @@ export default function HavenDrawer() {
 
     armForceScroll();
     sendMessage(text);
-  }, [sendMessage, closeDrawer, armForceScroll]);
+  }, [sendMessage, closeDrawer, armForceScroll, updateUserProfile]);
 
   const handleNavChipSelect = useCallback((navChip) => {
     if (!navChip || !navChip.text) return;
@@ -406,7 +412,7 @@ export default function HavenDrawer() {
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 34 }}
               style={drawerStyle}
               className="fixed right-0 z-50 w-full max-w-md flex flex-col bg-zinc-950/[0.85] backdrop-blur-2xl border-l border-white/[0.08] shadow-2xl shadow-black/60 overflow-hidden overflow-x-hidden">
 
@@ -528,7 +534,7 @@ export default function HavenDrawer() {
                       className="absolute inset-0 z-30 bg-black/50 backdrop-blur-sm" />
                     <motion.div id="haven-history-sidebar"
                       initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }}
-                      transition={{ type: 'spring', stiffness: 350, damping: 32 }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
                       className="absolute top-[3.25rem] left-0 bottom-0 w-3/4 max-w-[280px] z-40 bg-zinc-950/[0.85] backdrop-blur-2xl border-r border-white/[0.08] p-4 flex flex-col space-y-4 shadow-2xl shadow-black/60">
                       <div className="flex items-center justify-between pb-2 border-b border-white/[0.05]">
                         <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">Chat History</span>

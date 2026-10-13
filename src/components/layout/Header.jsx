@@ -5,10 +5,10 @@ import { useTheme } from '../../context/ThemeContext';
 
 const navLinks = [
   { label: 'Home', href: '#hero' },
-  { label: 'About Us', href: '#about' },
+  { label: 'About', href: '#about' },
   { label: 'Services', href: '#services' },
-  { label: 'The Playbook', href: '#shop' },
-  { label: 'Free Class', href: '#free-class' },
+  { label: 'Playbook', href: '#shop' },
+  { label: 'Class', href: '#free-class' },
   { label: 'Testimonials', href: '#testimonials' },
 ];
 
@@ -66,13 +66,13 @@ export default function Header({ onOpenReview }) {
           </a>
 
           {/* Desktop Navigation */}
-          <nav className="hidden xl:flex items-center gap-7">
+          <nav className="hidden xl:flex items-center gap-6">
             {navLinks.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
                 onClick={(e) => handleNavClick(e, link.href)}
-                className="relative text-xs sm:text-sm font-medium uppercase tracking-wider text-zinc-800 dark:text-zinc-200 hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 group py-1"
+                className="relative text-xs sm:text-sm font-medium uppercase tracking-wider text-zinc-800 dark:text-zinc-200 hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 group py-1 whitespace-nowrap"
               >
                 {link.label}
                 <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-600 transition-all duration-300 group-hover:w-full" />
@@ -81,7 +81,7 @@ export default function Header({ onOpenReview }) {
           </nav>
 
           {/* Actions & Mobile Toggle */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button
               onClick={toggleTheme}
               type="button"
@@ -107,9 +107,9 @@ export default function Header({ onOpenReview }) {
 
             <button
               onClick={onOpenReview}
-              className="hidden sm:flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium px-5 py-2.5 rounded-full transition-all duration-200 shadow-lg shadow-blue-600/25 active:scale-95 text-xs sm:text-sm border border-blue-400/30"
+              className="hidden sm:flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium px-5 py-2.5 rounded-full transition-all duration-200 shadow-lg shadow-blue-600/25 active:scale-95 text-xs sm:text-sm border border-blue-400/30 whitespace-nowrap"
             >
-              <span>Request a Free Brand Review</span>
+              <span>Request Review</span>
               <ArrowRight className="w-4 h-4" />
             </button>
 
@@ -124,7 +124,7 @@ export default function Header({ onOpenReview }) {
         </div>
       </header>
 
-      {/* Mobile & Tablet Drawer — opacity matched to header */}
+      {/* Mobile & Tablet Drawer */}
       <AnimatePresence>
         {drawerOpen && (
           <>
@@ -141,7 +141,7 @@ export default function Header({ onOpenReview }) {
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 34 }}
               className="fixed top-0 right-0 bottom-0 z-50 w-[85%] sm:w-[60%] md:w-[45%] max-w-sm bg-white/75 dark:bg-zinc-950/40 backdrop-blur-2xl border-l border-zinc-200/80 dark:border-zinc-800/60 shadow-2xl flex flex-col"
             >
               <div className="flex items-center justify-between p-6 border-b border-zinc-200/50 dark:border-zinc-800/50">

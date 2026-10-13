@@ -1,4 +1,4 @@
-import { supabase, supabaseAdmin } from './supabase';
+import { supabase } from './supabase';
 
 const SCREENSHOT_BUCKET = 'tmh-screenshots';
 
@@ -66,6 +66,7 @@ async function uploadScreenshot(reviewId, base64DataUrl) {
 export async function createBrandReview(payload) {
   try {
     const id = payload.id || makeId();
+    const sessionId = makeId();
     const screenshotUrl = await uploadScreenshot(id, payload.screenshotBase64 || null);
 
     const review = {
@@ -90,14 +91,31 @@ export async function createBrandReview(payload) {
       days_to_convert: payload.daysToConvert ?? payload.days_to_convert ?? 0,
       country: payload.country || null,
       city: payload.city || null,
+      agreed_to_terms: Boolean(payload.agreedToTerms ?? payload.agreed_to_terms ?? false),
+      agreed_at: payload.agreedAt || payload.agreed_at || null,
     };
 
     const { error } = await supabase.from('brand_reviews').insert(review);
     if (error) throw error;
-    return { success: true, reviewId: id };
+
+    const session = {
+      id: sessionId,
+      review_id: id,
+      scope: 'audit',
+      service_id: null,
+      messages: [],
+      current_step: 'GREETING',
+      last_step_reached: 'GREETING',
+      total_exchanges: 0,
+    };
+
+    const { error: sessionError } = await supabase.from('haven_sessions').insert(session);
+    if (sessionError) throw sessionError;
+
+    return { success: true, reviewId: id, sessionId };
   } catch (error) {
     console.error('Unable to create brand review:', error);
-    return { success: false, reviewId: null, error };
+    return { success: false, reviewId: null, sessionId: null, error };
   }
 }
 
@@ -157,20 +175,17 @@ export async function updateFollowupStatus(reviewId, {
     ...(convertedToPurchase !== undefined && { converted_to_purchase: convertedToPurchase }),
     ...(dealValue !== undefined && { deal_value: dealValue || null }),
   };
-  const client = supabaseAdmin || supabase;
-  const { error } = await client.from('brand_reviews').update(update).eq('id', reviewId);
+  const { error } = await supabase.from('brand_reviews').update(update).eq('id', reviewId);
   return error ? { success: false, error } : { success: true };
 }
 
 export async function getScreenshotSignedUrl(storagePath) {
   if (!storagePath) return { success: false, signedUrl: null };
-  const client = supabaseAdmin || supabase;
-  const { data, error } = await client.storage.from(SCREENSHOT_BUCKET).createSignedUrl(storagePath, 3600);
+  const { data, error } = await supabase.storage.from(SCREENSHOT_BUCKET).createSignedUrl(storagePath, 3600);
   return error ? { success: false, signedUrl: null, error } : { success: true, signedUrl: data.signedUrl };
 }
 
 export async function getAllReviews() {
-  const client = supabaseAdmin || supabase;
-  const { data, error } = await client.from('admin_lead_overview').select('*').order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('admin_lead_overview').select('*').order('created_at', { ascending: false });
   return error ? { success: false, data: [], error } : { success: true, data: data || [] };
 }

@@ -1,8 +1,11 @@
 // src/components/haven/context/HavenContext.jsx
-// VERSION 4.9 — Restores last-active support session on reopen.
+// VERSION 5.6 — Persists haven_score, score_breakdown, biggest_leak,
+// assessment_summary to brand_reviews alongside lead temperature
+// and click flags.
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { buildHavenSystemPrompt, STEPS } from '../config/prompts';
+import { buildHavenSystemPrompt, STEPS, LEADS } from '../config/prompts';
+import { scheduleHavenSessionSync } from '../../../lib/havenSessionSync';
 
 export const HavenContext = createContext(null);
 
@@ -16,6 +19,8 @@ const PROFILE_STORAGE_KEY        = 'tmh_haven_user_profile_v1';
 const PREFLIGHT_STORAGE_KEY      = 'tmh_haven_audit_preflight_v1';
 const SCORE_CACHE_KEY            = 'tmh_haven_score_cache_v1';
 const LAST_SUPPORT_SESSION_KEY   = 'tmh_haven_last_support_session';
+const SESSION_ID_KEY             = 'haven_session_id';
+const REVIEW_ID_KEY              = 'haven_review_id';
 const SCORE_CACHE_TTL            = 24 * 60 * 60 * 1000;
 
 const DEFAULT_USER_PROFILE = {
@@ -27,6 +32,9 @@ const DEFAULT_USER_PROFILE = {
   assessmentSummary: null, biggestLeak: null,
   biggestProblems: [], silentAccountId: null, exchangeCount: 0,
   currentStep: STEPS.GREETING, isReturningUser: false,
+  leadTemperature: null,
+  clickedBookingLink: false,
+  clickedPlaybookLink: false,
 };
 
 const DEFAULT_PREFLIGHT = {
@@ -61,6 +69,34 @@ function parseNavChipsFromText(rawText) {
     });
   }
   return { navChips, cleanedText: rawText.replace(regex, '').trim() };
+}
+
+function parseStepMarker(rawText) {
+  if (!rawText || typeof rawText !== 'string') {
+    return { step: null, cleanedText: rawText || '' };
+  }
+  const regex = /\[\[STEP:([A-Z_]+)\]\]/g;
+  let step = null;
+  let match;
+  while ((match = regex.exec(rawText)) !== null) {
+    const candidate = match[1];
+    if (Object.prototype.hasOwnProperty.call(STEPS, candidate)) step = candidate;
+  }
+  return { step, cleanedText: rawText.replace(regex, '').trim() };
+}
+
+function parseLeadMarker(rawText) {
+  if (!rawText || typeof rawText !== 'string') {
+    return { lead: null, cleanedText: rawText || '' };
+  }
+  const regex = /\[\[LEAD:([A-Z]+)\]\]/g;
+  let lead = null;
+  let match;
+  while ((match = regex.exec(rawText)) !== null) {
+    const candidate = match[1];
+    if (Object.prototype.hasOwnProperty.call(LEADS, candidate)) lead = candidate;
+  }
+  return { lead, cleanedText: rawText.replace(regex, '').trim() };
 }
 
 function makeDefaultSupportSession() {
@@ -237,7 +273,6 @@ export function HavenProvider({ children }) {
   useEffect(() => { if (mounted) saveUserProfile(userProfile); },                    [userProfile,     mounted]);
   useEffect(() => { if (mounted) savePreflight(auditPreflight); },                   [auditPreflight,  mounted]);
 
-  // Persist last-active support session ID so reopening returns to the same chat.
   useEffect(() => {
     if (!mounted) return;
     if (activeScope !== 'support') return;
@@ -245,6 +280,56 @@ export function HavenProvider({ children }) {
       localStorage.setItem(LAST_SUPPORT_SESSION_KEY, activeSessionId);
     } catch {}
   }, [activeScope, activeSessionId, mounted]);
+
+  // Debounced, fire-and-forget sync. Now includes score + leak + summary.
+  useEffect(() => {
+    if (!mounted) return;
+
+    let storedSessionId = null;
+    let storedReviewId = null;
+    try {
+      storedSessionId = localStorage.getItem(SESSION_ID_KEY);
+      storedReviewId = localStorage.getItem(REVIEW_ID_KEY);
+    } catch {}
+    if (!storedSessionId) return;
+
+    const session = auditSessions.find(s => s.id === storedSessionId);
+    if (!session) return;
+
+    const totalExchanges = session.messages.filter(
+      m => m.role === 'user' && !m.isChipIntent
+    ).length;
+    const currentStep = userProfile.currentStep || STEPS.GREETING;
+
+    scheduleHavenSessionSync({
+      sessionId: session.id,
+      reviewId: storedReviewId,
+      messages: session.messages,
+      currentStep,
+      lastStepReached: currentStep,
+      totalExchanges,
+      leadTemperature: userProfile.leadTemperature || null,
+      clickedBookingLink: userProfile.clickedBookingLink || false,
+      clickedPlaybookLink: userProfile.clickedPlaybookLink || false,
+      websiteScore: userProfile.auditScore ?? null,
+      scoreBreakdown: userProfile.scoreBreakdown || null,
+      // HavenContext stores the scorer's output as `biggestIssue`. Map it
+      // to the DB column `biggest_leak`.
+      biggestLeak: userProfile.biggestIssue || null,
+      assessmentSummary: userProfile.assessmentSummary || null,
+    });
+  }, [
+    auditSessions,
+    userProfile.currentStep,
+    userProfile.leadTemperature,
+    userProfile.clickedBookingLink,
+    userProfile.clickedPlaybookLink,
+    userProfile.auditScore,
+    userProfile.scoreBreakdown,
+    userProfile.biggestIssue,
+    userProfile.assessmentSummary,
+    mounted,
+  ]);
 
   const getSessionsForScope = useCallback((scope) => {
     if (scope === 'support') return supportSessions;
@@ -297,9 +382,9 @@ export function HavenProvider({ children }) {
     return newMessage;
   }, [activeScope, activeSessionId, setSessionsForScope]);
 
-  const createSession = useCallback((scope, { title, serviceId = null, initialMessage = null } = {}) => {
+  const createSession = useCallback((scope, { id: providedId, title, serviceId = null, initialMessage = null } = {}) => {
     const newSession = {
-      id: `session-${scope}-${serviceId || 'gen'}-${Date.now()}`,
+      id: providedId || `session-${scope}-${serviceId || 'gen'}-${Date.now()}`,
       title: title || 'New Chat', scope, serviceId,
       isPinned: false, createdAt: Date.now(),
       messages: initialMessage ? [initialMessage] : [],
@@ -423,6 +508,8 @@ export function HavenProvider({ children }) {
         ...prev,
         auditScore: result.score ?? null, scoreBreakdown: result.breakdown ?? null,
         biggestIssue: result.biggestIssue ?? null,
+        scrapedWebSummary: null,
+        scrapeFailed: false,
       }));
 
       if (result.score != null) {
@@ -440,6 +527,7 @@ export function HavenProvider({ children }) {
         error: err instanceof Error ? err.message : 'Unknown error',
         dismissed: false, retryCount: (prev.retryCount || 0) + 1,
       }));
+      setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true }));
     }
   }, []);
 
@@ -501,12 +589,6 @@ export function HavenProvider({ children }) {
       const screenshot     = profileData?.screenshot     || userProfile.screenshot;
       const websiteUrl     = profileData?.websiteUrl     || userProfile.websiteUrl;
 
-      let platform;
-      if (businessDomain === 'website') platform = websiteUrl ? `your website (${websiteUrl})` : 'your website';
-      else if (businessDomain === 'website_and_social') platform = 'your website and social media';
-      else if (businessDomain === 'none') platform = 'your brand';
-      else platform = profileData?.platform || userProfile.platform || 'your social media';
-
       if (isReturning) {
         const existingAudit = auditSessions.length > 0
           ? auditSessions.reduce((best, s) =>
@@ -535,13 +617,17 @@ export function HavenProvider({ children }) {
       const brand        = brandName ? ` for **${brandName}**` : '';
 
       let greetingContent = '';
-if (businessDomain === 'none') {
-  greetingContent = `${greetingName}! I've received your details${brand}.\n\nBefore we go deeper — are you building from scratch, or do you already have customers and simply haven't set up a social space yet?`;
-} else {
-  greetingContent = `${greetingName}! I've received your submission${brand}.\n\nBefore I share what I'm seeing, what's been the single biggest challenge with getting sales or enquiries from ${platform} lately?`;
-}
+      if (businessDomain === 'none') {
+        greetingContent = `${greetingName}! I've received your details${brand}.\n\nBefore we go deeper — are you building from scratch, or do you already have customers and simply haven't set up a social space yet?`;
+      } else {
+        greetingContent = `${greetingName}! I've received your submission${brand}.\n\nBefore we dig into anything — what's the single biggest challenge you're facing with ${brandName || 'your brand'} at the moment?`;
+      }
+
+      let storedSessionId = null;
+      try { storedSessionId = localStorage.getItem(SESSION_ID_KEY); } catch {}
 
       createSession('audit', {
+        id: storedSessionId || undefined,
         title: `${brandName || 'Brand'} Review`,
         serviceId: 'brand-audit',
         initialMessage: {
@@ -572,7 +658,6 @@ if (businessDomain === 'none') {
           });
         }
       } else {
-        // Restore last active support session, or fall back to a default one.
         let lastSupportId = null;
         try {
           lastSupportId = localStorage.getItem(LAST_SUPPORT_SESSION_KEY);
@@ -706,6 +791,7 @@ if (businessDomain === 'none') {
       handle:          userProfile.handle,
       isReturningUser: isReturningInThisScope,
       mainGoal:        userProfile.mainGoal,
+      leadTemperature: userProfile.leadTemperature || null,
     };
     if (activeScope === 'audit') {
       auditData.scrapedWebSummary = userProfile.scrapedWebSummary || null;
@@ -752,7 +838,10 @@ if (businessDomain === 'none') {
         screenshot: screenshotToSend, scope: activeScope, signal: controller.signal,
       });
 
-      const { navChips: navChipsFromTag, cleanedText } = parseNavChipsFromText(result.text);
+      const { step: newStep, cleanedText: textAfterStep } = parseStepMarker(result.text);
+      const { lead: newLead, cleanedText: textAfterLead } = parseLeadMarker(textAfterStep);
+      const { navChips: navChipsFromTag, cleanedText } = parseNavChipsFromText(textAfterLead);
+
       const regularChips = [];
       const navChipObjects = [];
 
@@ -773,6 +862,15 @@ if (businessDomain === 'none') {
       if (specialChips.length > 0) agentExtraProps.chips = specialChips;
       else if (regularChips.length > 0) agentExtraProps.chips = regularChips;
       if (navChipObjects.length > 0) agentExtraProps.navChips = navChipObjects;
+
+      if (activeScope === 'audit') {
+        const profileUpdates = {};
+        if (newStep) profileUpdates.currentStep = newStep;
+        if (newLead) profileUpdates.leadTemperature = newLead;
+        if (Object.keys(profileUpdates).length > 0) {
+          setUserProfile(prev => ({ ...prev, ...profileUpdates }));
+        }
+      }
 
       addMessage('agent', cleanedText, null, agentExtraProps);
     } catch (err) {

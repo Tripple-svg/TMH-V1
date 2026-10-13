@@ -1,12 +1,11 @@
 // src/components/haven/components/chat/ChatMessage.jsx
-// V4.0 — Restrained zinc + blue aesthetic.
+// V4.1 — Chip overflow protection.
 
 import React, { memo, useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { User, Sparkles, Calendar, ArrowRight, BookOpen, Music2 } from 'lucide-react';
 
 const LOGO_SRC = "/Tmhh.jpeg";
-const CALENDLY_FALLBACK_URL = "https://calendly.com/themarketinghaven01/30min";
 
 function formatTime(timestamp) {
   const date = new Date(timestamp);
@@ -75,10 +74,10 @@ function NavChipBar({ navChips, onNavChipSelect }) {
           key={`nav-${chip.text}-${idx}`}
           type="button"
           onClick={() => onNavChipSelect?.(chip)}
-          className="shrink-0 flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-300 transition hover:border-blue-500/40 hover:bg-white/[0.05] hover:text-white cursor-pointer"
+          className="shrink-0 flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-300 transition hover:border-blue-500/40 hover:bg-white/[0.05] hover:text-white cursor-pointer max-w-[260px]"
         >
-          <ArrowRight className="w-3 h-3 text-blue-500" />
-          <span>{chip.text}</span>
+          <ArrowRight className="w-3 h-3 text-blue-500 shrink-0" />
+          <span className="truncate">{chip.text}</span>
         </button>
       ))}
     </motion.div>
@@ -139,9 +138,9 @@ function ChipBar({ chips, onChipSelect }) {
             key={`${chip}-${idx}`}
             type="button"
             onClick={() => onChipSelect?.(chip)}
-            className="shrink-0 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-300 transition hover:border-blue-500/40 hover:bg-white/[0.05] hover:text-white cursor-pointer"
+            className="shrink-0 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-300 transition hover:border-blue-500/40 hover:bg-white/[0.05] hover:text-white cursor-pointer max-w-[260px]"
           >
-            {chip}
+            <span className="block truncate">{chip}</span>
           </button>
         );
       })}
@@ -215,7 +214,7 @@ const ChatMessage = memo(function ChatMessage({
           )}
         </div>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 min-w-0">
           {hasBubbleContent && (
             <div
               className={`${bubblePadding} rounded-2xl ${bubbleTextSize} leading-relaxed backdrop-blur-sm border ${

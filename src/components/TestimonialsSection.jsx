@@ -8,12 +8,12 @@ const TESTIMONIALS = [
     id: 'damilola',
     name: 'Damilola',
     initials: 'DA',
-    image: null,
+    image: '/Dammy.jpeg',
     videoSrc: '/Testimonial.mp4',
     wordsImage: null,
     wordsLabel: 'In Her Own Words',
     words:
-      "Damilola's full message will appear here once her screenshot is ready. It will be her own words about the Playbook and what shifted for her.",
+      "Honestly, at first glance I thought this was just another standard marketing agency. But after just one session, I was completely convinced I made the right choice. Unlike other agencies, they treat and carry your brand like it's their own. And as a founder, there's no better feeling than that.",
   },
   {
     id: 'stephanie',
@@ -119,6 +119,15 @@ export default function TestimonialsSection() {
     }
   };
 
+  // Pause the video before unmounting so the browser doesn't tear down
+  // an active GPU context mid-animation, which causes close lag.
+  const closeVideo = () => {
+    if (videoRef.current) {
+      try { videoRef.current.pause(); } catch {}
+    }
+    setIsVideoOpen(false);
+  };
+
   const openVideo = () => {
     if (!currentPerson.videoSrc) return;
     setIsVideoOpen(true);
@@ -162,7 +171,6 @@ export default function TestimonialsSection() {
     >
       <div className="max-w-5xl mx-auto relative z-10">
 
-        {/* Header — top gap tightened (mb-8 → mb-4) */}
         <div className="text-center max-w-2xl mx-auto mb-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -180,7 +188,6 @@ export default function TestimonialsSection() {
         </div>
 
         <div className="relative mb-6">
-          {/* Carousel min-height reduced — card sits closer to heading */}
           <div className="relative overflow-hidden min-h-[380px] sm:min-h-[460px]">
             <AnimatePresence mode="wait" custom={direction}>
               <motion.div
@@ -205,7 +212,7 @@ export default function TestimonialsSection() {
                       <img
                         src={currentPerson.image}
                         alt={currentPerson.name}
-                        className="absolute inset-0 w-full h-full object-cover object-center"
+                        className="absolute inset-0 w-full h-full object-cover object-top"
                       />
                     ) : (
                       <span className="absolute inset-0 flex items-center justify-center text-white/15 text-[140px] sm:text-[160px] font-black tracking-tighter select-none leading-none">
@@ -245,44 +252,34 @@ export default function TestimonialsSection() {
 
                 {currentSlide.type === 'words' && (
                   <div className="w-full max-w-xl">
-                    <div
-                      className="relative w-full rounded-3xl overflow-hidden border border-zinc-200 dark:border-white/10 shadow-xl p-8 sm:p-12"
-                      style={currentPerson.wordsImage ? undefined : patternStyle}
-                    >
-                      {currentPerson.wordsImage ? (
-                        <div className="relative">
-                          <div className="rounded-2xl overflow-hidden border border-white/10 bg-zinc-900/60 backdrop-blur-md p-3">
-                            <img
-                              src={currentPerson.wordsImage}
-                              alt={`${currentPerson.name}'s message`}
-                              className="w-full h-auto rounded-xl"
-                            />
-                          </div>
-                          <p className="mt-4 text-[11px] font-mono uppercase tracking-[0.2em] text-zinc-400/70 text-center">
-                            {currentPerson.name}
-                          </p>
+                    <div className="relative w-full rounded-3xl overflow-hidden border border-zinc-200 dark:border-white/10 shadow-xl p-8 sm:p-12">
+                      <img
+                        src="/Background.jpeg"
+                        alt=""
+                        aria-hidden="true"
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/55" />
+
+                      <div className="relative z-10">
+                        <div className="flex items-center gap-2 mb-6 justify-center">
+                          <span className="block w-5 h-px bg-white/40" />
+                          <span className="text-[10px] font-mono uppercase tracking-[0.28em] text-white/80">
+                            {currentPerson.wordsLabel}
+                          </span>
+                          <span className="block w-5 h-px bg-white/40" />
                         </div>
-                      ) : (
-                        <>
-                          <div className="flex items-center gap-2 mb-6 justify-center">
-                            <span className="block w-5 h-px bg-zinc-500/60" />
-                            <span className="text-[10px] font-mono uppercase tracking-[0.28em] text-zinc-300/70">
-                              {currentPerson.wordsLabel}
-                            </span>
-                            <span className="block w-5 h-px bg-zinc-500/60" />
-                          </div>
 
-                          <Quote className="w-7 h-7 text-amber-500/50 mb-4 mx-auto" />
+                        <Quote className="w-7 h-7 text-amber-400/70 mb-4 mx-auto" />
 
-                          <p className="text-base sm:text-lg leading-relaxed text-zinc-100 text-center font-light max-w-lg mx-auto">
-                            {currentPerson.words}
-                          </p>
+                        <p className="text-base sm:text-lg leading-relaxed text-white text-center font-light max-w-lg mx-auto">
+                          {currentPerson.words}
+                        </p>
 
-                          <p className="mt-7 text-[11px] font-mono uppercase tracking-[0.2em] text-zinc-400/70 text-center">
-                            {currentPerson.name}
-                          </p>
-                        </>
-                      )}
+                        <p className="mt-7 text-[11px] font-mono uppercase tracking-[0.2em] text-white/70 text-center">
+                          {currentPerson.name}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -366,7 +363,7 @@ export default function TestimonialsSection() {
 
             <div className="mt-3 flex items-center justify-between">
               <div>
-                <h4 className="text-sm font-bold text-zinc-900 dark:text-white">Brand Owner</h4>
+                <h4 className="text-sm font-bold text-zinc-900 dark:text-white">Business Owner</h4>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
                   Playbook Reader
                 </p>
@@ -388,7 +385,7 @@ export default function TestimonialsSection() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[80] flex items-center justify-center p-4 sm:p-6 bg-black/85 backdrop-blur-md"
           >
-            <div className="fixed inset-0" onClick={() => setIsVideoOpen(false)} />
+            <div className="fixed inset-0" onClick={closeVideo} />
 
             <motion.div
               initial={{ scale: 0.95, y: 20 }}
@@ -397,7 +394,7 @@ export default function TestimonialsSection() {
               className="relative w-full max-w-sm sm:max-w-md h-[80vh] max-h-[700px] rounded-3xl bg-black border border-white/20 shadow-2xl overflow-hidden z-10 flex flex-col"
             >
               <button
-                onClick={() => setIsVideoOpen(false)}
+                onClick={closeVideo}
                 aria-label="Close video"
                 className="absolute top-4 right-4 z-30 w-9 h-9 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex items-center justify-center hover:bg-black transition-colors"
               >

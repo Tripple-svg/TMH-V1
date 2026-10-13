@@ -42,7 +42,7 @@ const TEAM = [
     name: 'Yakubu Dalil',
     role: 'CTO & Tech Lead',
     tag: 'Technology',
-    image: null,
+    image: '/Dalil.jpeg',
     initials: 'OD',
     bio: 'Dalil is our CTO and tech lead. He built the preloader on this site, brings sharp technical ideas, and handles the engineering behind everything TMH builds.',
   },

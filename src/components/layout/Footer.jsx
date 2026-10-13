@@ -1,7 +1,8 @@
 // src/components/layout/Footer.jsx
-// Floating support trigger renamed to "Need help?" and repositioned to bottom-right.
+// Two-column mobile layout. Nav matches site flow. Renamed Marketing Room.
 
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useHaven } from '../haven/context/HavenContext';
 
 const InstagramIcon = () => (
@@ -35,7 +36,7 @@ const EmailIcon = () => (
   </svg>
 );
 
-export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms }) {
+export default function Footer({ onOpenReview }) {
   const { openDrawer } = useHaven();
 
   const handleSupportClick = () => {
@@ -60,14 +61,23 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms }) {
     { label: 'Email', href: 'mailto:info@themarketinghaven.xyz', icon: <EmailIcon /> },
   ];
 
+  const quickNav = [
+    { label: 'Home', href: '#hero' },
+    { label: 'About Us', href: '#about' },
+    { label: 'Services', href: '#services' },
+    { label: 'The Marketing Room', href: '#free-class' },
+    { label: 'The Playbook', href: '#shop' },
+    { label: 'Testimonials', href: '#testimonials' },
+  ];
+
   return (
     <>
       <footer className="relative w-full border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 transition-colors duration-300">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-12 md:gap-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
+          <div className="grid grid-cols-2 md:grid-cols-12 gap-8 md:gap-8">
 
-            {/* Brand Column */}
-            <div className="md:col-span-5">
+            {/* Brand Column — full width on mobile */}
+            <div className="col-span-2 md:col-span-5">
               <h3 className="text-xl font-extrabold tracking-tight text-zinc-900 dark:text-white mb-3">
                 The Marketing Haven
               </h3>
@@ -75,7 +85,7 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms }) {
                 Digital marketing and brand strategy agency built on systems, clarity, and performance.
               </p>
 
-              <div className="flex items-center gap-3 mt-6">
+              <div className="flex flex-wrap items-center gap-3 mt-6">
                 {socialLinks.map((social) => (
                   <a
                     key={social.label}
@@ -83,7 +93,7 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms }) {
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={social.label}
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 hover:text-blue-500 dark:hover:text-blue-400 hover:border-blue-500/30 dark:hover:border-blue-500/30 hover:shadow-[0_0_12px_rgba(59,130,246,0.25)] transition-all duration-300"
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 hover:text-blue-500 dark:hover:text-blue-400 hover:border-blue-500/30 dark:hover:border-blue-500/30 transition-all duration-300"
                   >
                     {social.icon}
                   </a>
@@ -92,18 +102,12 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms }) {
             </div>
 
             {/* Quick Navigation */}
-            <div className="md:col-span-3 md:col-start-7">
+            <div className="col-span-1 md:col-span-3 md:col-start-7">
               <h4 className="text-sm font-semibold tracking-wider uppercase text-zinc-900 dark:text-white mb-4">
                 Quick Navigation
               </h4>
               <ul className="space-y-3">
-                {[
-                  { label: 'Home', href: '#hero' },
-                  { label: 'About Us', href: '#about' },
-                  { label: 'Services', href: '#services' },
-                  { label: 'Free Class', href: '#free-class' },
-                  { label: 'Testimonials', href: '#testimonials' },
-                ].map(({ label, href }) => (
+                {quickNav.map(({ label, href }) => (
                   <li key={label}>
                     <a
                       href={href}
@@ -118,7 +122,7 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms }) {
                   <button
                     onClick={onOpenReview}
                     type="button"
-                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer text-left"
                   >
                     Request Review
                   </button>
@@ -127,35 +131,33 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms }) {
             </div>
 
             {/* Legal & Safety */}
-            <div className="md:col-span-3">
+            <div className="col-span-1 md:col-span-3">
               <h4 className="text-sm font-semibold tracking-wider uppercase text-zinc-900 dark:text-white mb-4">
-                Legal & Safety
+                Legal &amp; Safety
               </h4>
               <ul className="space-y-3">
                 <li>
-                  <button
-                    onClick={onOpenPolicy}
-                    type="button"
-                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                  <Link
+                    to="/privacy"
+                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                   >
                     Privacy Policy
-                  </button>
+                  </Link>
                 </li>
                 <li>
-                  <button
-                    onClick={onOpenTerms}
-                    type="button"
-                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                  <Link
+                    to="/terms"
+                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                   >
                     Terms of Service
-                  </button>
+                  </Link>
                 </li>
               </ul>
             </div>
           </div>
 
           {/* Copyright */}
-          <div className="mt-16 pt-8 border-t border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="mt-14 pt-8 border-t border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 text-center sm:text-left">
             <p className="text-xs text-zinc-500 dark:text-zinc-500">
               Built with precision. Engineered for performance.
             </p>
@@ -166,7 +168,7 @@ export default function Footer({ onOpenReview, onOpenPolicy, onOpenTerms }) {
         </div>
       </footer>
 
-      {/* Floating Need Help trigger — bottom-right for one-handed reach */}
+      {/* Floating Need Help trigger — bottom-right */}
       <button
         onClick={handleSupportClick}
         type="button"

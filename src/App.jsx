@@ -1,7 +1,7 @@
 // src/App.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 
 import Header from './components/layout/Header';
 import HeroSection from './components/HeroSection';
@@ -13,45 +13,55 @@ import TestimonialsSection from './components/TestimonialsSection';
 import Footer from './components/layout/Footer';
 import BrandReviewModal from './components/modals/BrandReviewModal';
 import Preloader from './components/Preloader';
-import PrivacyPolicyModal from './components/legal/PrivacyPolicyModal';
-import TermsOfServiceModal from './components/legal/TermsOfServiceModal';
 import CookieBanner from './components/CookieBanner';
 import AdminRoute from './pages/AdminRoute';
+import PrivacyPage from './pages/PrivacyPage';
+import TermsPage from './pages/TermsPage';
 
 import { HavenProvider, useHaven } from './components/haven/context/HavenContext';
 import HavenDrawer from './components/haven/components/HavenDrawer';
+import { captureTrackingData } from './lib/trackingUtils';
+import { createBrandReview } from './lib/brandReviewService';
+
+const REVIEW_ID_KEY = 'haven_review_id';
+const SESSION_ID_KEY = 'haven_session_id';
 
 function AppInner() {
   const { openDrawer, hasExistingReview, getSavedReviewFormData } = useHaven();
+  const navigate = useNavigate();
 
   const [loading, setLoading]       = useState(true);
   const [showReview, setShowReview] = useState(false);
-  const [showPolicy, setShowPolicy] = useState(false);
-  const [showTerms, setShowTerms]   = useState(false);
 
-  // Scroll lock while any modal is open
+  // Capture tracking data ONCE per page load — UTM, referrer, device,
+  // visit count, first visit timestamp, days to convert. Read on submit.
+  const trackingRef = useRef(null);
+
   useEffect(() => {
-    const isLocked = loading || showReview || showPolicy || showTerms;
+    try {
+      trackingRef.current = captureTrackingData();
+    } catch (e) {
+      console.warn('Tracking capture failed:', e);
+      trackingRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const isLocked = loading || showReview;
     document.body.style.overflow = isLocked ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
-  }, [loading, showReview, showPolicy, showTerms]);
+  }, [loading, showReview]);
 
-  // Listen for `open-legal-modal` events dispatched from the review form's
-  // consent checkbox links. Detail shape: { modal: 'privacy' | 'terms' }
   useEffect(() => {
     const handler = (e) => {
       const modal = e?.detail?.modal;
-      if (modal === 'privacy') setShowPolicy(true);
-      if (modal === 'terms') setShowTerms(true);
+      if (modal === 'privacy') navigate('/privacy');
+      if (modal === 'terms') navigate('/terms');
     };
     window.addEventListener('open-legal-modal', handler);
     return () => window.removeEventListener('open-legal-modal', handler);
-  }, []);
+  }, [navigate]);
 
-  // Opens the review flow.
-  //  - Fresh user     → show the two-step form
-  //  - Returning user → skip form, resume their existing audit session
-  //                     with a fresh "welcome back" greeting
   const handleOpenReview = () => {
     if (hasExistingReview()) {
       openDrawer('audit', {
@@ -66,14 +76,55 @@ function AppInner() {
     }
   };
 
-  // Called when the user completes the two-step form
-  const handleReviewSubmit = (payload) => {
+  const handleReviewSubmit = async (payload) => {
     setShowReview(false);
 
-    // 300ms delay lets the modal exit animation complete before drawer slides in
+    const tracking = trackingRef.current || {};
+
+    // Task 1's real write: insert brand_reviews + haven_sessions +
+    // upload screenshot to tmh-screenshots, all via the anon key.
+    const { success, reviewId, sessionId, error } = await createBrandReview({
+      id: payload.id,
+      fullName: payload.fullName,
+      brandName: payload.brandName,
+      email: payload.email,
+      whatsapp: payload.whatsapp,
+      mainGoal: payload.mainGoal,
+      platformType: payload.platformType,
+      socialPlatform: payload.socialPlatform,
+      socialLink: payload.socialLink,
+      websiteUrl: payload.websiteUrl,
+      screenshotBase64: payload.screenshotBase64,
+      agreedToTerms: payload.agreedToTerms,
+      agreedAt: payload.agreedAt,
+      utmSource: tracking.utmSource || null,
+      utmCampaign: tracking.utmCampaign || null,
+      referrerUrl: tracking.referrerUrl || null,
+      deviceType: tracking.deviceType || null,
+      visitCount: tracking.visitCount ?? null,
+      firstVisitAt: tracking.firstVisitAt || null,
+      daysToConvert: tracking.daysToConvert ?? null,
+      country: tracking.country || null,
+      city: tracking.city || null,
+    });
+
+    if (success && reviewId && sessionId) {
+      try {
+        localStorage.setItem(REVIEW_ID_KEY, reviewId);
+        localStorage.setItem(SESSION_ID_KEY, sessionId);
+      } catch (e) {
+        console.warn('Could not persist review/session ids:', e);
+      }
+    } else if (error) {
+      console.error('Brand review write failed:', error);
+    }
+
+    // Open the drawer regardless so the user is never blocked.
     setTimeout(() => {
       openDrawer('audit', {
         profileData: {
+          reviewId: reviewId || null,
+          sessionId: sessionId || null,
           name:           payload.fullName || payload.name,
           brandName:      payload.brandName,
           email:          payload.email,
@@ -89,6 +140,13 @@ function AppInner() {
           silentAccountId: payload.id            || null,
           agreedToTerms:  payload.agreedToTerms  || false,
           agreedAt:       payload.agreedAt       || null,
+          utmSource:      tracking.utmSource     || null,
+          utmCampaign:    tracking.utmCampaign   || null,
+          referrerUrl:    tracking.referrerUrl   || null,
+          deviceType:     tracking.deviceType    || null,
+          visitCount:     tracking.visitCount    ?? null,
+          firstVisitAt:   tracking.firstVisitAt  || null,
+          daysToConvert:  tracking.daysToConvert ?? null,
         },
       });
     }, 300);
@@ -104,8 +162,6 @@ function AppInner() {
 
       <Header
         onOpenReview={handleOpenReview}
-        onOpenPolicy={() => setShowPolicy(true)}
-        onOpenTerms={() => setShowTerms(true)}
       />
 
       <main className="relative w-full">
@@ -131,29 +187,15 @@ function AppInner() {
 
       <Footer
         onOpenReview={handleOpenReview}
-        onOpenPolicy={() => setShowPolicy(true)}
-        onOpenTerms={() => setShowTerms(true)}
       />
 
-      {/* Modals */}
       <BrandReviewModal
         isOpen={showReview}
         onClose={() => setShowReview(false)}
         onSubmit={handleReviewSubmit}
       />
-      <PrivacyPolicyModal
-        isOpen={showPolicy}
-        onClose={() => setShowPolicy(false)}
-      />
-      <TermsOfServiceModal
-        isOpen={showTerms}
-        onClose={() => setShowTerms(false)}
-      />
-
-      {/* Haven AI Drawer */}
       <HavenDrawer />
 
-      {/* Cookie consent banner */}
       <CookieBanner />
     </div>
   );
@@ -164,6 +206,8 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/admin" element={<AdminRoute />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
         <Route
           path="*"
           element={
