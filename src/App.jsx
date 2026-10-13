@@ -17,6 +17,8 @@ import CookieBanner from './components/CookieBanner';
 import AdminRoute from './pages/AdminRoute';
 import PrivacyPage from './pages/PrivacyPage';
 import TermsPage from './pages/TermsPage';
+import DataDeletionConfirmPage from './pages/DataDeletionConfirmPage';
+import DataDeletionModal from './components/legal/DataDeletionModal';
 
 import { HavenProvider, useHaven } from './components/haven/context/HavenContext';
 import HavenDrawer from './components/haven/components/HavenDrawer';
@@ -32,6 +34,7 @@ function AppInner() {
 
   const [loading, setLoading]       = useState(true);
   const [showReview, setShowReview] = useState(false);
+  const [showDataDeletion, setShowDataDeletion] = useState(false);
 
   // Capture tracking data ONCE per page load — UTM, referrer, device,
   // visit count, first visit timestamp, days to convert. Read on submit.
@@ -187,12 +190,17 @@ function AppInner() {
 
       <Footer
         onOpenReview={handleOpenReview}
+        onOpenDataDeletion={() => setShowDataDeletion(true)}
       />
 
       <BrandReviewModal
         isOpen={showReview}
         onClose={() => setShowReview(false)}
         onSubmit={handleReviewSubmit}
+      />
+      <DataDeletionModal
+        isOpen={showDataDeletion}
+        onClose={() => setShowDataDeletion(false)}
       />
       <HavenDrawer />
 
@@ -208,6 +216,7 @@ export default function App() {
         <Route path="/admin" element={<AdminRoute />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
+        <Route path="/data-deletion/confirm" element={<DataDeletionConfirmPage />} />
         <Route
           path="*"
           element={
