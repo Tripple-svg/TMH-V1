@@ -14,6 +14,7 @@ import ActionModals from './ActionModals';
 import ChatMessage from './chat/ChatMessage';
 import ChatInput from './chat/ChatInput';
 import HavenScoreCard from './HavenScoreCard';
+import { supabase } from '../../../lib/supabase';
 
 const LOGO_SRC = '/Tmhh.jpeg';
 const CALENDLY_URL = 'https://calendly.com/themarketinghaven01/30min';
@@ -153,6 +154,12 @@ const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt }
 });
 
 function BookingModal({ isOpen, onClose }) {
+  const { bookingContext } = useHaven();
+  const [bookingEmail, setBookingEmail] = useState('');
+  const [bookingError, setBookingError] = useState('');
+  const [capturing, setCapturing] = useState(false);
+  const fromServices = bookingContext.source === 'services';
+  const validEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const [hasOpenedBefore, setHasOpenedBefore] = useState(false);
   const [lastOpenedLabel, setLastOpenedLabel] = useState('');
 
@@ -185,7 +192,37 @@ function BookingModal({ isOpen, onClose }) {
     }
   }, [isOpen]);
 
-  const handleChooseTime = () => {
+  const handleChooseTime = async (event) => {
+    if (fromServices) {
+      event.preventDefault();
+      if (capturing) return;
+      const email = bookingEmail.trim();
+      if (!validEmail(email)) {
+        setBookingError('Please enter a valid email address.');
+        return;
+      }
+      // Open synchronously to preserve the browser's user gesture, then navigate
+      // only after capture succeeds so Calendly cannot outrun the intent insert.
+      const bookingWindow = window.open('about:blank', '_blank');
+      if (bookingWindow) bookingWindow.opener = null;
+      setCapturing(true);
+      setBookingError('');
+      try {
+        const { data, error } = await supabase.functions.invoke('capture-booking-lead', {
+          body: { email, serviceId: bookingContext.serviceId },
+        });
+        if (error || !data?.ok) throw new Error('Capture failed');
+        const url = `${CALENDLY_URL}?email=${encodeURIComponent(email)}`;
+        if (bookingWindow) bookingWindow.location.href = url;
+        else window.location.assign(url);
+      } catch {
+        bookingWindow?.close();
+        setBookingError('We could not save your booking details. Please try again.');
+        return;
+      } finally {
+        setCapturing(false);
+      }
+    }
     try {
       localStorage.setItem(CALENDLY_CLICKED_KEY, new Date().toISOString());
     } catch {}
@@ -223,9 +260,21 @@ function BookingModal({ isOpen, onClose }) {
               </div>
             )}
 
-            <a href={CALENDLY_URL} target="_blank" rel="noopener noreferrer" onClick={handleChooseTime}
+            {fromServices && (
+              <div className="relative text-left space-y-2">
+                <label htmlFor="booking-email" className="block text-xs text-zinc-300">Email for your booking</label>
+                <input id="booking-email" type="email" placeholder="your@email.com" value={bookingEmail}
+                  onChange={(event) => { setBookingEmail(event.target.value); setBookingError(''); }}
+                  onBlur={() => { if (bookingEmail && !validEmail(bookingEmail.trim())) setBookingError('Please enter a valid email address.'); }}
+                  aria-invalid={Boolean(bookingError)} aria-describedby={bookingError ? 'booking-email-error' : undefined}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white" />
+                {bookingError && <p id="booking-email-error" role="alert" className="text-xs text-red-400">{bookingError}</p>}
+              </div>
+            )}
+            <a href={fromServices ? `${CALENDLY_URL}?email=${encodeURIComponent(bookingEmail.trim())}` : CALENDLY_URL}
+              target="_blank" rel="noopener noreferrer" onClick={handleChooseTime} aria-disabled={capturing}
               className="relative flex items-center justify-center gap-2 w-full px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all shadow-lg shadow-blue-600/20">
-              <span>Choose a Time</span><ExternalLink className="w-4 h-4" />
+              <span>{capturing ? 'Saving...' : 'Choose a Time'}</span><ExternalLink className="w-4 h-4" />
             </a>
 
             <p className="relative text-[11px] leading-relaxed text-zinc-500">
@@ -249,7 +298,7 @@ function BookingModal({ isOpen, onClose }) {
 
 export default function HavenDrawer() {
   const {
-    isOpen, closeDrawer, activeScope, activeService, viewState,
+    isOpen, closeDrawer, openDrawer, activeScope, activeService, viewState,
     sessions = [], activeSessionId, currentSession, messages = [],
     createNewSession, switchSession, togglePinSession, deleteSession,
     sendMessage, sendNavChipIntent, isThinking, userProfile = {},
@@ -436,6 +485,7 @@ export default function HavenDrawer() {
   const handleChipSelect = useCallback((text) => {
     if (text === '__BOOK_CALL__') {
       updateUserProfile?.({ clickedBookingLink: true });
+      openDrawer('booking');
       setShowBookingModal(true);
       return;
     }
@@ -459,7 +509,7 @@ export default function HavenDrawer() {
 
     armForceScroll();
     sendMessage(text);
-  }, [sendMessage, closeDrawer, armForceScroll, updateUserProfile]);
+  }, [sendMessage, closeDrawer, openDrawer, armForceScroll, updateUserProfile]);
 
   const handleNavChipSelect = useCallback((navChip) => {
     if (!navChip || !navChip.text) return;

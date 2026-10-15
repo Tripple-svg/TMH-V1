@@ -57,7 +57,6 @@ const SERVICES = [
 
 export default function ServiceGrid() {
   const [selectedService, setSelectedService] = useState(null);
-  const [bookingToast, setBookingToast] = useState(false);
 
   const { openDrawer } = useHaven();
 
@@ -82,8 +81,9 @@ export default function ServiceGrid() {
   };
 
   const handleBookCall = () => {
+    const svc = selectedService;
     setSelectedService(null);
-    openDrawer('booking');
+    openDrawer('booking', { source: 'services', serviceId: svc.id });
   };
 
   return (
@@ -230,18 +230,6 @@ export default function ServiceGrid() {
                 </button>
               </div>
 
-              <AnimatePresence>
-                {bookingToast && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl text-center text-xs font-medium text-blue-700 dark:text-blue-300"
-                  >
-                    📅 Calendar scheduling coming soon. Use "Get More Info" to chat with Haven now.
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </motion.div>
           </div>
         )}

@@ -1,0 +1,13 @@
+project_id = "tmh-platform"
+
+[functions.verify-paystack]
+verify_jwt = false
+
+[functions.capture-booking-lead]
+verify_jwt = false
+
+[functions.calendly-webhook]
+verify_jwt = false
+
+[functions.send-tmh-booking-confirmation]
+verify_jwt = false

@@ -5,11 +5,11 @@ import {
   Download,
 } from 'lucide-react';
 import ConfirmModal from './ui/ConfirmModal';
+import { supabase } from '../lib/supabase';
 
 const PAYSTACK_PUBLIC_KEY = 'pk_live_bb9d07c83cbd8bc94ee9c7fb5fb95e14a35fa93b';
 const PAYSTACK_AMOUNT_KOBO = 10000; // ₦100 test — revert to 963900 before launch
 
-const PLAYBOOK_DOWNLOAD_PATH = '/The_Unseen_Playbook!.pdf';
 const PLAYBOOK_FILENAME      = 'The_Unseen_Playbook.pdf';
 const PURCHASE_STORAGE_KEY   = 'tmh_playbook_purchase';
 const PAYMENT_TIMEOUT_MS     = 90 * 1000; // 90s — reset if Paystack goes silent
@@ -36,6 +36,9 @@ export default function ShopSection() {
   const [paymentReference, setPaymentReference] = useState('');
   const [deliveryContact, setDeliveryContact]   = useState('');
   const [alreadyDownloaded, setAlreadyDownloaded] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
 
   const [alertState, setAlertState]             = useState(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -60,6 +63,7 @@ export default function ShopSection() {
         setDeliveryContact(data.email || '');
         setPaymentSuccess(true);
         setAlreadyDownloaded(Boolean(data.downloadedAt));
+        void verifyPurchase(data.reference);
       }
     } catch {}
   }, []);
@@ -111,6 +115,23 @@ export default function ShopSection() {
       );
     } catch {}
   };
+
+  async function verifyPurchase(reference) {
+    setVerifying(true);
+    setDownloadUrl('');
+    setVerificationError('');
+    try {
+      const { data, error } = await supabase.functions.invoke('verify-paystack', { body: { reference } });
+      if (error || !data?.ok || !data.url) throw new Error('Verification failed');
+      setDownloadUrl(data.url);
+      return data.url;
+    } catch {
+      setVerificationError(`Please email info@themarketinghaven.xyz with your reference: ${reference}`);
+      return null;
+    } finally {
+      setVerifying(false);
+    }
+  }
 
   const handlePaystackCheckout = async (e) => {
     if (e) e.preventDefault();
@@ -178,6 +199,7 @@ export default function ShopSection() {
         setPaymentSuccess(true);
         setAlreadyDownloaded(false);
         persistPurchase(ref, trimmed, null);
+        void verifyPurchase(ref);
         setEmail('');
         paystackHandlerRef.current = null;
       },
@@ -220,13 +242,13 @@ export default function ShopSection() {
     }
   };
 
-  const handleDownloadPlaybook = () => {
-    if (alreadyDownloaded) return;
+  const handleDownloadPlaybook = (url = downloadUrl) => {
+    if (!url) return;
 
     const a = document.createElement('a');
-    a.href = PLAYBOOK_DOWNLOAD_PATH;
+    a.href = url;
     a.download = PLAYBOOK_FILENAME;
-    a.target = '_blank';
+    a.target = '_self';
     a.rel = 'noopener noreferrer';
     document.body.appendChild(a);
     a.click();
@@ -234,6 +256,13 @@ export default function ShopSection() {
 
     setAlreadyDownloaded(true);
     persistPurchase(paymentReference, deliveryContact, new Date().toISOString());
+  };
+
+  const handleRedownloadPlaybook = async (event) => {
+    event.preventDefault();
+    if (verifying) return;
+    const url = await verifyPurchase(paymentReference);
+    if (url) handleDownloadPlaybook(url);
   };
 
   const handleCloseModal = () => {
@@ -423,14 +452,25 @@ export default function ShopSection() {
                       <Download className="w-5 h-5" />
                       Download Completed
                     </div>
-                  ) : (
-                    <button
-                      onClick={handleDownloadPlaybook}
+                  ) : downloadUrl && !verifying ? (
+                    <a
+                      href={downloadUrl}
+                      download={PLAYBOOK_FILENAME}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(event) => { event.preventDefault(); handleDownloadPlaybook(); }}
                       className="w-full inline-flex items-center justify-center gap-3 px-8 py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-base transition-all shadow-lg shadow-emerald-600/25 active:scale-[0.98]"
                     >
                       <Download className="w-5 h-5" />
                       Download The Unseen Playbook
-                    </button>
+                    </a>
+                  ) : null}
+                  {verifying && <p role="status" className="text-sm text-zinc-500">Verifying your payment...</p>}
+                  {verificationError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{verificationError}</p>}
+                  {alreadyDownloaded && downloadUrl && !verifying && (
+                    <a href={downloadUrl} onClick={handleRedownloadPlaybook} className="block text-xs text-blue-600 dark:text-blue-400 underline">
+                      Re-download Playbook
+                    </a>
                   )}
 
                   <div className="pt-6 mt-2 border-t border-zinc-200 dark:border-white/10 text-left">

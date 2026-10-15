@@ -152,7 +152,28 @@ serve(async (req) => {
       session: sessionByReviewId[r.id] || null,
     }));
 
-    return json({ ok: true, leads, count: leads.length }, origin);
+    const { data: supportSessions, error: supportError } = await supabase
+      .from('haven_sessions')
+      .select('id, current_step, last_step_reached, total_exchanges, updated_at, messages')
+      .eq('scope', 'support')
+      .order('updated_at', { ascending: false });
+
+    if (supportError) {
+      console.error('admin-fetch-leads: support sessions query failed', supportError);
+      return json({ ok: false, error: supportError.message }, origin, 500);
+    }
+
+    const support_sessions = (supportSessions || []).map((s) => ({
+      id: s.id,
+      current_step: s.current_step || null,
+      last_step_reached: s.last_step_reached || null,
+      total_exchanges: s.total_exchanges || 0,
+      last_session_update: s.updated_at || null,
+      messages: (Array.isArray(s.messages) ? s.messages : [])
+        .slice(-MAX_TRANSCRIPT_MESSAGES).map(sanitiseMessage).filter(Boolean),
+    }));
+
+    return json({ ok: true, leads, count: leads.length, support_sessions }, origin);
   } catch (err) {
     console.error('admin-fetch-leads error:', err);
     return json({ ok: false, error: String(err) }, origin, 500);

@@ -244,6 +244,7 @@ export function HavenProvider({ children }) {
   const [toastMessage, setToastMessage]   = useState('');
   const [activeMenuSessionId, setActiveMenuSessionId] = useState(null);
   const [bookingNoticeOpen, setBookingNoticeOpen]     = useState(false);
+  const [bookingContext, setBookingContext] = useState({ source: null, serviceId: null });
 
   const [supportSessions, setSupportSessions] = useState([makeDefaultSupportSession()]);
   const [serviceSessions, setServiceSessions] = useState([]);
@@ -636,6 +637,7 @@ export function HavenProvider({ children }) {
         },
       });
     } else if (targetMode === 'booking') {
+      setBookingContext({ source: payload.source ?? null, serviceId: payload.serviceId ?? null });
       setBookingNoticeOpen(true);
       return;
     } else {
@@ -938,7 +940,7 @@ export function HavenProvider({ children }) {
     createNewSession, switchSession, togglePinSession, deleteSession, clearChat,
     addMessage, sendMessage, sendNavChipIntent, isThinking, setIsThinking, stopResponse,
     userProfile, updateUserProfile,
-    bookingNoticeOpen, setBookingNoticeOpen,
+    bookingNoticeOpen, setBookingNoticeOpen, bookingContext,
     showToast, toastMessage, triggerToast,
     activeMenuSessionId, setActiveMenuSessionId,
     hasExistingReview, getSavedReviewFormData, clearExistingReview,

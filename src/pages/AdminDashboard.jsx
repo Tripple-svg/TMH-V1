@@ -547,6 +547,9 @@ function LeadRow({ lead, password, onLeadChange, onAuthLost, showToast }) {
           {lead.biggest_leak || '—'}
         </td>
         <td className="p-2 align-top text-xs text-zinc-400">{lead.utm_source || 'direct'}</td>
+        <td className="p-2 align-top text-xs text-zinc-400" title={lead.pre_call_briefing ? 'Pre-call briefing ready' : 'No briefing'}>
+          {lead.pre_call_briefing ? '✓' : '—'}
+        </td>
         <td className="p-2 align-top text-xs text-zinc-400 whitespace-nowrap">
           <div>{formatDate(lead.created_at)}</div>
           <div className="text-[10px] text-zinc-600">{relativeTime(lead.created_at)}</div>
@@ -560,7 +563,7 @@ function LeadRow({ lead, password, onLeadChange, onAuthLost, showToast }) {
       </tr>
       {expanded && (
         <tr className="border-b border-zinc-800 bg-zinc-900/30">
-          <td colSpan={11} className="p-4">
+          <td colSpan={12} className="p-4">
             <LeadDetails lead={lead} />
           </td>
         </tr>
@@ -891,6 +894,7 @@ export default function AdminDashboard() {
                 <th className="p-2">Temp</th>
                 <th className="p-2">Leak</th>
                 <th className="p-2">UTM</th>
+                <th className="p-2">Briefed</th>
                 <th className="p-2">Created</th>
                 <th className="p-2">Follow-up</th>
                 <th className="p-2">Notes</th>
@@ -898,9 +902,9 @@ export default function AdminDashboard() {
             </thead>
             <tbody>
               {loading && leads.length === 0 ? (
-                <tr><td colSpan={11} className="p-6 text-center text-zinc-500">Loading…</td></tr>
+                <tr><td colSpan={12} className="p-6 text-center text-zinc-500">Loading…</td></tr>
               ) : pagedLeads.length === 0 ? (
-                <tr><td colSpan={11} className="p-6 text-center text-zinc-500">No leads match these filters.</td></tr>
+                <tr><td colSpan={12} className="p-6 text-center text-zinc-500">No leads match these filters.</td></tr>
               ) : (
                 pagedLeads.map((lead) => (
                   <LeadRow
