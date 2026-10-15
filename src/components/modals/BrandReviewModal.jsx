@@ -131,6 +131,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
   const [captchaToken, setCaptchaToken] = useState(null);
   const [captchaExpired, setCaptchaExpired] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [checkingEmail, setCheckingEmail] = useState(false);
   const fileInputRef = useRef(null);
   const captchaRef = useRef(null);
   const submittingRef = useRef(false);
@@ -171,6 +172,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
     setCaptchaToken(null);
     setCaptchaExpired(false);
     setVerifying(false);
+    setCheckingEmail(false);
     submittingRef.current = false;
     captchaRef.current?.resetCaptcha();
     clearReviewFormData();
@@ -215,10 +217,41 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
     return next;
   };
 
-  const continueToPlatform = () => {
+  const continueToPlatform = async () => {
     const next = validateStepOne();
     setErrors(next);
-    if (!Object.keys(next).length) setStep(2);
+    if (Object.keys(next).length || checkingEmail) return;
+
+    setCheckingEmail(true);
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const response = await fetch(`${supabaseUrl}/functions/v1/check-email-exists`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          apikey: supabaseAnonKey,
+        },
+        body: JSON.stringify({ email: formData.email.trim() }),
+      });
+
+      if (!response.ok) throw new Error(`Email check failed with status ${response.status}`);
+
+      const data = await response.json();
+      if (data?.exists === true) {
+        setErrors({
+          email: 'This email has already been used to submit a review. To submit yours, use a different email.',
+        });
+        return;
+      }
+    } catch (error) {
+      console.error('Unable to check whether the email has already submitted a review:', error);
+    } finally {
+      setCheckingEmail(false);
+    }
+
+    setStep(2);
   };
 
   const selectImage = (event) => {
@@ -459,9 +492,14 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                 <button
                   type="button"
                   onClick={continueToPlatform}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 active:scale-[0.99]"
+                  disabled={checkingEmail}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-zinc-400 dark:disabled:bg-zinc-700"
                 >
-                  Continue to Step 2 <ArrowRight className="h-4 w-4" />
+                  {checkingEmail ? 'Checking…' : (
+                    <>
+                      Continue to Step 2 <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
                 </button>
               </div>
             )}

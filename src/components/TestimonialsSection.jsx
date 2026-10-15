@@ -9,6 +9,7 @@ const TESTIMONIALS = [
     name: 'Damilola',
     initials: 'DA',
     image: '/Dammy.jpeg',
+    imagePosition: 'object-center',
     videoSrc: '/Testimonial.mp4',
     wordsImage: null,
     wordsLabel: 'In Her Own Words',
@@ -19,7 +20,8 @@ const TESTIMONIALS = [
     id: 'stephanie',
     name: 'Stephanie',
     initials: 'ST',
-    image: null,
+    image: '/112.jpeg',
+    imagePosition: 'object-[center_100%]',
     videoSrc: null,
     wordsImage: null,
     wordsLabel: 'In Her Own Words',
@@ -31,6 +33,7 @@ const TESTIMONIALS = [
     name: 'More Stories',
     initials: '—',
     image: null,
+    imagePosition: 'object-center',
     videoSrc: null,
     wordsImage: null,
     wordsLabel: 'In Their Words',
@@ -119,8 +122,6 @@ export default function TestimonialsSection() {
     }
   };
 
-  // Pause the video before unmounting so the browser doesn't tear down
-  // an active GPU context mid-animation, which causes close lag.
   const closeVideo = () => {
     if (videoRef.current) {
       try { videoRef.current.pause(); } catch {}
@@ -167,7 +168,7 @@ export default function TestimonialsSection() {
   return (
     <section
       id="testimonials"
-      className="relative w-full py-16 sm:py-20 px-4 sm:px-6 lg:px-8 bg-white text-zinc-900 dark:bg-zinc-950 dark:text-white transition-colors duration-300"
+      className="relative w-full pt-4 sm:pt-6 pb-16 sm:pb-20 px-4 sm:px-6 lg:px-8 bg-white text-zinc-900 dark:bg-zinc-950 dark:text-white transition-colors duration-300"
     >
       <div className="max-w-5xl mx-auto relative z-10">
 
@@ -203,8 +204,8 @@ export default function TestimonialsSection() {
                 {currentSlide.type === 'profile' && (
                   <div
                     onClick={openVideo}
-                    className={`relative w-full max-w-xs sm:max-w-sm aspect-[4/5] rounded-3xl overflow-hidden border border-zinc-200 dark:border-white/10 shadow-2xl ${
-                      currentPerson.videoSrc ? 'cursor-pointer group' : ''
+                    className={`relative w-full max-w-xs sm:max-w-sm aspect-[4/5] rounded-3xl overflow-hidden border border-zinc-200 dark:border-white/10 shadow-2xl group ${
+                      currentPerson.videoSrc ? 'cursor-pointer' : 'cursor-default'
                     }`}
                     style={currentPerson.image ? undefined : patternStyle}
                   >
@@ -212,7 +213,7 @@ export default function TestimonialsSection() {
                       <img
                         src={currentPerson.image}
                         alt={currentPerson.name}
-                        className="absolute inset-0 w-full h-full object-cover object-top"
+                        className={`absolute inset-0 w-full h-full object-cover ${currentPerson.imagePosition || 'object-center'}`}
                       />
                     ) : (
                       <span className="absolute inset-0 flex items-center justify-center text-white/15 text-[140px] sm:text-[160px] font-black tracking-tighter select-none leading-none">
@@ -220,24 +221,15 @@ export default function TestimonialsSection() {
                       </span>
                     )}
 
-                    {currentPerson.videoSrc && (
-                      <div className="absolute inset-0 flex items-center justify-center transition-colors group-hover:bg-black/10">
-                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white flex items-center justify-center shadow-2xl transition-transform group-hover:scale-105">
-                          <Play
-                            className="w-7 h-7 sm:w-8 sm:h-8 text-zinc-900 ml-1"
-                            fill="currentColor"
-                          />
-                        </div>
+                    {/* Play button — centered, smaller, rounded square */}
+                    <div className="absolute inset-0 flex items-center justify-center transition-colors group-hover:bg-black/10">
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white flex items-center justify-center shadow-2xl transition-transform group-hover:scale-105">
+                        <Play
+                          className="w-5 h-5 sm:w-6 sm:h-6 text-zinc-900 ml-0.5"
+                          fill="currentColor"
+                        />
                       </div>
-                    )}
-
-                    {!currentPerson.videoSrc && (
-                      <div className="absolute bottom-20 left-0 right-0 flex justify-center">
-                        <span className="text-[10px] font-mono uppercase tracking-[0.25em] text-white/40">
-                          Coming Soon
-                        </span>
-                      </div>
-                    )}
+                    </div>
 
                     <div className="absolute bottom-0 left-0 right-0 z-10 px-5 pb-5 pt-16 bg-gradient-to-t from-black/90 via-black/60 to-transparent text-left">
                       <h3 className="text-sm sm:text-base font-bold text-white tracking-wide uppercase font-mono leading-tight">
@@ -253,30 +245,31 @@ export default function TestimonialsSection() {
                 {currentSlide.type === 'words' && (
                   <div className="w-full max-w-xl">
                     <div className="relative w-full rounded-3xl overflow-hidden border border-zinc-200 dark:border-white/10 shadow-xl p-8 sm:p-12">
+                      {/* Background image — brightened, softer overlay */}
                       <img
                         src="/Background.jpeg"
                         alt=""
                         aria-hidden="true"
-                        className="absolute inset-0 w-full h-full object-cover"
+                        className="absolute inset-0 w-full h-full object-cover brightness-110 saturate-105"
                       />
-                      <div className="absolute inset-0 bg-black/55" />
+                      <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/45 to-black/30" />
 
                       <div className="relative z-10">
                         <div className="flex items-center gap-2 mb-6 justify-center">
-                          <span className="block w-5 h-px bg-white/40" />
-                          <span className="text-[10px] font-mono uppercase tracking-[0.28em] text-white/80">
+                          <span className="block w-5 h-px bg-white/50" />
+                          <span className="text-[10px] font-mono uppercase tracking-[0.28em] text-white/90">
                             {currentPerson.wordsLabel}
                           </span>
-                          <span className="block w-5 h-px bg-white/40" />
+                          <span className="block w-5 h-px bg-white/50" />
                         </div>
 
-                        <Quote className="w-7 h-7 text-amber-400/70 mb-4 mx-auto" />
+                        <Quote className="w-7 h-7 text-amber-400/80 mb-4 mx-auto" />
 
-                        <p className="text-base sm:text-lg leading-relaxed text-white text-center font-light max-w-lg mx-auto">
+                        <p className="text-base sm:text-lg leading-relaxed text-white text-center font-light max-w-lg mx-auto drop-shadow-md">
                           {currentPerson.words}
                         </p>
 
-                        <p className="mt-7 text-[11px] font-mono uppercase tracking-[0.2em] text-white/70 text-center">
+                        <p className="mt-7 text-[11px] font-mono uppercase tracking-[0.2em] text-white/80 text-center">
                           {currentPerson.name}
                         </p>
                       </div>
@@ -363,7 +356,7 @@ export default function TestimonialsSection() {
 
             <div className="mt-3 flex items-center justify-between">
               <div>
-                <h4 className="text-sm font-bold text-zinc-900 dark:text-white">Business Owner</h4>
+                <h4 className="text-sm font-bold text-zinc-900 dark:text-white">Brand Owner</h4>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
                   Playbook Reader
                 </p>

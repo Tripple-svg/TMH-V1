@@ -1,8 +1,9 @@
 // src/components/haven/components/HavenDrawer.jsx
-// VERSION 5.1 — Faster spring animations on drawer + history sidebar.
+// VERSION 5.5 — Two-phase thinking indicator. Blue CTA restored.
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import {
   X, Menu, Plus, MoreVertical, Pin, MessageSquare, Sparkles,
   BarChart3, Target, Zap, Trash2, RotateCcw, Settings, ExternalLink,
@@ -19,6 +20,7 @@ const CALENDLY_URL = 'https://calendly.com/themarketinghaven01/30min';
 const TIKTOK_URL = 'https://www.tiktok.com/@the_marketing_haven?_r=1&_t=ZS-99cNCs01SWj';
 const CALENDLY_CLICKED_KEY = 'tmh_calendly_clicked_at';
 const FRESH_MS = 3000;
+const READING_PHASE_MS = 1500;
 
 function isFreshMessage(msg) {
   return msg?.role === 'agent' && Date.now() - (msg.timestamp || 0) < FRESH_MS;
@@ -32,20 +34,75 @@ function getScopeLabel(scope, service) {
 
 function ThinkingIndicator() {
   const [err, setErr] = useState(false);
+  const [phase, setPhase] = useState('reading'); // 'reading' | 'thinking'
+
+  useEffect(() => {
+    const t = setTimeout(() => setPhase('thinking'), READING_PHASE_MS);
+    return () => clearTimeout(t);
+  }, []);
+
+  const phrase = phase === 'reading'
+    ? 'Haven is reading your message…'
+    : 'Haven is thinking…';
+
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-      className="flex items-center gap-3">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -4 }}
+      className="flex items-start gap-3"
+    >
       <div className="relative">
-        <div className="absolute inset-0 rounded-full bg-blue-600/10 blur-md" />
-        <div className="relative w-8 h-8 rounded-full overflow-hidden border border-white/10 bg-zinc-900 flex-shrink-0 flex items-center justify-center">
-          {err ? <Sparkles className="w-4 h-4 text-blue-500" />
-            : <img src={LOGO_SRC} alt="Haven" className="w-full h-full object-cover" onError={() => setErr(true)} />}
+        <div className="absolute inset-0 rounded-full bg-white/[0.04] blur-md" />
+        <div className="relative w-8 h-8 rounded-full overflow-hidden border border-white/[0.08] bg-zinc-900 flex-shrink-0 flex items-center justify-center">
+          {err ? (
+            <Sparkles className="w-4 h-4 text-zinc-400" />
+          ) : (
+            <img
+              src={LOGO_SRC}
+              alt="Haven"
+              className="w-full h-full object-cover"
+              onError={() => setErr(true)}
+            />
+          )}
         </div>
       </div>
-      <div className="flex items-center gap-1.5 px-4 py-3 rounded-2xl rounded-tl-sm bg-white/[0.03] backdrop-blur-xl border border-white/[0.06]">
-        {[0, 150, 300].map(d => (
-          <span key={d} className="w-2 h-2 rounded-full bg-blue-500/80 animate-bounce" style={{ animationDelay: `${d}ms` }} />
-        ))}
+
+      <div className="flex flex-col gap-1.5 pt-1.5">
+        <AnimatePresence mode="wait">
+          <motion.span
+            key={phase}
+            initial={{ opacity: 0, y: 3 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -3 }}
+            transition={{ duration: 0.3 }}
+            className="text-xs sm:text-[13px] text-zinc-300 font-medium tracking-tight"
+          >
+            <motion.span
+              animate={{ opacity: [0.55, 1, 0.55] }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+              className="inline-block"
+            >
+              {phrase}
+            </motion.span>
+          </motion.span>
+        </AnimatePresence>
+
+        <div className="flex items-center gap-1 pl-0.5">
+          {[0, 150, 300].map((d) => (
+            <motion.span
+              key={d}
+              className="w-1.5 h-1.5 rounded-full bg-zinc-500/70"
+              animate={{ opacity: [0.25, 1, 0.25], y: [0, -1.5, 0] }}
+              transition={{
+                duration: 1.2,
+                repeat: Infinity,
+                delay: d / 1000,
+                ease: 'easeInOut',
+              }}
+            />
+          ))}
+        </div>
       </div>
     </motion.div>
   );
@@ -64,8 +121,8 @@ const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt }
       className="flex flex-col items-center justify-center min-h-[75%] text-center px-2 py-6 space-y-8">
       <div className="flex flex-col items-center space-y-4">
         <div className="relative">
-          <div className="absolute -inset-2 rounded-3xl bg-blue-600/10 blur-2xl" />
-          <div className="relative w-16 h-16 rounded-2xl overflow-hidden border border-white/10 bg-zinc-900">
+          <div className="absolute -inset-2 rounded-3xl bg-white/[0.03] blur-2xl" />
+          <div className="relative w-16 h-16 rounded-2xl overflow-hidden border border-white/[0.08] bg-zinc-900">
             {err ? <div className="w-full h-full flex items-center justify-center bg-zinc-800"><Sparkles className="w-8 h-8 text-zinc-400" /></div>
               : <img src={LOGO_SRC} alt="Haven" className="w-full h-full object-cover" onError={() => setErr(true)} />}
           </div>
@@ -81,9 +138,9 @@ const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt }
           return (
             <motion.button key={i} whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
               onClick={() => onSelectPrompt(p.desc)}
-              className="group flex flex-col items-start p-4 text-left rounded-xl bg-white/[0.02] backdrop-blur-xl border border-white/[0.06] hover:border-blue-500/40 hover:bg-white/[0.04] transition-all cursor-pointer">
-              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-600/20 mb-3">
-                <Icon className="w-4 h-4 text-blue-500" />
+              className="group flex flex-col items-start p-4 text-left rounded-xl bg-white/[0.02] backdrop-blur-xl border border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.04] transition-all cursor-pointer">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.08] mb-3">
+                <Icon className="w-4 h-4 text-zinc-300" />
               </div>
               <span className="text-sm font-medium text-zinc-200 line-clamp-1">{p.title}</span>
               <span className="text-xs text-zinc-500 line-clamp-2 mt-1">{p.desc}</span>
@@ -144,10 +201,10 @@ function BookingModal({ isOpen, onClose }) {
           <motion.div initial={{ opacity: 0, scale: 0.92, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.92, y: 8 }}
             onClick={e => e.stopPropagation()}
-            className="relative w-full max-w-sm rounded-2xl bg-zinc-950/85 backdrop-blur-2xl border border-white/[0.08] shadow-[0_0_60px_-15px_rgba(37,99,235,0.15)] p-6 text-center space-y-4 overflow-hidden">
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-zinc-900/20 to-transparent" />
+            className="relative w-full max-w-sm rounded-2xl bg-zinc-950/85 backdrop-blur-2xl border border-white/[0.08] shadow-2xl shadow-black/50 p-6 text-center space-y-4 overflow-hidden">
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.02] to-transparent" />
             <div className="relative">
-              <div className="w-12 h-12 mx-auto rounded-xl overflow-hidden border border-white/10 bg-zinc-900">
+              <div className="w-12 h-12 mx-auto rounded-xl overflow-hidden border border-white/[0.08] bg-zinc-900">
                 <img src={LOGO_SRC} alt="TMH" className="w-full h-full object-cover" />
               </div>
             </div>
@@ -170,6 +227,14 @@ function BookingModal({ isOpen, onClose }) {
               className="relative flex items-center justify-center gap-2 w-full px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all shadow-lg shadow-blue-600/20">
               <span>Choose a Time</span><ExternalLink className="w-4 h-4" />
             </a>
+
+            <p className="relative text-[11px] leading-relaxed text-zinc-500">
+              By continuing you agree to our{' '}
+              <Link to="/terms" className="text-zinc-400 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-200 transition-colors">Terms</Link>
+              {' '}and{' '}
+              <Link to="/privacy" className="text-zinc-400 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-200 transition-colors">Privacy Policy</Link>.
+            </p>
+
             <p className="relative text-xs text-zinc-500">You'll receive a confirmation email after booking.</p>
             <button onClick={onClose}
               className="relative w-full px-4 py-2 rounded-xl text-sm text-zinc-400 bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-all cursor-pointer">
@@ -198,17 +263,19 @@ export default function HavenDrawer() {
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [modalType, setModalType] = useState(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [consentDismissed, setConsentDismissed] = useState(false);
 
   const [autoFollow, setAutoFollow] = useState(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
 
   const [viewport, setViewport] = useState({ top: 0, height: null });
 
-  const scrollRef     = useRef(null);
-  const endRef        = useRef(null);
-  const menuRef       = useRef(null);
-  const optsBtnRef    = useRef(null);
-  const chatInputRef  = useRef(null);
+  const scrollRef         = useRef(null);
+  const scrollContentRef  = useRef(null);
+  const endRef            = useRef(null);
+  const menuRef           = useRef(null);
+  const optsBtnRef        = useRef(null);
+  const chatInputRef      = useRef(null);
 
   const forceScrollOnNextAgentMsg = useRef(false);
 
@@ -221,6 +288,25 @@ export default function HavenDrawer() {
     && (auditPreflight.status === 'scraping'
      || auditPreflight.status === 'ready'
      || auditPreflight.status === 'failed');
+
+  const hasUserMessage = messages.some((m) => m.role === 'user');
+  const showConsentLine = !consentDismissed && !hasUserMessage && !showPreflight;
+
+  useEffect(() => {
+    try {
+      const dismissed = sessionStorage.getItem(`haven_consent_dismissed_${activeSessionId}`);
+      setConsentDismissed(dismissed === 'true');
+    } catch {
+      setConsentDismissed(false);
+    }
+  }, [activeSessionId]);
+
+  const dismissConsent = useCallback(() => {
+    setConsentDismissed(true);
+    try {
+      sessionStorage.setItem(`haven_consent_dismissed_${activeSessionId}`, 'true');
+    } catch {}
+  }, [activeSessionId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -269,15 +355,42 @@ export default function HavenDrawer() {
     const nearBottom = distanceFromBottom < 80;
     setAutoFollow(nearBottom);
     setShowScrollBtn(!nearBottom);
+
+    if (!nearBottom && forceScrollOnNextAgentMsg.current) {
+      forceScrollOnNextAgentMsg.current = false;
+    }
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const el = scrollRef.current;
+    const content = scrollContentRef.current;
+    if (!el || !content) return;
+    if (typeof ResizeObserver === 'undefined') return;
+
+    let rafId = null;
+    const observer = new ResizeObserver(() => {
+      if (!autoFollow) return;
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        if (!scrollRef.current) return;
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      });
+    });
+    observer.observe(content);
+    return () => {
+      observer.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [isOpen, autoFollow]);
 
   useEffect(() => {
     if (!autoFollow) return;
     if (!scrollRef.current) return;
     requestAnimationFrame(() => {
-      endRef.current?.scrollIntoView({ behavior: 'smooth' });
+      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     });
-  }, [messages, isThinking, autoFollow]);
+  }, [messages.length, isThinking, autoFollow]);
 
   useEffect(() => {
     if (!forceScrollOnNextAgentMsg.current) return;
@@ -288,7 +401,7 @@ export default function HavenDrawer() {
     setAutoFollow(true);
     setShowScrollBtn(false);
     requestAnimationFrame(() => {
-      endRef.current?.scrollIntoView({ behavior: 'smooth' });
+      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     });
   }, [messages, autoFollow]);
 
@@ -375,7 +488,7 @@ export default function HavenDrawer() {
   const handleScrollToBottom = useCallback(() => {
     setAutoFollow(true);
     setShowScrollBtn(false);
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, []);
 
   const pinned   = sessions.filter(s => s.isPinned);
@@ -386,10 +499,10 @@ export default function HavenDrawer() {
       onClick={() => { switchSession(s.id, 'support'); setShowHistorySidebar(false); }}
       className={`w-full text-left p-2.5 rounded-xl text-xs flex items-center gap-2.5 cursor-pointer transition-colors ${
         s.id === activeSessionId
-          ? 'bg-blue-600/15 border border-blue-500/25 text-white font-medium'
+          ? 'bg-white/[0.06] border border-white/[0.10] text-white font-medium'
           : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
       }`}>
-      <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 ${s.id === activeSessionId ? 'text-blue-500' : 'text-zinc-500'}`} />
+      <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 ${s.id === activeSessionId ? 'text-zinc-300' : 'text-zinc-500'}`} />
       <span className="truncate flex-1">{s.title}</span>
     </motion.button>
   );
@@ -416,31 +529,31 @@ export default function HavenDrawer() {
               style={drawerStyle}
               className="fixed right-0 z-50 w-full max-w-md flex flex-col bg-zinc-950/[0.85] backdrop-blur-2xl border-l border-white/[0.08] shadow-2xl shadow-black/60 overflow-hidden overflow-x-hidden">
 
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-zinc-900/20 via-transparent to-zinc-950/40" />
-              <div className="pointer-events-none absolute -top-40 -right-40 w-[400px] h-[400px] rounded-full bg-blue-600/[0.03] blur-3xl" />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.02] via-transparent to-transparent" />
+              <div className="pointer-events-none absolute -top-40 -right-40 w-[400px] h-[400px] rounded-full bg-white/[0.015] blur-3xl" />
 
               <AnimatePresence>
                 {showToast && (
                   <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-                    className="absolute top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 rounded-full bg-zinc-900/85 backdrop-blur-xl border border-white/10 text-white text-xs font-medium shadow-lg shadow-black/40">
+                    className="absolute top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 rounded-full bg-zinc-900/85 backdrop-blur-xl border border-white/[0.08] text-white text-xs font-medium shadow-lg shadow-black/40">
                     <span>{toastMessage}</span>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              <div className="relative flex items-center justify-between px-4 py-3.5 border-b border-white/[0.06] bg-zinc-900/[0.4] backdrop-blur-xl z-20 flex-shrink-0">
+              <div className="relative flex items-center justify-between px-4 py-3.5 border-b border-white/[0.08] bg-zinc-900/40 backdrop-blur-xl backdrop-saturate-150 z-20 flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                 <div className="flex items-center gap-2.5">
                   {isSupportScope && (
                     <motion.button whileTap={{ scale: 0.92 }} id="haven-menu-btn"
                       onClick={() => setShowHistorySidebar(p => !p)}
-                      className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer">
+                      className="p-2 rounded-xl text-zinc-400 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] transition-colors cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                       <Menu className="w-5 h-5" />
                     </motion.button>
                   )}
                   <div className="flex items-center gap-2.5">
                     <div className="relative">
-                      <div className="absolute inset-0 rounded-xl bg-blue-600/15 blur-md" />
-                      <div className="relative w-9 h-9 rounded-xl overflow-hidden border border-white/10 bg-zinc-900">
+                      <div className="absolute inset-0 rounded-xl bg-white/[0.04] blur-md" />
+                      <div className="relative w-9 h-9 rounded-xl overflow-hidden border border-white/[0.08] bg-zinc-900">
                         <img src={LOGO_SRC} alt="Haven" className="w-full h-full object-cover" />
                       </div>
                     </div>
@@ -448,8 +561,8 @@ export default function HavenDrawer() {
                       <span className="text-sm font-semibold text-white tracking-tight">Haven</span>
                       <div className="flex items-center gap-1.5">
                         <span className="relative flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-500 opacity-60" />
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500" />
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-zinc-400 opacity-50" />
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-zinc-400" />
                         </span>
                         <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">{scopeLabel}</span>
                       </div>
@@ -462,13 +575,13 @@ export default function HavenDrawer() {
                     <>
                       <motion.button whileTap={{ scale: 0.92 }}
                         onClick={() => { createNewSession(); setShowHistorySidebar(false); }}
-                        className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer">
+                        className="p-2 rounded-xl text-zinc-400 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] transition-colors cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                         <Plus className="w-5 h-5" />
                       </motion.button>
                       <div className="relative">
                         <motion.button ref={optsBtnRef} whileTap={{ scale: 0.92 }}
                           onClick={() => setShowOptionsMenu(p => !p)}
-                          className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer">
+                          className="p-2 rounded-xl text-zinc-400 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] transition-colors cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                           <MoreVertical className="w-4 h-4" />
                         </motion.button>
                         <AnimatePresence>
@@ -479,7 +592,7 @@ export default function HavenDrawer() {
                               className="absolute right-0 mt-2 w-52 rounded-xl bg-zinc-900/85 backdrop-blur-2xl border border-white/[0.08] shadow-2xl shadow-black/40 py-1 z-50 text-xs overflow-hidden">
                               <button onClick={() => { togglePinSession(activeSessionId); setShowOptionsMenu(false); }}
                                 className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-zinc-300 hover:bg-white/[0.05] text-left cursor-pointer">
-                                <Pin className="w-3.5 h-3.5 text-blue-500" />{currentSession?.isPinned ? 'Unpin Chat' : 'Pin Chat'}
+                                <Pin className="w-3.5 h-3.5 text-zinc-400" />{currentSession?.isPinned ? 'Unpin Chat' : 'Pin Chat'}
                               </button>
                               <button onClick={() => { setModalType('clear_confirm'); setShowOptionsMenu(false); }}
                                 className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-zinc-300 hover:bg-white/[0.05] text-left cursor-pointer">
@@ -487,7 +600,7 @@ export default function HavenDrawer() {
                               </button>
                               <button onClick={() => { setModalType('settings'); setShowOptionsMenu(false); }}
                                 className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-zinc-300 hover:bg-white/[0.05] text-left cursor-pointer">
-                                <Settings className="w-3.5 h-3.5 text-blue-500" />Session Info & Settings
+                                <Settings className="w-3.5 h-3.5 text-zinc-400" />Session Info & Settings
                               </button>
                               <div className="my-1 border-t border-white/[0.06]" />
                               <button onClick={() => { setModalType('delete_confirm'); setShowOptionsMenu(false); }}
@@ -502,7 +615,7 @@ export default function HavenDrawer() {
                   )}
                   <motion.button whileTap={{ scale: 0.92 }}
                     onClick={() => { setShowHistorySidebar(false); setShowOptionsMenu(false); closeDrawer(); }}
-                    className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer">
+                    className="p-2 rounded-xl text-zinc-400 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] transition-colors cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                     <X className="w-5 h-5" />
                   </motion.button>
                 </div>
@@ -511,12 +624,12 @@ export default function HavenDrawer() {
               <AnimatePresence>
                 {(userProfile.name || userProfile.businessDomain || userProfile.auditScore != null) && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                    className="px-5 py-2.5 bg-zinc-900/[0.3] backdrop-blur-xl border-b border-white/[0.04] flex items-center gap-2 flex-wrap overflow-hidden flex-shrink-0">
+                    className="px-5 py-2.5 bg-zinc-900/30 backdrop-blur-xl border-b border-white/[0.04] flex items-center gap-2 flex-wrap overflow-hidden flex-shrink-0">
                     {userProfile.name && <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-zinc-300">{userProfile.name}</span>}
                     {userProfile.businessDomain && <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-zinc-300">{userProfile.businessDomain}</span>}
                     {userProfile.auditScore != null && (
                       <span className={`text-[11px] px-2 py-0.5 rounded-md border font-medium ${
-                        userProfile.auditScore >= 80 ? 'bg-blue-600/10 border-blue-500/25 text-blue-400'
+                        userProfile.auditScore >= 80 ? 'bg-white/[0.06] border-white/[0.12] text-zinc-100'
                         : userProfile.auditScore >= 50 ? 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
                         : 'bg-red-500/10 border-red-500/25 text-red-300'}`}>
                         Score: {userProfile.auditScore}
@@ -540,7 +653,7 @@ export default function HavenDrawer() {
                         <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">Chat History</span>
                         <motion.button whileTap={{ scale: 0.95 }}
                           onClick={() => { createNewSession(); setShowHistorySidebar(false); }}
-                          className="p-1.5 rounded-lg bg-blue-600/15 text-blue-400 hover:bg-blue-600/25 text-[11px] font-medium flex items-center gap-1 px-2.5 cursor-pointer">
+                          className="p-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-zinc-300 hover:bg-white/[0.08] text-[11px] font-medium flex items-center gap-1 px-2.5 cursor-pointer">
                           <Plus className="w-3 h-3" /> New
                         </motion.button>
                       </div>
@@ -567,34 +680,36 @@ export default function HavenDrawer() {
               <div
                 ref={scrollRef}
                 onScroll={handleScroll}
-                className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5 space-y-5"
+                className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5"
               >
-                {showPreflight ? (
-                  <HavenScoreCard
-                    preflight={auditPreflight}
-                    kind={userProfile?.businessDomain === 'social' || userProfile?.businessDomain === 'website_and_social' ? 'social' : 'website'}
-                    userName={userProfile?.name}
-                    brandName={userProfile?.brandName}
-                    onProceed={proceedFromPreflight}
-                    onRetry={retryScrape}
-                  />
-                ) : viewState === 'landing' ? (
-                  <QuickPromptCards onSelectPrompt={handleQuickPrompt} />
-                ) : (
-                  messages.map((msg, idx) => (
-                    <ChatMessage
-                      key={msg.id || idx}
-                      message={msg}
-                      size="full"
-                      shouldAnimateGreeting={isFreshMessage(msg)}
-                      shouldShowChips={idx === messages.length - 1}
-                      onChipSelect={handleChipSelect}
-                      onNavChipSelect={handleNavChipSelect}
+                <div ref={scrollContentRef} className="space-y-5">
+                  {showPreflight ? (
+                    <HavenScoreCard
+                      preflight={auditPreflight}
+                      kind={userProfile?.businessDomain === 'social' || userProfile?.businessDomain === 'website_and_social' ? 'social' : 'website'}
+                      userName={userProfile?.name}
+                      brandName={userProfile?.brandName}
+                      onProceed={proceedFromPreflight}
+                      onRetry={retryScrape}
                     />
-                  ))
-                )}
-                {isThinking && <ThinkingIndicator />}
-                <div ref={endRef} />
+                  ) : viewState === 'landing' ? (
+                    <QuickPromptCards onSelectPrompt={handleQuickPrompt} />
+                  ) : (
+                    messages.map((msg, idx) => (
+                      <ChatMessage
+                        key={msg.id || idx}
+                        message={msg}
+                        size="full"
+                        shouldAnimateGreeting={isFreshMessage(msg)}
+                        shouldShowChips={idx === messages.length - 1}
+                        onChipSelect={handleChipSelect}
+                        onNavChipSelect={handleNavChipSelect}
+                      />
+                    ))
+                  )}
+                  {isThinking && <ThinkingIndicator />}
+                  <div ref={endRef} />
+                </div>
               </div>
 
               <AnimatePresence>
@@ -605,7 +720,7 @@ export default function HavenDrawer() {
                     exit={{ opacity: 0, scale: 0.8 }}
                     onClick={handleScrollToBottom}
                     aria-label="Scroll to latest"
-                    className="absolute bottom-28 right-5 z-30 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-500 border border-blue-400/30 text-white flex items-center justify-center shadow-lg shadow-blue-600/40 transition-all active:scale-95"
+                    className="absolute bottom-28 right-5 z-30 w-10 h-10 rounded-full bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.10] text-white flex items-center justify-center shadow-lg shadow-black/40 backdrop-blur-xl transition-all active:scale-95"
                   >
                     <ChevronDown className="w-4 h-4" />
                   </motion.button>
@@ -613,7 +728,25 @@ export default function HavenDrawer() {
               </AnimatePresence>
 
               {!showPreflight && (
-                <div className="relative px-4 py-4 border-t border-white/[0.06] bg-zinc-900/[0.3] backdrop-blur-xl flex-shrink-0">
+                <div className="relative px-4 pt-3 pb-4 border-t border-white/[0.08] bg-zinc-900/40 backdrop-blur-xl backdrop-saturate-150 flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                  {showConsentLine && (
+                    <div className="mb-2.5 flex items-center justify-center gap-2 text-[10px] leading-relaxed text-zinc-500">
+                      <p className="text-center">
+                        By chatting with Haven you agree to our{' '}
+                        <Link to="/terms" className="text-zinc-400 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-200 transition-colors">Terms</Link>
+                        {' '}and{' '}
+                        <Link to="/privacy" className="text-zinc-400 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-200 transition-colors">Privacy Policy</Link>.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={dismissConsent}
+                        aria-label="Dismiss"
+                        className="shrink-0 p-0.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
                   <ChatInput
                     key={activeSessionId}
                     ref={chatInputRef}

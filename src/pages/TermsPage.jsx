@@ -17,6 +17,7 @@ const sectionNav = [
   { id: 'acceptable-use', label: 'Acceptable Use' },
   { id: 'limitation-of-liability', label: 'Limitation of Liability' },
   { id: 'third-party-links-and-services', label: 'Third Party Links & Services' },
+  { id: 'data-deletion', label: 'Data Deletion' },
   { id: 'changes-to-these-terms', label: 'Changes to These Terms' },
   { id: 'governing-law', label: 'Governing Law' },
   { id: 'contact', label: 'Contact' },
@@ -64,7 +65,7 @@ export default function TermsPage() {
           <article className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100/70 backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.03]">
             <div className="border-b border-zinc-200 px-6 py-10 sm:px-10 sm:py-14 dark:border-white/[0.08]">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                Effective Date: September 2026
+                Effective Date: October 2026
               </p>
               <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl dark:text-white">
                 Terms of Service
@@ -77,9 +78,14 @@ export default function TermsPage() {
             <div className="space-y-12 px-6 py-10 sm:px-10 sm:py-14">
               <section id="who-we-are" className="scroll-mt-10">
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">1. Who We Are</h2>
-                <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
-                  The Marketing Haven is a digital marketing agency based in Nigeria. We operate as part of a larger organization structure and enter into all agreements through The Marketing Haven as the contracting entity. Contact: info@themarketinghaven.xyz.
-                </p>
+                <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
+                  <p>
+                    The Marketing Haven is a digital marketing agency based in Nigeria. TMH operates as a business unit of Move Multi Brand (MMB), a company registered in Nigeria under RC 26338986. All agreements are entered into through The Marketing Haven as the contracting entity, under the authority of MMB.
+                  </p>
+                  <p>
+                    Contact: info@themarketinghaven.xyz.
+                  </p>
+                </div>
               </section>
 
               <section id="services-we-provide" className="scroll-mt-10">
@@ -97,23 +103,41 @@ export default function TermsPage() {
 
               <section id="free-brand-review" className="scroll-mt-10">
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">3. Free Brand Review</h2>
-                <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
-                  The free brand review is provided at no cost. Haven AI conducts a conversational diagnostic and offers strategic direction based on the information you provide. Results depend on the accuracy of your inputs. The review is not a guarantee of any specific business outcome and is not a substitute for a professional consulting engagement.
-                </p>
+                <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
+                  <p>
+                    The free brand review is provided at no cost. Haven AI conducts a conversational diagnostic and offers strategic direction based on the information you provide. Results depend on the accuracy of your inputs. The review is not a guarantee of any specific business outcome and is not a substitute for a professional consulting engagement.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Scores and diagnoses are AI-generated approximations, not fixed measurements.</span> Running the same review more than once may produce a slightly different score, or a different shade of the same underlying diagnosis. Treat the score as directional information, not an absolute or certified result. You are free to accept, reject, or ignore any part of the review, and nothing in the review constitutes legal, financial, medical, or other professional advice.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Monitoring and review.</span> Submissions, chat transcripts, and your interactions with Haven AI are accessible to The Marketing Haven team in our internal admin dashboard. We access this data to deliver the review, prepare for calls you book, follow up on your enquiry, and monitor for abuse, misuse, or violations of these terms. We do not sell this data or share it with advertisers.
+                  </p>
+                </div>
               </section>
 
               <section id="artificial-intelligence-disclosure" className="scroll-mt-10">
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">4. Artificial Intelligence Disclosure</h2>
-                <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
-                  Haven AI is an artificial intelligence system. It may occasionally produce responses that are incomplete, inaccurate, or not suitable for your specific situation. You should apply your own judgement before acting on anything Haven says. When Haven recommends a strategy call, we encourage you to take it, since a human conversation is often the right next step for anything complex.
-                </p>
+                <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
+                  <p>
+                    Haven AI is an artificial intelligence system. It may occasionally produce responses that are incomplete, inaccurate, or not suitable for your specific situation. You should apply your own judgement before acting on anything Haven says. When Haven recommends a strategy call, we encourage you to take it, since a human conversation is often the right next step for anything complex.
+                  </p>
+                  <p>
+                    Haven AI does not act on your behalf, does not make decisions for you, and does not enter into any binding relationship with you. Any action you take based on Haven&apos;s output is your own decision, made at your own discretion. Because Haven&apos;s outputs are generated by a probabilistic AI system, the same input may produce slightly different results on different runs. This applies to scores, diagnoses, and recommendations.
+                  </p>
+                </div>
               </section>
 
               <section id="the-unseen-playbook" className="scroll-mt-10">
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">5. The Unseen Playbook</h2>
-                <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
-                  The Unseen Playbook is a digital product delivered as a PDF. When you purchase it, you receive a personal licence to read and use the material for your own business or personal development. This licence may not be transferred, resold, shared publicly, or used to create derivative products. All content remains the intellectual property of The Marketing Haven.
-                </p>
+                <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
+                  <p>
+                    The Unseen Playbook is a digital product delivered as a PDF. When you purchase it, you receive a personal licence to read and use the material for your own business or personal development. This licence may not be transferred, resold, shared publicly, or used to create derivative products. All content remains the intellectual property of The Marketing Haven.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Your decision to purchase is voluntary and your own.</span> If you choose to buy The Unseen Playbook after a conversation with Haven AI, that choice is yours alone. We do not direct, force, or pressure any purchase. A purchase made following an AI recommendation does not create any additional warranty, refund right, or guarantee of outcome, and does not shift responsibility for the decision from you to us.
+                  </p>
+                </div>
               </section>
 
               <section id="refund-policy" className="scroll-mt-10">
@@ -135,7 +159,7 @@ export default function TermsPage() {
               <section id="strategy-call-bookings" className="scroll-mt-10">
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">8. Strategy Call Bookings</h2>
                 <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
-                  Strategy calls are free and run for 25 minutes. We reserve the right to reschedule or cancel a call with reasonable notice. Repeatedly missing scheduled calls without notice may result in restricted booking access. Booking is handled by Calendly, and their own terms apply to the scheduling process.
+                  Strategy calls are free and run for 25 minutes. We reserve the right to reschedule or cancel a call with reasonable notice. Repeatedly missing scheduled calls without notice may result in restricted booking access. Booking is handled by Calendly, and their own terms apply to the scheduling process. When you provide your email to initiate a booking, we record it so we can prepare for the call and match it to any prior review you may have submitted.
                 </p>
               </section>
 
@@ -155,16 +179,36 @@ export default function TermsPage() {
 
               <section id="acceptable-use" className="scroll-mt-10">
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">11. Acceptable Use</h2>
-                <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
-                  You agree not to misuse this website. This includes not attempting to break into our systems, not uploading malicious files, not using Haven AI to generate content that is illegal or harmful, and not impersonating anyone else. We reserve the right to restrict access if we detect misuse.
-                </p>
+                <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
+                  <p>
+                    You agree not to misuse this website. The following are prohibited and constitute a material breach of these terms:
+                  </p>
+                  <ul className="list-disc space-y-1 pl-5 marker:text-zinc-400 dark:marker:text-zinc-500">
+                    <li>Sexual, romantic, or otherwise inappropriate content directed at Haven AI, any TMH team member, or the team generally</li>
+                    <li>Attempting to extract personal, private, or non-public information about any TMH team member or about the company&apos;s internal operations, contracts, clients, or unreleased plans</li>
+                    <li>Harassment, threats, hate speech, or abusive language of any kind</li>
+                    <li>Deliberate mockery, trolling, spam, or misuse of the platform for anything outside brand, marketing, and business context</li>
+                    <li>Attempting to break into our systems, uploading malicious files, or impersonating anyone else</li>
+                  </ul>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Monitoring.</span> Haven AI conversations are monitored for safety, quality, and legal compliance. The Marketing Haven team reviews chat transcripts and submitted data through our admin dashboard.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Consequences.</span> If we detect misuse, we may restrict or terminate your access to this website and its services at any time, without notice and without refund. We may also retain the relevant records for legal, safety, and abuse-prevention purposes, and we may report unlawful activity to the appropriate authorities.
+                  </p>
+                </div>
               </section>
 
               <section id="limitation-of-liability" className="scroll-mt-10">
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">12. Limitation of Liability</h2>
-                <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
-                  The Marketing Haven is not liable for any business outcomes that result from acting on recommendations from Haven AI or from any free strategy call. All guidance is provided for informational purposes. You are responsible for your own business decisions. To the fullest extent permitted by law, our total liability for any claim related to this website or its services is limited to the amount you paid us, if any, for the specific service in question.
-                </p>
+                <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
+                  <p>
+                    The Marketing Haven is not liable for any business outcomes that result from acting on recommendations from Haven AI or from any free strategy call. All guidance is provided for informational purposes. You are responsible for your own business decisions. To the fullest extent permitted by law, our total liability for any claim related to this website or its services is limited to the amount you paid us, if any, for the specific service in question.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Decisions you make are yours.</span> To the fullest extent permitted by law, The Marketing Haven is not liable for any decision you make based on recommendations, scores, or diagnoses from Haven AI, including any decision to purchase The Unseen Playbook or any paid service. You are the sole decision-maker for your business, and you retain full responsibility for the consequences of the choices you make.
+                  </p>
+                </div>
               </section>
 
               <section id="third-party-links-and-services" className="scroll-mt-10">
@@ -174,24 +218,40 @@ export default function TermsPage() {
                 </p>
               </section>
 
+              <section id="data-deletion" className="scroll-mt-10">
+                <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">14. Data Deletion</h2>
+                <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
+                  <p>
+                    You may request deletion of all your personal data at any time. Use the Data Deletion link in the footer of this website, or email info@themarketinghaven.xyz with the subject line &quot;Data Deletion Request&quot;.
+                  </p>
+                  <p>
+                    We will send a confirmation link to your email. Once you confirm, we permanently delete your brand reviews, chat transcripts, screenshots, and personal information from our systems. Deletion is irreversible.
+                  </p>
+                  <p>
+                    If your access was restricted because of misuse, we may retain a limited record of the abuse and your identifying information for as long as necessary to prevent further abuse and to comply with legal obligations. Other than that exception, our payment processor (Paystack), booking platform (Calendly), and email provider (Resend) retain their own transactional, delivery, and financial records per their privacy policies and applicable financial regulations. You can contact those providers directly to exercise your rights with them. See our Privacy Policy for full details.
+                  </p>
+                </div>
+              </section>
+
               <section id="changes-to-these-terms" className="scroll-mt-10">
-                <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">14. Changes to These Terms</h2>
+                <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">15. Changes to These Terms</h2>
                 <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   We may update these terms from time to time. When we do, we will change the effective date at the top of this page. Continued use of the site after an update means you accept the updated terms.
                 </p>
               </section>
 
               <section id="governing-law" className="scroll-mt-10">
-                <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">15. Governing Law</h2>
+                <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">16. Governing Law</h2>
                 <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   These terms are governed by the laws of the Federal Republic of Nigeria. Any dispute arising from the use of this website or its services will be subject to the jurisdiction of Nigerian courts.
                 </p>
               </section>
 
               <section id="contact" className="scroll-mt-10">
-                <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">16. Contact</h2>
+                <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">17. Contact</h2>
                 <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   The Marketing Haven<br />
+                  A business unit of Move Multi Brand (RC 26338986)<br />
                   Email: info@themarketinghaven.xyz<br />
                   Website: themarketinghaven.xyz
                 </p>

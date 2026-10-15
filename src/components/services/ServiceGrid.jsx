@@ -55,25 +55,20 @@ const SERVICES = [
   },
 ];
 
-// No props — Haven is consumed directly via context.
-// This is what prevents the service sessions from ever bleeding
-// into the support or audit session buckets.
 export default function ServiceGrid() {
   const [selectedService, setSelectedService] = useState(null);
   const [bookingToast, setBookingToast] = useState(false);
 
   const { openDrawer } = useHaven();
 
-  // Scroll lock while detail modal is open
   useEffect(() => {
     document.body.style.overflow = selectedService ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [selectedService]);
 
-  // Routes to 'service' bucket — completely isolated from support and audit
   const handleGetMoreInfo = () => {
     const svc = selectedService;
-    setSelectedService(null); // close detail modal first
+    setSelectedService(null);
 
     openDrawer('service_inquiry', {
       serviceData: {
@@ -86,19 +81,17 @@ export default function ServiceGrid() {
     });
   };
 
-  // Routes to booking notice — NOT to Haven support chat
   const handleBookCall = () => {
     setSelectedService(null);
-    openDrawer('booking'); // triggers BookingComingSoonModal via context
+    openDrawer('booking');
   };
 
   return (
     <section
       id="services"
-      className="relative w-full py-16 sm:py-28 px-4 sm:px-6 lg:px-8 bg-zinc-50 dark:bg-zinc-950/50 transition-colors duration-300"
+      className="relative w-full pt-0 sm:pt-16 pb-12 sm:pb-28 px-4 sm:px-6 lg:px-8 bg-zinc-50 dark:bg-zinc-950/50 transition-colors duration-300"
     >
       <div className="max-w-7xl mx-auto">
-        {/* Heading */}
         <motion.div
           className="text-center mb-10 sm:mb-16"
           initial={{ opacity: 0, y: 20 }}
@@ -114,7 +107,6 @@ export default function ServiceGrid() {
           </p>
         </motion.div>
 
-        {/* Service Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {SERVICES.map((s, i) => {
             const Icon = s.icon;
@@ -161,11 +153,9 @@ export default function ServiceGrid() {
         </div>
       </div>
 
-      {/* Service Detail Modal */}
       <AnimatePresence>
         {selectedService && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-            {/* Overlay — no blur, plain dim */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -189,7 +179,6 @@ export default function ServiceGrid() {
                 <X className="w-5 h-5" />
               </button>
 
-              {/* Modal header */}
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
                   {React.createElement(selectedService.icon, { className: 'w-5 h-5' })}
@@ -207,7 +196,6 @@ export default function ServiceGrid() {
                 {selectedService.overview}
               </p>
 
-              {/* Deliverables */}
               <div className="bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl p-4 mb-6">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3">
                   Key Deliverables
@@ -222,7 +210,6 @@ export default function ServiceGrid() {
                 </div>
               </div>
 
-              {/* Actions */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <button
                   type="button"
@@ -243,7 +230,6 @@ export default function ServiceGrid() {
                 </button>
               </div>
 
-              {/* Booking coming soon toast */}
               <AnimatePresence>
                 {bookingToast && (
                   <motion.div

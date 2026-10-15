@@ -60,7 +60,7 @@ export default function PrivacyPage() {
           <article className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100/70 backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.03]">
             <div className="border-b border-zinc-200 px-6 py-10 sm:px-10 sm:py-14 dark:border-white/[0.08]">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                Effective Date: September 2026
+                Effective Date: October 2026
               </p>
               <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl dark:text-white">
                 Privacy Policy
@@ -73,9 +73,14 @@ export default function PrivacyPage() {
             <div className="space-y-12 px-6 py-10 sm:px-10 sm:py-14">
               <section id="who-we-are" className="scroll-mt-10">
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">1. Who We Are</h2>
-                <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
-                  The Marketing Haven is a digital marketing agency based in Nigeria. We operate as part of a larger organization structure. For the purposes of this policy, The Marketing Haven is the entity responsible for the personal data you submit through this website. You can contact us at info@themarketinghaven.xyz for any privacy concern.
-                </p>
+                <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
+                  <p>
+                    The Marketing Haven is a digital marketing agency based in Nigeria. TMH operates as a business unit of Move Multi Brand (MMB), a company registered in Nigeria under RC 26338986. All data processing described in this policy is carried out by The Marketing Haven under the authority of MMB.
+                  </p>
+                  <p>
+                    For the purposes of this policy, The Marketing Haven is the entity responsible for the personal data you submit through this website. You can contact us at info@themarketinghaven.xyz for any privacy concern.
+                  </p>
+                </div>
               </section>
 
               <section id="information-we-collect" className="scroll-mt-10">
@@ -91,6 +96,12 @@ export default function PrivacyPage() {
                   <p>
                     <span className="font-semibold text-zinc-900 dark:text-white">Information from payments:</span> when you purchase The Unseen Playbook, our payment partner Paystack processes the transaction. We receive a payment reference and the email you entered. We do not receive or store your card details. Paystack handles those directly and stores them under their own security standards.
                   </p>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Silent account:</span> when you submit a brand review, we create a silent account keyed to the email address you provide. No password is set, and no login is required. This silent account links multiple reviews you may submit over time and helps us identify you if you later book a strategy call. You can request deletion of your silent account and all associated data at any time through the Data Deletion link in our footer.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Strategy call booking email:</span> when you initiate a booking through the Services section or the chat drawer, we record the email you provide so we can prepare for the call and match it to any prior review you may have submitted.
+                  </p>
                 </div>
               </section>
 
@@ -105,6 +116,8 @@ export default function PrivacyPage() {
                     <li>Send you a payment receipt through Paystack</li>
                     <li>Send you a welcome email when you submit a brand review</li>
                     <li>Prepare for strategy calls you have booked</li>
+                    <li>Review chat transcripts and submitted data in our internal admin dashboard for quality, safety, and legal compliance</li>
+                    <li>Monitor for abuse, misuse, harassment, or violations of our Terms of Service</li>
                     <li>Improve the accuracy and usefulness of Haven AI over time</li>
                     <li>Contact you with follow-up information relevant to your review</li>
                   </ul>
@@ -114,9 +127,17 @@ export default function PrivacyPage() {
 
               <section id="artificial-intelligence-processing" className="scroll-mt-10">
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">4. Artificial Intelligence Processing</h2>
-                <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
-                  Haven AI runs on Google&apos;s Gemini models, with a fallback model provided by Groq. When you chat with Haven, your messages are sent to these services for processing. Your website and social media content may also be sent to these services when you request a brand review or upload a screenshot. We do not use your conversations to train public models. Google and Groq process this data under their own terms as service providers.
-                </p>
+                <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
+                  <p>
+                    Haven AI runs on Google&apos;s Gemini models, with a fallback model provided by Groq. When you chat with Haven, your messages are sent to these services for processing. Your website and social media content may also be sent to these services when you request a brand review or upload a screenshot. We do not use your conversations to train public models. Google and Groq process this data under their own terms as service providers.
+                  </p>
+                  <p>
+                    Because Haven&apos;s outputs are generated by a probabilistic AI system, the same input may produce slightly different results on different runs. This applies to scores, diagnoses, and recommendations. AI outputs are directional guidance, not certified measurements or professional advice.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Human review of conversations.</span> Members of The Marketing Haven team may review chat transcripts in our internal admin dashboard to prepare for booked calls, resolve technical issues, monitor for abuse, and improve the quality of Haven AI. We do not use your conversations to train public models, and we do not review conversations for any purpose unrelated to running this service.
+                  </p>
+                </div>
               </section>
 
               <section id="service-providers" className="scroll-mt-10">
@@ -161,9 +182,15 @@ export default function PrivacyPage() {
 
               <section id="data-retention" className="scroll-mt-10">
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">8. Data Retention</h2>
-                <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
-                  We keep your information for as long as it is needed to deliver the service you requested and to follow up on your brand review. If you ask us to delete your data, we will do so within a reasonable time, except where we are required to retain records for legal, tax, or accounting purposes.
-                </p>
+                <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
+                  <p>We keep your information for as long as it is needed to deliver the service you requested and to follow up on your brand review. If you ask us to delete your data, we will do so within a reasonable time, except where we are required to retain records for legal, tax, or accounting purposes.</p>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Abuse prevention retention.</span> If your access was restricted because of misuse, harassment, or a violation of our Terms of Service, we may retain a limited record of the abuse and your identifying information for as long as necessary to prevent further abuse and to comply with legal obligations.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Third-party retention:</span> when you request data deletion through our Data Deletion page, we permanently remove your brand reviews, chat transcripts, screenshots, and personal information from our systems. Our payment processor (Paystack), booking platform (Calendly), and email provider (Resend) retain their own transactional, delivery, and financial records per their privacy policies and applicable financial regulations. You can contact those providers directly to exercise your rights with them.
+                  </p>
+                </div>
               </section>
 
               <section id="your-rights" className="scroll-mt-10">
@@ -177,6 +204,9 @@ export default function PrivacyPage() {
                     <li>Object to certain uses of your information</li>
                     <li>Withdraw consent for cookies by clearing your browser storage</li>
                   </ul>
+                  <p>
+                    <span className="font-semibold text-zinc-900 dark:text-white">Data deletion:</span> you can request deletion of all your personal data at any time. Use the Data Deletion link in the footer of this website, or email us at info@themarketinghaven.xyz with the subject line &quot;Data Deletion Request&quot;. We will send a confirmation link to your email, then permanently delete your data once you confirm. Deletion is irreversible.
+                  </p>
                   <p>To exercise any of these rights, email us at info@themarketinghaven.xyz. We will respond as soon as we can.</p>
                 </div>
               </section>
@@ -199,6 +229,7 @@ export default function PrivacyPage() {
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">12. Contact</h2>
                 <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   The Marketing Haven<br />
+                  A business unit of Move Multi Brand (RC 26338986)<br />
                   Email: info@themarketinghaven.xyz<br />
                   Website: themarketinghaven.xyz
                 </p>

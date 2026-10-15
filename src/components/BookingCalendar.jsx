@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { createBooking, getAvailableSlots } from '../lib/bookingService';
 
 const formatDate = (isoDate) => new Intl.DateTimeFormat('en-NG', {
@@ -195,6 +196,13 @@ export default function BookingCalendar({ reviewId = null, onBooked }) {
                 className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white outline-none focus:border-blue-500" />
             </label>
           </div>
+
+          <p className="text-center text-[11px] leading-relaxed text-zinc-500">
+            By continuing you agree to our{' '}
+            <Link to="/terms" className="text-zinc-400 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-200 transition-colors">Terms</Link>
+            {' '}and{' '}
+            <Link to="/privacy" className="text-zinc-400 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-200 transition-colors">Privacy Policy</Link>.
+          </p>
 
           <button
             disabled={submitting || !selectedDate || !selectedTime}
