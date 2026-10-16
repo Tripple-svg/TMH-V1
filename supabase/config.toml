@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.send-tmh-booking-confirmation]
 verify_jwt = false
+
+[functions.calendly-poll-bookings]
+verify_jwt = false
