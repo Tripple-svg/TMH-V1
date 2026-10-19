@@ -35,6 +35,7 @@ const DEFAULT_USER_PROFILE = {
   leadTemperature: null,
   clickedBookingLink: false,
   clickedPlaybookLink: false,
+  flag_status: 'white',
 };
 
 const DEFAULT_PREFLIGHT = {
@@ -214,6 +215,24 @@ async function callScrapeWebsite(url) {
   });
   if (!response.ok) throw new Error(`Scraper error ${response.status}: ${await response.text()}`);
   return await response.json();
+}
+
+async function fetchUserFlag(email, signal) {
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/check-email-exists`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ email, includeFlag: true }),
+    signal,
+  });
+  const data = await response.json();
+  if (!response.ok || !['white', 'yellow', 'red'].includes(data.flag_status)) {
+    throw new Error('Unable to check Haven access status.');
+  }
+  return data.flag_status;
 }
 
 async function callScoreSocial(screenshot) {
@@ -400,12 +419,12 @@ export function HavenProvider({ children }) {
 
   const runScraper = useCallback(async (url, { force = false } = {}) => {
     if (!url) return;
-    if (!force && auditPreflight.status === 'ready' && auditPreflight.url === url) return;
+    if (!force && auditPreflight.status === 'ready' && auditPreflight.url === url && auditPreflight.summary?.length >= 300) return;
 
     const cacheKey = `website:${url}`;
     if (!force) {
       const cached = getCachedScore(cacheKey);
-      if (cached) {
+      if (cached && cached.summary?.length >= 300) {
         console.log('[Haven] Website score cache hit for', url);
         setAuditPreflight(prev => ({
           status: 'ready', url,
@@ -431,6 +450,9 @@ export function HavenProvider({ children }) {
 
     try {
       const result = await callScrapeWebsite(url);
+      if (!result.summary || result.summary.length < 300) {
+        throw new Error('Insufficient content extracted from site.');
+      }
       if (!result.ok) throw new Error(result.error || 'Scraper returned ok: false');
 
       setAuditPreflight(prev => ({
@@ -462,9 +484,9 @@ export function HavenProvider({ children }) {
         error: err instanceof Error ? err.message : 'Unknown error',
         dismissed: false, retryCount: (prev.retryCount || 0) + 1,
       }));
-      setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true }));
+      setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true, auditScore: null, scoreBreakdown: null, biggestIssue: null }));
     }
-  }, [auditPreflight.status, auditPreflight.url]);
+  }, [auditPreflight.status, auditPreflight.url, auditPreflight.summary]);
 
   const runSocialScorer = useCallback(async (screenshot, { force = false } = {}) => {
     if (!screenshot) return;
@@ -803,7 +825,7 @@ export function HavenProvider({ children }) {
       auditData.biggestIssue      = userProfile.biggestIssue ?? null;
     }
 
-    const systemPrompt = buildHavenSystemPrompt({
+    let systemPrompt = buildHavenSystemPrompt({
       userName:  userProfile.name      || 'there',
       brandName: userProfile.brandName || 'your business',
       entryPoint: activeScope === 'audit'   ? 'AUDIT_FLOW'
@@ -835,6 +857,13 @@ export function HavenProvider({ children }) {
     }
 
     try {
+      const flagStatus = userProfile.email
+        ? await fetchUserFlag(userProfile.email, controller.signal)
+        : userProfile.flag_status;
+      if (userProfile.email) setUserProfile(prev => ({ ...prev, flag_status: flagStatus }));
+      if (flagStatus === 'red') {
+        systemPrompt += "\n\nCRITICAL: THIS USER IS RESTRICTED. Reply ONLY with: 'Your access is currently restricted due to a violation of our terms. Please contact info@themarketinghaven.xyz.' Do not answer any other questions.";
+      }
       const result = await callHavenAPI({
         systemPrompt, messages: allMessages,
         screenshot: screenshotToSend, scope: activeScope, signal: controller.signal,

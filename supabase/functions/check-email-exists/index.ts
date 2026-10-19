@@ -8,6 +8,7 @@ const ALLOWED_ORIGINS = [
   'https://themarketinghaven.xyz',
   'https://www.themarketinghaven.xyz',
   'http://localhost:5173',
+  'http://localhost:5175',
 ];
 
 const EMAIL_PATTERN = /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i;
@@ -26,9 +27,10 @@ function corsHeaders(origin: string | null) {
   return headers;
 }
 
-function response(exists: boolean, origin: string | null) {
-  return new Response(JSON.stringify({ exists }), {
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
+function response(exists: boolean, origin: string | null, flagStatus?: string, status = 200) {
+  return new Response(JSON.stringify({ exists, ...(flagStatus ? { flag_status: flagStatus } : {}) }), {
+    status,
+    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   });
 }
 
@@ -47,12 +49,14 @@ serve(async (req) => {
     return response(false, origin);
   }
 
+  let includeFlag = false;
   try {
     const payload = await req.json().catch(() => null);
     const email = typeof payload?.email === 'string' ? payload.email.trim() : '';
+    includeFlag = payload?.includeFlag === true;
 
     if (!EMAIL_PATTERN.test(email) || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      return response(false, origin);
+      return response(false, origin, undefined, includeFlag ? 400 : 200);
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -63,18 +67,19 @@ serve(async (req) => {
     // lower(email) = lower(trimmed input).
     const { data: reviews, error } = await supabase
       .from('brand_reviews')
-      .select('id')
+      .select(includeFlag ? 'id, flag_status' : 'id')
       .ilike('email', escapeIlikePattern(email))
       .limit(1);
 
     if (error) {
       console.error('check-email-exists lookup failed:', error);
-      return response(false, origin);
+      return response(false, origin, undefined, includeFlag ? 503 : 200);
     }
 
-    return response(Boolean(reviews?.length), origin);
+    const flagStatus = includeFlag ? reviews?.[0]?.flag_status || 'white' : undefined;
+    return response(Boolean(reviews?.length), origin, flagStatus);
   } catch (error) {
     console.error('check-email-exists failed:', error);
-    return response(false, origin);
+    return response(false, origin, undefined, includeFlag ? 503 : 200);
   }
 });

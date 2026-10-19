@@ -9,6 +9,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const FETCH_URL = `${SUPABASE_URL}/functions/v1/admin-fetch-leads`;
 const UPDATE_URL = `${SUPABASE_URL}/functions/v1/admin-update-lead`;
+const FLAG_URL = `${SUPABASE_URL}/functions/v1/flag-user`;
 const PASSWORD_KEY = 'tmh_admin_password';
 const PAGE_SIZE = 25;
 
@@ -75,6 +76,20 @@ async function apiUpdateLead(password, updates) {
   if (res.status === 401) return { ok: false, code: 'unauthorised' };
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) return { ok: false, code: 'error', error: data.error || `Error ${res.status}` };
+  return { ok: true, review: data.review };
+}
+
+async function apiFlagUser(password, email, status, reason) {
+  const res = await fetch(FLAG_URL, {
+    method: 'POST',
+    headers: apiHeaders(),
+    body: JSON.stringify({ password, email, status, reason }),
+  });
+  if (res.status === 401) return { ok: false, code: 'unauthorised' };
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    return { ok: false, code: 'error', error: data.error || `Error ${res.status}`, review: data.review };
+  }
   return { ok: true, review: data.review };
 }
 
@@ -411,6 +426,30 @@ function NotesField({ value, onChange, onBlur }) {
   );
 }
 
+function FlagSelect({ lead, onChange, disabled }) {
+  const status = ['yellow', 'red'].includes(lead.flag_status) ? lead.flag_status : 'white';
+  const colour = status === 'red'
+    ? 'border-red-500/40 bg-red-500/10 text-red-300'
+    : status === 'yellow'
+      ? 'border-yellow-500/40 bg-yellow-500/10 text-yellow-300'
+      : 'border-zinc-700 bg-zinc-950 text-zinc-400';
+
+  return (
+    <select
+      value={status}
+      onChange={onChange}
+      disabled={disabled || !lead.email}
+      aria-label={`User flag for ${lead.email || lead.full_name || 'lead'}`}
+      title={lead.flag_reason || 'Change user access flag'}
+      className={`rounded-full border px-2 py-1 text-xs outline-none focus:border-blue-500 disabled:opacity-60 cursor-pointer ${colour}`}
+    >
+      <option value="white">White · Normal</option>
+      <option value="yellow">Yellow · Warning</option>
+      <option value="red">Red · Restricted</option>
+    </select>
+  );
+}
+
 function BookedBadge() {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-300">
@@ -451,6 +490,27 @@ function useLeadActions({ lead, password, onLeadChange, onAuthLost, showToast })
   }, [lead, password, onLeadChange, onAuthLost, showToast]);
 
   const onStatusChange = (e) => save({ followupStatus: e.target.value });
+  const onFlagChange = async (e) => {
+    const status = e.target.value;
+    const reason = window.prompt('Reason for this flag (optional):', lead.flag_reason || '');
+    if (reason === null) return;
+    setSaving(true);
+    try {
+      const result = await apiFlagUser(password, lead.email, status, reason.trim());
+      if (result.review) onLeadChange({ ...lead, ...result.review });
+      if (result.ok) {
+        showToast('success', 'User flag updated.');
+      } else if (result.code === 'unauthorised') {
+        onAuthLost();
+      } else {
+        showToast('error', result.error || 'Could not update user flag.');
+      }
+    } catch {
+      showToast('error', 'Could not reach the server.');
+    } finally {
+      setSaving(false);
+    }
+  };
   const onNotesBlur = () => {
     if (notes !== notesRef.current) {
       notesRef.current = notes;
@@ -464,14 +524,14 @@ function useLeadActions({ lead, password, onLeadChange, onAuthLost, showToast })
     });
   };
 
-  return { saving, notes, setNotes, onStatusChange, onNotesBlur, handleCopy };
+  return { saving, notes, setNotes, onStatusChange, onFlagChange, onNotesBlur, handleCopy };
 }
 
 // ─── Desktop table row ─────────────────────────────────────────
 
 function LeadRow({ lead, password, onLeadChange, onAuthLost, showToast }) {
   const [expanded, setExpanded] = useState(false);
-  const { saving, notes, setNotes, onStatusChange, onNotesBlur, handleCopy } =
+  const { saving, notes, setNotes, onStatusChange, onFlagChange, onNotesBlur, handleCopy } =
     useLeadActions({ lead, password, onLeadChange, onAuthLost, showToast });
 
   const toggleExpanded = () => setExpanded((v) => !v);
@@ -543,6 +603,9 @@ function LeadRow({ lead, password, onLeadChange, onAuthLost, showToast }) {
             {normaliseTemperature(lead.lead_temperature)}
           </span>
         </td>
+        <td className="p-2 align-top">
+          <FlagSelect lead={lead} onChange={onFlagChange} disabled={saving} />
+        </td>
         <td className="p-2 align-top text-xs text-zinc-300 max-w-[200px]">
           {lead.biggest_leak || '—'}
         </td>
@@ -563,7 +626,7 @@ function LeadRow({ lead, password, onLeadChange, onAuthLost, showToast }) {
       </tr>
       {expanded && (
         <tr className="border-b border-zinc-800 bg-zinc-900/30">
-          <td colSpan={12} className="p-4">
+          <td colSpan={13} className="p-4">
             <LeadDetails lead={lead} />
           </td>
         </tr>
@@ -576,7 +639,7 @@ function LeadRow({ lead, password, onLeadChange, onAuthLost, showToast }) {
 
 function LeadCard({ lead, password, onLeadChange, onAuthLost, showToast }) {
   const [expanded, setExpanded] = useState(false);
-  const { saving, notes, setNotes, onStatusChange, onNotesBlur, handleCopy } =
+  const { saving, notes, setNotes, onStatusChange, onFlagChange, onNotesBlur, handleCopy } =
     useLeadActions({ lead, password, onLeadChange, onAuthLost, showToast });
 
   const toggleExpanded = () => setExpanded((v) => !v);
@@ -610,6 +673,7 @@ function LeadCard({ lead, password, onLeadChange, onAuthLost, showToast }) {
         <span className={`rounded-full border px-2 py-0.5 font-bold ${temperatureClass(lead.lead_temperature)}`}>
           {normaliseTemperature(lead.lead_temperature)}
         </span>
+        <FlagSelect lead={lead} onChange={onFlagChange} disabled={saving} />
         <span className={`rounded-full border border-zinc-700 bg-zinc-950 px-2 py-0.5 font-mono ${scoreClass(lead.haven_score)}`}>
           Score {lead.haven_score ?? '—'}
         </span>
@@ -807,6 +871,12 @@ export default function AdminDashboard() {
     URL.revokeObjectURL(url);
   };
 
+  const clearData = () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.reload();
+  };
+
   if (!authorised) return <LoginScreen onAuth={onAuth} />;
 
   return (
@@ -816,7 +886,7 @@ export default function AdminDashboard() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold">TMH Leads</h1>
             <p className="text-xs sm:text-sm text-zinc-400">
-              {leads.length} total · {processed.length} shown
+              Total Reviews: {leads.length} · {processed.length} shown
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -832,6 +902,13 @@ export default function AdminDashboard() {
               className="rounded-lg border border-zinc-700 px-3 py-2 text-xs sm:text-sm hover:bg-zinc-800"
             >
               Export CSV
+            </button>
+            <button
+              onClick={clearData}
+              title="Clear this browser's local cache and reload"
+              className="rounded-lg border border-zinc-700 px-3 py-2 text-xs sm:text-sm hover:bg-zinc-800"
+            >
+              Clear Data
             </button>
             <button
               onClick={handleAuthLost}
@@ -892,6 +969,7 @@ export default function AdminDashboard() {
                 <th className="p-2">Platform</th>
                 <th className="p-2">Score</th>
                 <th className="p-2">Temp</th>
+                <th className="p-2">Flag</th>
                 <th className="p-2">Leak</th>
                 <th className="p-2">UTM</th>
                 <th className="p-2">Briefed</th>
@@ -902,9 +980,9 @@ export default function AdminDashboard() {
             </thead>
             <tbody>
               {loading && leads.length === 0 ? (
-                <tr><td colSpan={12} className="p-6 text-center text-zinc-500">Loading…</td></tr>
+                <tr><td colSpan={13} className="p-6 text-center text-zinc-500">Loading…</td></tr>
               ) : pagedLeads.length === 0 ? (
-                <tr><td colSpan={12} className="p-6 text-center text-zinc-500">No leads match these filters.</td></tr>
+                <tr><td colSpan={13} className="p-6 text-center text-zinc-500">No leads match these filters.</td></tr>
               ) : (
                 pagedLeads.map((lead) => (
                   <LeadRow

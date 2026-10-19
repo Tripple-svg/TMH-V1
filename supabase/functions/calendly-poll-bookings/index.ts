@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const LOCAL_ORIGINS = ['http://localhost:5173', 'http://localhost:5175'];
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const HOUR_MS = 60 * 60 * 1000;
 
 class CalendlyApiError extends Error {}
 
@@ -67,76 +68,104 @@ serve(async (req) => {
     const now = Date.now();
     const events = await listCalendly('/scheduled_events', new URLSearchParams({
       user: user.uri,
-      min_start_time: new Date(now - 60 * 60 * 1000).toISOString(),
+      // Keep recent past meetings visible long enough to exhaust the two-hour retry window.
+      min_start_time: new Date(now - 3 * HOUR_MS).toISOString(),
       max_start_time: new Date(now + 60 * 24 * 60 * 60 * 1000).toISOString(),
       status: 'active', count: '100',
     }));
     let matched = 0;
+    let hadFailure = false;
+    let hadApiFailure = false;
     for (const event of events) {
-      // Calendly normally supplies a URI rather than a separate uuid field.
-      const uuid = event.uuid || (typeof event.uri === 'string' ? new URL(event.uri).pathname.split('/').filter(Boolean).pop() : null);
-      if (typeof uuid !== 'string' || !/^[A-Za-z0-9_-]+$/.test(uuid)) throw new CalendlyApiError('Invalid event UUID');
-      const { data: processed, error: processedError } = await supabase.from('calendly_processed_events')
-        .select('id').eq('event_uuid', uuid).maybeSingle();
-      if (processedError) throw processedError;
-      if (processed) continue;
-      if (typeof event.start_time !== 'string' || !Number.isFinite(Date.parse(event.start_time))) {
-        throw new CalendlyApiError('Invalid event start time');
-      }
-      const invitees = await listCalendly(`/scheduled_events/${encodeURIComponent(uuid)}/invitees`, new URLSearchParams({ status: 'active', count: '100' }));
-      let firstEmail: string | null = null;
-      for (const invitee of invitees) {
-        const email = typeof invitee.email === 'string' ? invitee.email.trim().toLowerCase() : '';
-        if (!EMAIL_PATTERN.test(email)) throw new CalendlyApiError('Invalid invitee email');
-        firstEmail ??= email;
-        const name = typeof invitee.name === 'string' ? invitee.name.trim() : null;
-        const pattern = email.replace(/[\\%_]/g, '\\$&');
-        const { data: review, error: reviewError } = await supabase.from('brand_reviews')
-          .select('id, haven_score, biggest_leak, assessment_summary, platform_type, main_goal, pre_call_briefing')
-          .ilike('email', pattern).maybeSingle();
-        if (reviewError) throw reviewError;
-        if (review) {
-          const { error } = await supabase.from('brand_reviews').update({ call_booked_at: event.start_time }).eq('id', review.id);
-          if (error) throw error;
-          if (!review.pre_call_briefing) {
-            const { data: session, error: sessionError } = await supabase.from('haven_sessions')
-              .select('messages').eq('review_id', review.id).eq('scope', 'audit')
-              .order('updated_at', { ascending: false }).limit(1).maybeSingle();
-            if (sessionError) throw sessionError;
-            const messages = (Array.isArray(session?.messages) ? session.messages : []).slice(-5)
-              .map((message: { role?: string; content?: string }) => `${message?.role || 'unknown'}: ${typeof message?.content === 'string' ? message.content : ''}`);
-            const briefing = [
-              `Haven score: ${review.haven_score ?? 'Not scored'}`,
-              `Biggest leak: ${review.biggest_leak || 'Not recorded'}`,
-              `Assessment summary: ${review.assessment_summary || 'Not recorded'}`,
-              `Platform: ${review.platform_type || 'Not recorded'}`,
-              `Main goal: ${review.main_goal || 'Not recorded'}`,
-              'Last 5 chat messages:', ...messages,
-            ].join('\n');
-            const { error: briefingError } = await supabase.from('brand_reviews')
-              .update({ pre_call_briefing: briefing }).eq('id', review.id)
-              .or('pre_call_briefing.is.null,pre_call_briefing.eq.');
-            if (briefingError) throw briefingError;
+      try {
+        // Calendly normally supplies a URI rather than a separate uuid field.
+        const uuid = event.uuid || (typeof event.uri === 'string' ? new URL(event.uri).pathname.split('/').filter(Boolean).pop() : null);
+        if (typeof uuid !== 'string' || !/^[A-Za-z0-9_-]+$/.test(uuid)) throw new CalendlyApiError('Invalid event UUID');
+        const { data: processed, error: processedError } = await supabase.from('calendly_processed_events')
+          .select('id').eq('event_uuid', uuid).maybeSingle();
+        if (processedError) throw processedError;
+        if (processed) continue;
+        if (typeof event.start_time !== 'string' || !Number.isFinite(Date.parse(event.start_time))) {
+          throw new CalendlyApiError('Invalid event start time');
+        }
+        // Age the booking, not its meeting date: most bookings are for future meetings.
+        // Older Calendly responses without created_at fall back to the meeting time.
+        const createdAt = typeof event.created_at === 'string' ? Date.parse(event.created_at) : NaN;
+        const retryExpired = now - (Number.isFinite(createdAt) ? createdAt : Date.parse(event.start_time)) > 2 * HOUR_MS;
+        const invitees = await listCalendly(`/scheduled_events/${encodeURIComponent(uuid)}/invitees`, new URLSearchParams({ status: 'active', count: '100' }));
+        let firstEmail: string | null = null;
+        let allInviteesComplete = true;
+        for (const invitee of invitees) {
+          const email = typeof invitee.email === 'string' ? invitee.email.trim().toLowerCase() : '';
+          if (!EMAIL_PATTERN.test(email)) throw new CalendlyApiError('Invalid invitee email');
+          firstEmail ??= email;
+          const name = typeof invitee.name === 'string' ? invitee.name.trim() : null;
+          const pattern = email.replace(/[\\%_]/g, '\\$&');
+          const { data: review, error: reviewError } = await supabase.from('brand_reviews')
+            .select('id, haven_score, biggest_leak, assessment_summary, platform_type, main_goal, pre_call_briefing, booking_confirmation_sent')
+            .ilike('email', pattern).maybeSingle();
+          if (reviewError) throw reviewError;
+          if (review) {
+            const { error } = await supabase.from('brand_reviews').update({ call_booked_at: event.start_time }).eq('id', review.id);
+            if (error) throw error;
+            if (!review.pre_call_briefing) {
+              const { data: session, error: sessionError } = await supabase.from('haven_sessions')
+                .select('messages').eq('review_id', review.id).eq('scope', 'audit')
+                .order('updated_at', { ascending: false }).limit(1).maybeSingle();
+              if (sessionError) throw sessionError;
+              const messages = (Array.isArray(session?.messages) ? session.messages : []).slice(-5)
+                .map((message: { role?: string; content?: string }) => `${message?.role || 'unknown'}: ${typeof message?.content === 'string' ? message.content : ''}`);
+              const briefing = [
+                `Haven score: ${review.haven_score ?? 'Not scored'}`,
+                `Biggest leak: ${review.biggest_leak || 'Not recorded'}`,
+                `Assessment summary: ${review.assessment_summary || 'Not recorded'}`,
+                `Platform: ${review.platform_type || 'Not recorded'}`,
+                `Main goal: ${review.main_goal || 'Not recorded'}`,
+                'Last 5 chat messages:', ...messages,
+              ].join('\n');
+              const { error: briefingError } = await supabase.from('brand_reviews')
+                .update({ pre_call_briefing: briefing }).eq('id', review.id)
+                .or('pre_call_briefing.is.null,pre_call_briefing.eq.');
+              if (briefingError) throw briefingError;
+            }
+          }
+          const { data: intent, error: intentError } = await supabase.from('booking_intents')
+            .select('id, service_id, confirmation_sent').ilike('email', pattern)
+            .order('created_at', { ascending: false }).limit(1).maybeSingle();
+          if (intentError) throw intentError;
+          if (review || intent) matched++;
+          if (intent && intent.confirmation_sent !== true) {
+            try {
+              const { data, error } = await supabase.functions.invoke('send-tmh-booking-confirmation', {
+                body: { email, name, serviceId: intent.service_id ?? null, bookingIntentId: intent.id },
+              });
+              if (error || data?.ok !== true) throw new Error('Booking confirmation failed');
+            } catch {
+              allInviteesComplete = false;
+              if (!retryExpired) hadFailure = true;
+              console.error('calendly-poll-bookings: booking confirmation failed', retryExpired ? 'retry window expired' : 'will retry');
+            }
+          } else if (review && !intent && review.booking_confirmation_sent !== true) {
+            // The browser can save its booking intent a few seconds after Calendly.
+            // A review match alone must not permanently hide that late intent.
+            allInviteesComplete = false;
           }
         }
-        const { data: intent, error: intentError } = await supabase.from('booking_intents')
-          .select('id, service_id, confirmation_sent').ilike('email', pattern)
-          .order('created_at', { ascending: false }).limit(1).maybeSingle();
-        if (intentError) throw intentError;
-        if (review || intent) matched++;
-        if (intent && intent.confirmation_sent !== true) {
-          const { data, error } = await supabase.functions.invoke('send-tmh-booking-confirmation', {
-            body: { email, name, serviceId: intent.service_id ?? null },
-          });
-          if (error || data?.ok !== true) throw new Error('Booking confirmation failed');
+        // No-match invitees need no email. A group event waits for every matched
+        // invitee, unless the booking has exhausted its two-hour retry window.
+        if (allInviteesComplete || retryExpired) {
+          const { error: insertError } = await supabase.from('calendly_processed_events')
+            .insert({ event_uuid: uuid, invitee_email: firstEmail });
+          if (insertError && insertError.code !== '23505') throw insertError;
         }
+      } catch (error) {
+        // One unfinished event must not prevent other bookings from progressing.
+        hadFailure = true;
+        hadApiFailure ||= error instanceof CalendlyApiError;
+        console.error('calendly-poll-bookings: event failed', error instanceof CalendlyApiError ? 'Calendly API' : 'database');
       }
-      // One unique marker per event, only after ALL invitees complete successfully.
-      // An unmatched event is still remembered. Failed work remains retryable.
-      const { error: insertError } = await supabase.from('calendly_processed_events')
-        .insert({ event_uuid: uuid, invitee_email: firstEmail });
-      if (insertError && insertError.code !== '23505') throw insertError;
     }
+    if (hadFailure) return json({ ok: false }, hadApiFailure ? 502 : 500);
     return json({ ok: true, scanned: events.length, matched });
   } catch (error) {
     console.error('calendly-poll-bookings: polling failed', error instanceof CalendlyApiError ? 'Calendly API' : 'database or confirmation');
