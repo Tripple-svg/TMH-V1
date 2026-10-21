@@ -17,3 +17,12 @@ verify_jwt = false
 
 [functions.flag-user]
 verify_jwt = false
+
+[functions.paystack-webhook]
+verify_jwt = false
+
+[functions.send-purchase-thankyou]
+verify_jwt = false
+
+[functions.send-flag-alert]
+verify_jwt = false

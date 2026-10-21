@@ -213,6 +213,7 @@ export default function TestimonialsSection() {
                       <img
                         src={currentPerson.image}
                         alt={currentPerson.name}
+                        loading={slideIndex === 0 ? 'eager' : 'lazy'}
                         className={`absolute inset-0 w-full h-full object-cover ${currentPerson.imagePosition || 'object-center'}`}
                       />
                     ) : (
@@ -250,6 +251,7 @@ export default function TestimonialsSection() {
                         src="/Background.jpeg"
                         alt=""
                         aria-hidden="true"
+                        loading="lazy"
                         className="absolute inset-0 w-full h-full object-cover brightness-110 saturate-105"
                       />
                       <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/45 to-black/30" />
@@ -343,6 +345,7 @@ export default function TestimonialsSection() {
               <img
                 src={REVIEW_SCREENSHOT}
                 alt="Early Reviewee — review message"
+                loading="lazy"
                 className="w-full h-auto transition-transform duration-500 group-hover:scale-[1.02]"
                 style={{ imageRendering: '-webkit-optimize-contrast' }}
                 onError={(e) => {
@@ -462,6 +465,7 @@ export default function TestimonialsSection() {
                 <img
                   src={REVIEW_SCREENSHOT}
                   alt="Early Reviewee — review message"
+                  loading="lazy"
                   className="w-full h-auto rounded-2xl border border-white/10 max-w-xl mx-auto"
                   style={{ imageRendering: '-webkit-optimize-contrast' }}
                 />

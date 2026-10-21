@@ -348,6 +348,8 @@ export default function ShopSection() {
                 ))}
               </ul>
 
+              <p className="mb-4 text-2xl font-bold text-zinc-900 dark:text-white">₦9,639</p>
+
               <button
                 onClick={() => setIsPreviewOpen(true)}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-600/25 transition-all active:scale-95"
@@ -538,9 +540,9 @@ export default function ShopSection() {
                       </p>
                     </form>
 
-                    <div className="flex items-center gap-3 p-4 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 text-xs">
-                      <ShieldCheck className="w-5 h-5 shrink-0 text-emerald-600" />
-                      <span>Instant download. Easy access after payment.</span>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 text-zinc-500 dark:text-zinc-400 text-xs">
+                      <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                      <span>Secure checkout via Paystack.</span>
                     </div>
                   </div>
 

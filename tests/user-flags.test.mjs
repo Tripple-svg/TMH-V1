@@ -21,13 +21,37 @@ const flag = (status = 'red', extras = {}) => ({ email: 'owner@example.com', sta
 
 function database(seed = [{ id: 'review-1', email: 'Owner@Example.com', flag_status: 'white', flag_reason: null }], options = {}) {
   const rows = structuredClone(seed);
-  const writes = [], reads = [], authTokens = [];
+  const writes = [], reads = [], authTokens = [], notifications = [], alerts = [];
   const client = {
     auth: { async getUser(token) {
       authTokens.push(token);
       return options.authResult || { data: { user: null }, error: { message: 'Invalid token' } };
     } },
+    functions: { async invoke(name, { body }) {
+      assert.equal(name, 'send-flag-alert');
+      alerts.push(body);
+      if (options.alertThrows) throw new Error('Team alert unavailable');
+      if (options.alertFailure) return { data: { ok: false }, error: null };
+      notifications.find((row) => row.id === body.notificationId).sent_at = new Date().toISOString();
+      return { data: { ok: true }, error: null };
+    } },
     from(table) {
+      if (table === 'flag_alert_notifications') {
+        let cap = Infinity;
+        const filters = [];
+        return {
+          select() { return this; },
+          limit(value) { cap = value; return this; },
+          eq(column, value) { filters.push((row) => row[column] === value); return this; },
+          is(column, value) { filters.push((row) => row[column] === value); return this; },
+          order() { return this; },
+          then(resolve, reject) {
+            return Promise.resolve(options.outboxUnavailable || (cap > 0 && options.pendingFailure)
+              ? { data: null, error: { message: 'Outbox unavailable' } }
+              : { data: notifications.filter((row) => filters.every((filter) => filter(row))).slice(0, cap), error: null }).then(resolve, reject);
+          },
+        };
+      }
       assert.equal(table, 'brand_reviews');
       let values, fields, column, pattern, cap = Infinity;
       const run = async (single = false) => {
@@ -38,7 +62,15 @@ function database(seed = [{ id: 'review-1', email: 'Owner@Example.com', flag_sta
         const call = { table, fields, column, pattern };
         if (values) {
           writes.push({ ...call, values: structuredClone(values) });
-          matches.forEach((row) => Object.assign(row, values));
+          matches.forEach((row) => {
+            if (['yellow', 'red'].includes(values.flag_status) && row.flag_status !== values.flag_status) {
+              notifications.push({
+                id: `00000000-0000-4000-8000-${String(notifications.length + 1).padStart(12, '0')}`,
+                review_id: row.id, email: row.email, status: values.flag_status, reason: values.flag_reason, sent_at: null,
+              });
+            }
+            Object.assign(row, values);
+          });
         } else reads.push(call);
         const projected = matches.map((row) => Object.fromEntries(fields.split(',').map((field) => field.trim()).map((field) => [field, row[field]])));
         return { data: single ? projected[0] || null : projected, error: null };
@@ -53,7 +85,7 @@ function database(seed = [{ id: 'review-1', email: 'Owner@Example.com', flag_sta
       };
     },
   };
-  return { client, rows, writes, reads, authTokens };
+  return { client, rows, writes, reads, authTokens, notifications, alerts };
 }
 
 function load(name, { db = database(), env = {}, fetch: send = async () => json({ id: 'email-1' }) } = {}) {
@@ -254,6 +286,64 @@ test('flags: preflight, methods, origins and missing server configuration perfor
   }
   assert.equal(db.writes.length, 0);
   assert.equal(mail.length, 0);
+});
+
+test('team alerts: status transitions notify once, repeated status/reason edits do not, and later transitions notify again', async () => {
+  const { handler, db, mail } = load('flag-user');
+  for (const [status, reason] of [['yellow', 'Initial warning'], ['yellow', 'Initial warning'], ['yellow', 'Reworded warning'], ['red', 'Restricted'], ['white', null], ['red', 'Restricted']]) {
+    assert.equal((await handler(request(flag(status, { reason }), { Authorization: 'Bearer service-test' }))).status, 200);
+  }
+  assert.equal(db.notifications.length, 3);
+  assert.equal(db.alerts.length, 3);
+  assert.equal(new Set(db.alerts.map((body) => body.notificationId)).size, 3);
+  assert.ok(db.notifications.every((row) => row.sent_at));
+  assert.equal(mail.length, 3); // Existing yellow customer-warning requests remain independent.
+});
+
+test('team alerts: failed delivery preserves a pending event and still attempts the yellow customer warning', async () => {
+  const options = { alertFailure: true };
+  const db = database(undefined, options);
+  const { handler, mail } = load('flag-user', { db });
+  const first = await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }));
+  assert.equal(first.status, 502);
+  const firstBody = await first.json();
+  assert.equal(firstBody.review.flag_status, 'yellow'); assert.match(firstBody.error, /team flag alert/);
+  assert.equal(db.notifications.length, 1); assert.equal(db.notifications[0].sent_at, null);
+  assert.equal(mail.length, 1);
+  options.alertFailure = false;
+  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 200);
+  assert.equal(db.notifications.length, 1); assert.equal(db.alerts.length, 2);
+  assert.equal(db.alerts[0].notificationId, db.alerts[1].notificationId);
+  assert.ok(db.notifications[0].sent_at);
+});
+
+test('team alerts: customer-warning failure does not suppress the team notification or resend an already delivered alert', async () => {
+  let fail = true;
+  const { handler, db } = load('flag-user', { fetch: async () => json({}, fail ? 503 : 200) });
+  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 502);
+  assert.equal(db.alerts.length, 1); assert.ok(db.notifications[0].sent_at);
+  fail = false;
+  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 200);
+  assert.equal(db.alerts.length, 1);
+});
+
+test('team alerts: missing outbox migration blocks the transition before saving or sending', async () => {
+  const db = database(undefined, { outboxUnavailable: true });
+  const { handler, mail } = load('flag-user', { db });
+  const result = await handler(request(flag('red'), { Authorization: 'Bearer service-test' }));
+  assert.equal(result.status, 503); assert.match((await result.json()).error, /migration/);
+  assert.equal(db.writes.length, 0); assert.equal(db.alerts.length, 0); assert.equal(mail.length, 0);
+});
+
+test('team alerts: pending-read failure preserves the saved transition for a later retry', async () => {
+  const options = { pendingFailure: true };
+  const db = database(undefined, options);
+  const { handler, mail } = load('flag-user', { db });
+  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 502);
+  assert.equal(db.notifications.length, 1); assert.equal(db.notifications[0].sent_at, null); assert.equal(mail.length, 1);
+  options.pendingFailure = false;
+  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 200);
+  assert.equal(db.notifications.length, 1); assert.ok(db.notifications[0].sent_at);
 });
 
 test('flag lookup: legacy email-check response remains exactly { exists } without moderation data', async () => {

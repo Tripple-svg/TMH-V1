@@ -55,6 +55,12 @@ const SERVICES = [
   },
 ];
 
+const SERVICE_CTA_LABELS = {
+  web: 'Explore Web',
+  growth: 'Explore Growth',
+  content: 'Explore Content',
+};
+
 export default function ServiceGrid() {
   const [selectedService, setSelectedService] = useState(null);
 
@@ -144,7 +150,7 @@ export default function ServiceGrid() {
                   onClick={() => setSelectedService(s)}
                   className="mt-8 flex items-center text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider group-hover:text-blue-500 w-full pt-4 border-t border-zinc-100 dark:border-zinc-800/40 cursor-pointer"
                 >
-                  <span>Explore Strategy</span>
+                  <span>{SERVICE_CTA_LABELS[s.id]}</span>
                   <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1.5 transition-transform" />
                 </button>
               </motion.div>

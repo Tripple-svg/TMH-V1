@@ -40,6 +40,11 @@ serve(async (req) => {
     if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, error: 'Invalid email' }, 400);
     if (!STATUSES.includes(status)) return json({ ok: false, error: 'Invalid flag status' }, 400);
     if (reason === undefined || (reason && reason.length > 2000)) return json({ ok: false, error: 'Invalid flag reason (maximum 2000 characters)' }, 400);
+    if (status === 'yellow' || status === 'red') {
+      // Do not save an unnotifiable transition before the outbox migration exists.
+      const { error: readinessError } = await supabase.from('flag_alert_notifications').select('id').limit(0);
+      if (readinessError) return json({ ok: false, error: 'Apply the flag-alert notifications migration before changing flags.' }, 503);
+    }
     const pattern = email.replace(/[\\%_]/g, '\\$&');
     const { data: review, error } = await supabase.from('brand_reviews')
       .update({ flag_status: status, flag_reason: reason })
@@ -50,10 +55,33 @@ serve(async (req) => {
     }
     if (!review) return json({ ok: false, error: 'Review not found' }, 404);
 
+    let alertFailed = false;
+    if (status === 'yellow' || status === 'red') {
+      // The database trigger creates these snapshots atomically with flag changes.
+      // Read pending rows even on unchanged retries so failed alerts are recoverable.
+      try {
+        const { data: pending, error: pendingError } = await supabase.from('flag_alert_notifications')
+          .select('id').eq('review_id', review.id).is('sent_at', null)
+          .order('created_at', { ascending: true });
+        if (pendingError) throw pendingError;
+        for (const notification of pending || []) {
+          try {
+            const { data, error: alertError } = await supabase.functions.invoke('send-flag-alert', {
+              body: { notificationId: notification.id },
+            });
+            if (alertError || data?.ok !== true) alertFailed = true;
+          } catch {
+            alertFailed = true;
+          }
+        }
+      } catch {
+        alertFailed = true;
+      }
+    }
+
+    let warningFailed = false;
     if (status === 'yellow') {
       const resendKey = Deno.env.get('RESEND_API_KEY');
-      const warningFailure = () => json({ ok: false, review, error: 'Flag saved, but the warning email could not be sent. Please retry.' }, 502);
-      if (!resendKey) return warningFailure();
       const text = `Hi there,
 
 Warning regarding your usage of Haven.
@@ -64,6 +92,7 @@ If you have any questions, please contact info@themarketinghaven.xyz.
 
 Team Haven`;
       try {
+        if (!resendKey) throw new Error('Warning email service is not configured');
         const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
         const fingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
         const sent = await fetch('https://api.resend.com/emails', {
@@ -78,10 +107,14 @@ Team Haven`;
           }),
           signal: AbortSignal.timeout(15000),
         });
-        if (!sent.ok) return warningFailure();
+        if (!sent.ok) warningFailed = true;
       } catch {
-        return warningFailure();
+        warningFailed = true;
       }
+    }
+    if (alertFailed || warningFailed) {
+      const failed = [alertFailed ? 'team flag alert' : null, warningFailed ? 'warning email' : null].filter(Boolean).join(' and ');
+      return json({ ok: false, review, error: `Flag saved, but the ${failed} could not be sent. Please retry.` }, 502);
     }
     return json({ ok: true, review });
   } catch {
