@@ -163,7 +163,7 @@ export default function AboutSection() {
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <span className="text-[9px] sm:text-[10px] font-mono uppercase tracking-[0.2em] text-blue-500 dark:text-blue-400">
+                    <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
                       {person.tag}
                     </span>
                     <h5 className="text-sm sm:text-base font-semibold text-zinc-900 dark:text-white mt-1 truncate">

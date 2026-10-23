@@ -9,23 +9,35 @@ const PLAYBOOK_AMOUNTS = [10000, 963900];
 serve(async (req) => {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
+  const failure = (code: string, error: string, status: number) => {
+    console.error(`Error in webhook: ${code}`);
+    return json({ ok: false, error }, status);
+  };
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
+  console.log('Webhook received');
   const secret = Deno.env.get('PAYSTACK_SECRET_KEY');
-  if (!secret) return json({ ok: false, error: 'Server misconfigured' }, 500);
+  if (!secret) return failure('missing_paystack_secret', 'Server misconfigured', 500);
+  // A NGN 100 purchase can be live. Environment comes from keys/domain, never price.
+  const keyMode = secret.startsWith('sk_live_') ? 'live' : secret.startsWith('sk_test_') ? 'test' : 'unknown';
+  const expectedMode = Deno.env.get('PAYSTACK_ENV')?.trim().toLowerCase();
+  console.log('Paystack environment', { key_mode: keyMode, expected_mode: expectedMode === 'live' || expectedMode === 'test' ? expectedMode : expectedMode ? 'invalid' : 'not_configured' });
+  if (expectedMode && !['live', 'test'].includes(expectedMode)) return failure('invalid_environment_configuration', 'Server misconfigured', 500);
+  if (expectedMode && expectedMode !== keyMode) return failure('secret_environment_mismatch', 'Payment environment misconfigured', 500);
   const signature = req.headers.get('x-paystack-signature');
-  if (!signature || !/^[a-f\d]{128}$/i.test(signature)) return json({ ok: false, error: 'Unauthorised' }, 401);
+  if (!signature || !/^[a-f\d]{128}$/i.test(signature)) return failure('missing_or_invalid_signature', 'Unauthorised', 401);
 
   try {
     // Authenticate the exact bytes received before decoding or parsing JSON.
     const rawBody = new Uint8Array(await req.arrayBuffer());
     const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-512' }, false, ['verify']);
     const signatureBytes = Uint8Array.from(signature.match(/.{2}/g)!, (pair) => Number.parseInt(pair, 16));
-    if (!await crypto.subtle.verify('HMAC', key, signatureBytes, rawBody)) return json({ ok: false, error: 'Unauthorised' }, 401);
+    if (!await crypto.subtle.verify('HMAC', key, signatureBytes, rawBody)) return failure('signature_verification_failed', 'Unauthorised', 401);
+    console.log('Signature verified');
     let body;
     try {
       body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(rawBody));
     } catch {
-      return json({ ok: false, error: 'Invalid payload' }, 400);
+      return failure('invalid_signed_payload', 'Invalid payload', 400);
     }
     const payment = body?.data;
     const reference = typeof payment?.reference === 'string' ? payment.reference : '';
@@ -34,27 +46,32 @@ serve(async (req) => {
       || !Number.isSafeInteger(payment.amount) || !PLAYBOOK_AMOUNTS.includes(payment.amount)) {
       return json({ ok: true, ignored: true });
     }
+    if (expectedMode && payment.domain !== expectedMode) return failure('signed_payload_environment_mismatch', 'Payment environment mismatch', 400);
     const email = typeof payment?.customer?.email === 'string' ? payment.customer.email.trim().toLowerCase() : '';
-    if (!EMAIL_PATTERN.test(email)) return json({ ok: false, error: 'Invalid purchase email' }, 400);
+    if (!EMAIL_PATTERN.test(email)) return failure('invalid_purchase_email', 'Invalid purchase email', 400);
     const url = Deno.env.get('SUPABASE_URL');
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!url || !serviceKey) return json({ ok: false, error: 'Server misconfigured' }, 500);
+    if (!url || !serviceKey) return failure('missing_database_configuration', 'Server misconfigured', 500);
     const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
+    console.log('Inserting into playbook_purchases');
     const { error: insertError } = await supabase.from('playbook_purchases').insert({ email, reference, amount: payment.amount });
     // Replays must preserve the original buyer and amount, including during races.
-    if (insertError && insertError.code !== '23505') throw insertError;
+    if (insertError && insertError.code !== '23505') return failure('purchase_insert_failed', 'Unable to process purchase', 500);
     const { data: purchase, error: purchaseError } = await supabase.from('playbook_purchases')
       .select('id, email, reference, thankyou_sent').eq('reference', reference).maybeSingle();
-    if (purchaseError || !purchase) throw purchaseError || new Error('Purchase unavailable');
+    if (purchaseError || !purchase) return failure('purchase_lookup_failed', 'Unable to process purchase', 500);
     if (purchase.thankyou_sent === true) return json({ ok: true });
+    console.log('Triggering thank you email');
     const { data, error } = await supabase.functions.invoke('send-purchase-thankyou', {
       body: { email: purchase.email, reference: purchase.reference },
     });
     // Keep the saved purchase and return an error so Paystack retries delivery.
-    if (error || data?.ok !== true) return json({ ok: false, error: 'Purchase email unavailable' }, 502);
+    if (error || data?.ok !== true) return failure('purchase_email_failed', 'Purchase email unavailable', 502);
+    const { data: delivery, error: deliveryError } = await supabase.from('playbook_purchases')
+      .select('thankyou_sent').eq('reference', purchase.reference).maybeSingle();
+    if (deliveryError || delivery?.thankyou_sent !== true) return failure('delivery_marker_unconfirmed', 'Purchase email status unavailable', 502);
     return json({ ok: true });
   } catch {
-    console.error('paystack-webhook: purchase processing failed');
-    return json({ ok: false, error: 'Unable to process purchase' }, 500);
+    return failure('purchase_processing_failed', 'Unable to process purchase', 500);
   }
 });

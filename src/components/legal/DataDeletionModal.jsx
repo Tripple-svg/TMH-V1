@@ -31,15 +31,6 @@ function DataDeletionDialog({ onClose }) {
     };
   }, [onClose]);
 
-  const clearDeviceData = () => {
-    try {
-      window.localStorage.clear();
-      window.sessionStorage.clear();
-    } catch {
-      // Storage can be disabled by the browser. The deletion request still proceeds.
-    }
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     const normalizedEmail = email.trim();
@@ -51,21 +42,18 @@ function DataDeletionDialog({ onClose }) {
 
     setError('');
     setSubmitting(true);
-    clearDeviceData();
-
-    const { data, error: requestError } = await supabase.functions.invoke('request-data-deletion', {
-      body: { email: normalizedEmail },
-    });
-
-    setSubmitting(false);
-
-    if (requestError || data?.ok !== true) {
+    try {
+      const { data, error: requestError } = await supabase.functions.invoke('request-data-deletion', {
+        body: { email: normalizedEmail },
+      });
+      if (requestError || data?.ok !== true) throw new Error('Deletion request failed');
+      setEmail(normalizedEmail);
+      setRequested(true);
+    } catch {
       setError('We could not submit your request. Please try again.');
-      return;
+    } finally {
+      setSubmitting(false);
     }
-
-    setEmail(normalizedEmail);
-    setRequested(true);
   };
 
   return (
@@ -102,7 +90,7 @@ function DataDeletionDialog({ onClose }) {
                   Check your inbox
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-                  If {email} is on file with us, a confirmation link is on its way. Click it within 24 hours to complete deletion.
+                  If {email} matches a saved review, we will attempt to send a confirmation link valid for 24 hours. If it does not arrive, contact info@themarketinghaven.xyz.
                 </p>
                 <button
                   type="button"
@@ -115,10 +103,13 @@ function DataDeletionDialog({ onClose }) {
         ) : (
               <>
                 <h2 id="data-deletion-title" className="pr-8 text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">
-                  Delete Your Data
+                  Delete a Saved Review
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-                  This permanently deletes all of your reviews, chat transcripts, screenshots, and personal information. We will send a confirmation email to verify that you control the address before anything is removed.
+                  Confirming by email removes the matching saved review, its linked chats and stored screenshots. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review those records.
+                </p>
+                <p className="mt-3 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                  Requesting a link keeps this device&apos;s chat access keys intact. After confirmation, this browser removes the saved review profile; unlinked guest chat keys remain available for ownership checks. Clearing browser data does not delete server records.
                 </p>
 
                 <form className="mt-6" onSubmit={handleSubmit} noValidate>

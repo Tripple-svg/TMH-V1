@@ -130,9 +130,9 @@ serve(async (req) => {
       body: JSON.stringify({
         from: FROM_ADDRESS,
         to: [storedEmail],
-        subject: 'Confirm your data deletion request',
-        text: `We received a request to delete your data from The Marketing Haven. To confirm the request, open this link within 24 hours:\n\n${confirmationUrl}\n\nIf you did not make this request, you can ignore this email.`,
-        html: `<p>We received a request to delete your data from The Marketing Haven.</p><p><a href="${confirmationUrl}">Confirm your data deletion request</a></p><p>This link expires in 24 hours. If you did not make this request, you can ignore this email.</p>`,
+        subject: 'Confirm your saved review deletion request',
+        text: `We received a request to remove your matching saved brand review, its linked chat sessions and stored screenshots. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.\n\nTo confirm the request, open this link within 24 hours:\n\n${confirmationUrl}\n\nIf you did not make this request, ignore this email.`,
+        html: `<p>We received a request to remove your matching saved brand review, its linked chat sessions and stored screenshots.</p><p>Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.</p><p><a href="${confirmationUrl}">Confirm saved review deletion</a></p><p>This link expires in 24 hours. If you did not make this request, ignore this email.</p>`,
       }),
     });
 

@@ -96,12 +96,12 @@ function database(seed) {
   const rows = structuredClone(seed);
   const calls = [];
   const client = { from(table) {
-    let filters = [], sort = null, cap = Infinity, action = 'select', values;
+    let filters = [], sort = null, cap = Infinity, offset = 0, action = 'select', values;
     const run = async (single = false) => {
       calls.push({ table, action, values });
       let matches = (rows[table] || []).filter((row) => filters.every((filter) => filter(row)));
       if (sort) matches.sort((a, b) => String(b[sort]).localeCompare(String(a[sort])));
-      matches = matches.slice(0, cap);
+      matches = matches.slice(offset, offset + cap);
       if (action === 'insert') {
         rows[table] ||= []; rows[table].push({ id: `new-${rows[table].length}`, confirmation_sent: false, ...values });
       }
@@ -112,8 +112,10 @@ function database(seed) {
       select() { return this; },
       ilike(column, pattern) { filters.push((row) => String(row[column]).toLowerCase() === pattern.replace(/\\([\\%_])/g, '$1').toLowerCase()); return this; },
       eq(column, value) { filters.push((row) => row[column] === value); return this; },
+      is(column, value) { filters.push((row) => value === null ? row[column] == null : row[column] === value); return this; },
       in(column, values) { filters.push((row) => values.includes(row[column])); return this; },
       order(column) { sort = column; return this; },
+      range(start, end) { offset = start; cap = end - start + 1; return this; },
       limit(value) { cap = value; return this; },
       insert(value) { action = 'insert'; values = value; return this; },
       update(value) { action = 'update'; values = value; return this; },
@@ -235,7 +237,7 @@ test('Task 7: sender rejects anon callers, retries failed delivery, and deduplic
   assert.equal(db.rows.booking_intents[0].confirmation_sent, true);
 });
 
-test('Task 7: admin returns independent support sessions capped at 60 with image data stripped', async () => {
+test('Task 7: admin indexes independent support sessions and loads their saved transcript on demand', async () => {
   const db = database({
     brand_reviews: [{ id: 'r1', email: 'owner@example.com', created_at: '2026-10-15' }],
     haven_sessions: [
@@ -248,7 +250,10 @@ test('Task 7: admin returns independent support sessions capped at 60 with image
   const body = await (await handler(request({ password: 'admin-test' }))).json();
   assert.equal(body.count, 1); assert.equal(body.leads[0].session.current_step, 'GREETING');
   assert.equal(body.support_sessions.length, 1); assert.equal(body.support_sessions[0].id, 'support');
-  assert.equal(body.support_sessions[0].messages.length, 60);
-  assert.equal(body.support_sessions[0].messages[0].content, 'message-5');
+  assert.equal(body.support_sessions[0].messages, undefined);
+  const transcript = await (await handler(request({ password: 'admin-test', action: 'transcript', sessionId: 'support' }))).json();
+  assert.equal(transcript.session.messages.length, 65);
+  assert.equal(transcript.session.messages[0].content, 'message-0');
   assert.ok(!JSON.stringify(body).includes('private-base64')); assert.ok(!JSON.stringify(body).includes('private-url'));
+  assert.ok(!JSON.stringify(transcript).includes('private-base64')); assert.ok(!JSON.stringify(transcript).includes('private-url'));
 });

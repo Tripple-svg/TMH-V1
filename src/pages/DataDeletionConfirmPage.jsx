@@ -20,6 +20,7 @@ export default function DataDeletionConfirmPage() {
     requestedTokenRef.current = token;
 
     const confirmDeletion = async () => {
+      try {
       const { data, error: confirmationError } = await supabase.functions.invoke('confirm-data-deletion', {
         body: { token },
       });
@@ -29,7 +30,13 @@ export default function DataDeletionConfirmPage() {
         return;
       }
 
+      try {
+        for (const key of ['tmh_haven_user_profile_v1','tmh_haven_audit_sessions','tmh_haven_audit_preflight_v1']) window.localStorage.removeItem(key);
+      } catch { /* Browser storage may be disabled. Server deletion already succeeded. */ }
       setResult({ token, status: 'success', error: '' });
+      } catch {
+        setResult({ token, status: 'error', error: 'Unable to confirm deletion. Please try again or contact the team.' });
+      }
     };
 
     confirmDeletion();
@@ -53,7 +60,7 @@ export default function DataDeletionConfirmPage() {
               Confirming your deletion…
             </h1>
             <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-              Please keep this page open while we securely remove your data.
+              Please keep this page open while we process the saved review deletion request.
             </p>
           </div>
         )}
@@ -62,10 +69,10 @@ export default function DataDeletionConfirmPage() {
           <div className="py-4">
             <CheckCircle2 className="mx-auto h-16 w-16 text-emerald-500" />
             <h1 className="mt-5 text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">
-              Your data has been deleted.
+              Saved review deletion completed.
             </h1>
             <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-              All records, chat transcripts, and screenshots associated with your email have been permanently removed. A confirmation email is on its way.
+              This request removed matching saved reviews, their linked chat sessions and stored screenshots. Purchase, booking, deletion-request, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review remaining records or a privacy concern.
             </p>
           </div>
         )}
@@ -74,10 +81,10 @@ export default function DataDeletionConfirmPage() {
           <div className="py-4">
             <AlertTriangle className="mx-auto h-16 w-16 text-amber-500" />
             <h1 className="mt-5 text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">
-              {linkExpired ? 'This link has expired' : 'This link is no longer valid'}
+              {linkExpired ? 'This link has expired' : 'Deletion could not be confirmed'}
             </h1>
             <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-              Request a new deletion link from the footer or email info@themarketinghaven.xyz.
+              If the link has expired, request a new one from the footer. Otherwise contact info@themarketinghaven.xyz so the team can check the request and any records already processed.
             </p>
           </div>
         )}

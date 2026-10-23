@@ -1,123 +1,75 @@
-// src/lib/havenSessionSync.js
-// Debounced, fire-and-forget writer for audit chats.
-// Delegates both writes to the sync-haven-session edge function,
-// which uses the service_role key server-side.
+// One in-flight write per audit session keeps older snapshots from overwriting newer ones.
+const queues = new Map();
+const DEBOUNCE_MS = 900;
+const RETRY_LIMIT = 2;
+let lastSnapshotAt = 0;
 
-const SYNC_DEBOUNCE_MS = 900;
-const VALID_LEADS = ['HOT', 'WARM', 'COLD'];
-
-let syncTimer = null;
-let pendingPayload = null;
-
-function serializeMessage(message) {
-  if (!message || typeof message !== 'object') return null;
-  return {
-    id: message.id || null,
-    role: message.role || null,
-    content: typeof message.content === 'string' ? message.content : '',
-    timestamp: message.timestamp || Date.now(),
-    hasImage: Boolean(message.image),
-    chips: Array.isArray(message.chips) ? message.chips : null,
-    navChips: Array.isArray(message.navChips) ? message.navChips : null,
-    isChipIntent: Boolean(message.isChipIntent),
-    isSeedGreeting: Boolean(message.isSeedGreeting),
-  };
+function publish(status) {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('haven-session-sync', { detail: status }));
 }
 
-export function scheduleHavenSessionSync({
-  sessionId,
-  reviewId,
-  messages,
-  currentStep,
-  lastStepReached,
-  totalExchanges,
-  leadTemperature,
-  clickedBookingLink,
-  clickedPlaybookLink,
-  websiteScore,
-  scoreBreakdown,
-  biggestLeak,
-  assessmentSummary,
-} = {}) {
-  if (!sessionId) return;
-
-  pendingPayload = {
-    sessionId,
-    reviewId: reviewId || null,
-    messages: Array.isArray(messages)
-      ? messages.map(serializeMessage).filter(Boolean)
-      : [],
-    currentStep: currentStep || 'GREETING',
-    lastStepReached: lastStepReached || currentStep || 'GREETING',
-    totalExchanges: Number(totalExchanges) || 0,
-    leadTemperature: VALID_LEADS.includes(leadTemperature) ? leadTemperature : null,
-    clickedBookingLink: Boolean(clickedBookingLink),
-    clickedPlaybookLink: Boolean(clickedPlaybookLink),
-    websiteScore: websiteScore != null && Number.isFinite(Number(websiteScore))
-      ? Number(websiteScore)
-      : null,
-    scoreBreakdown: scoreBreakdown || null,
-    biggestLeak:
-      typeof biggestLeak === 'string' && biggestLeak.trim().length > 0
-        ? biggestLeak.trim()
-        : null,
-    assessmentSummary:
-      typeof assessmentSummary === 'string' && assessmentSummary.trim().length > 0
-        ? assessmentSummary.trim()
-        : null,
+export function scheduleHavenSessionSync({ sessionId, reviewId, accessToken, messages, clickedBookingLink, clickedPlaybookLink, metadataOnly = false } = {}) {
+  if (!sessionId || !reviewId || !accessToken) return;
+  const queue = queues.get(sessionId) || { timer: null, running: false, pending: null, retries: 0 };
+  lastSnapshotAt = Math.max(Date.now(), lastSnapshotAt + 1);
+  queue.pending = {
+    sessionId, reviewId, accessToken, metadataOnly, snapshotAt: new Date(lastSnapshotAt).toISOString(),
+    messages: !metadataOnly && Array.isArray(messages) ? messages.slice(-200).filter(Boolean).map((m) => ({
+      id: m.id || null, role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 8000) : '',
+      timestamp: m.timestamp || Date.now(), hasImage: Boolean(m.image),
+      isChipIntent: Boolean(m.isChipIntent), isSeedGreeting: Boolean(m.isSeedGreeting),
+    })) : [],
+    clickedBookingLink: Boolean(clickedBookingLink), clickedPlaybookLink: Boolean(clickedPlaybookLink),
   };
-
-  if (syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(flushHavenSessionSync, SYNC_DEBOUNCE_MS);
+  // Keep the newest complete messages within the edge function's request limit,
+  // including JSON escaping and UTF-8 bytes (rather than JS character counts).
+  let bytes = 0;
+  const bounded = [];
+  const encoder = new TextEncoder();
+  for (const message of [...queue.pending.messages].reverse()) {
+    const size = encoder.encode(JSON.stringify(message)).byteLength + 1;
+    if (bytes + size > 250000) break;
+    bounded.unshift(message);
+    bytes += size;
+  }
+  queue.pending.messages = bounded;
+  queue.retries = 0;
+  queues.set(sessionId, queue);
+  clearTimeout(queue.timer);
+  queue.timer = setTimeout(() => flush(sessionId), DEBOUNCE_MS);
 }
 
-async function flushHavenSessionSync() {
-  syncTimer = null;
-  const payload = pendingPayload;
-  pendingPayload = null;
-  if (!payload) return;
-
+async function flush(sessionId) {
+  const queue = queues.get(sessionId);
+  if (!queue || queue.running || !queue.pending) return;
+  const payload = queue.pending;
+  queue.pending = null;
+  queue.running = true;
+  publish({ sessionId, state: 'saving' });
+  let retryable = true;
   try {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    if (!supabaseUrl || !supabaseAnonKey) {
-      console.warn('[Haven] Session sync skipped: Supabase not configured');
-      return;
-    }
-
-    const res = await fetch(`${supabaseUrl}/functions/v1/sync-haven-session`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${supabaseAnonKey}`,
-        apikey: supabaseAnonKey,
-      },
-      body: JSON.stringify(payload),
+    const url = import.meta.env.VITE_SUPABASE_URL;
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!url || !key) throw new Error('Review sync is not configured');
+    const response = await fetch(`${url}/functions/v1/sync-haven-session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, apikey: key },
+      body: JSON.stringify(payload), signal: AbortSignal.timeout(15000),
     });
-
-    const data = await res.json().catch(() => ({}));
-
-    console.log('[Haven] Session sync response:', {
-      status: res.status,
-      ok: res.ok,
-      sessionId: payload.sessionId,
-      reviewId: payload.reviewId,
-      sentMessages: payload.messages.length,
-      sentExchanges: payload.totalExchanges,
-      leadTemperature: payload.leadTemperature || '(none)',
-      websiteScore: payload.websiteScore,
-      hasBreakdown: Boolean(payload.scoreBreakdown),
-      hasBiggestLeak: Boolean(payload.biggestLeak),
-      hasSummary: Boolean(payload.assessmentSummary),
-      clickedBookingLink: payload.clickedBookingLink,
-      clickedPlaybookLink: payload.clickedPlaybookLink,
-      results: data.results || null,
-    });
-
-    if (!res.ok) {
-      console.warn('[Haven] Session sync failed:', data);
+    retryable = response.status >= 500 || response.status === 429;
+    const data = await response.json();
+    if (!response.ok || data.ok !== true) throw new Error('Review sync was not acknowledged');
+    queue.retries = 0;
+    publish({ sessionId, state: 'saved' });
+  } catch {
+    if (!queue.pending && retryable && queue.retries < RETRY_LIMIT) {
+      queue.pending = payload;
+      queue.retries += 1;
     }
-  } catch (err) {
-    console.warn('[Haven] Session sync threw:', err);
+    publish({ sessionId, state: queue.pending ? 'retrying' : 'failed' });
+    console.warn('[Haven] Session could not be saved. Your conversation remains on this device.');
+  } finally {
+    queue.running = false;
+    if (queue.pending) queue.timer = setTimeout(() => flush(sessionId), queue.retries ? 1500 * queue.retries : DEBOUNCE_MS);
+    else queues.delete(sessionId);
   }
 }

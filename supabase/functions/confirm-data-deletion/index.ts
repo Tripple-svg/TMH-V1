@@ -49,8 +49,8 @@ async function sendDeletionConfirmation(email: string) {
       body: JSON.stringify({
         from: FROM_ADDRESS,
         to: [email],
-        subject: 'Your data has been deleted',
-        text: 'Your data deletion request has been completed. All records, chat transcripts, screenshots, and personal information associated with your email have been permanently removed.\n\nThe Marketing Haven',
+        subject: 'Your saved review deletion is complete',
+        text: 'Your confirmed request removed matching saved brand reviews, their linked chat sessions and stored screenshots.\n\nPurchase, booking, deletion-request, security and email-delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review remaining records or exercise your privacy rights. We may need to verify ownership and explain any lawful retention reason.\n\nThe Marketing Haven',
       }),
     });
 

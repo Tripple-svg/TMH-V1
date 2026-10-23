@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 
@@ -14,10 +14,7 @@ import Footer from './components/layout/Footer';
 import BrandReviewModal from './components/modals/BrandReviewModal';
 import Preloader from './components/Preloader';
 import CookieBanner from './components/CookieBanner';
-import AdminRoute from './pages/AdminRoute';
-import PrivacyPage from './pages/PrivacyPage';
-import TermsPage from './pages/TermsPage';
-import DataDeletionConfirmPage from './pages/DataDeletionConfirmPage';
+import SiteErrorBoundary from './components/layout/SiteErrorBoundary';
 import DataDeletionModal from './components/legal/DataDeletionModal';
 
 import { HavenProvider, useHaven } from './components/haven/context/HavenContext';
@@ -27,6 +24,10 @@ import { createBrandReview } from './lib/brandReviewService';
 
 const REVIEW_ID_KEY = 'haven_review_id';
 const SESSION_ID_KEY = 'haven_session_id';
+const AdminRoute = lazy(() => import('./pages/AdminRoute'));
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage'));
+const TermsPage = lazy(() => import('./pages/TermsPage'));
+const DataDeletionConfirmPage = lazy(() => import('./pages/DataDeletionConfirmPage'));
 
 function AppInner() {
   const { openDrawer, hasExistingReview, getSavedReviewFormData } = useHaven();
@@ -80,13 +81,9 @@ function AppInner() {
   };
 
   const handleReviewSubmit = async (payload) => {
-    setShowReview(false);
-
     const tracking = trackingRef.current || {};
 
-    // Task 1's real write: insert brand_reviews + haven_sessions +
-    // upload screenshot to tmh-screenshots, all via the anon key.
-    const { success, reviewId, sessionId, error } = await createBrandReview({
+    const { success, reviewId, sessionId, accessToken, submission } = await createBrandReview({
       id: payload.id,
       fullName: payload.fullName,
       brandName: payload.brandName,
@@ -98,8 +95,10 @@ function AppInner() {
       socialLink: payload.socialLink,
       websiteUrl: payload.websiteUrl,
       screenshotBase64: payload.screenshotBase64,
+      screenshotFileName: payload.screenshotFileName,
       agreedToTerms: payload.agreedToTerms,
       agreedAt: payload.agreedAt,
+      hcaptchaToken: payload.hcaptchaToken,
       utmSource: tracking.utmSource || null,
       utmCampaign: tracking.utmCampaign || null,
       referrerUrl: tracking.referrerUrl || null,
@@ -111,48 +110,47 @@ function AppInner() {
       city: tracking.city || null,
     });
 
-    if (success && reviewId && sessionId) {
-      try {
-        localStorage.setItem(REVIEW_ID_KEY, reviewId);
-        localStorage.setItem(SESSION_ID_KEY, sessionId);
-      } catch (e) {
-        console.warn('Could not persist review/session ids:', e);
-      }
-    } else if (error) {
-      console.error('Brand review write failed:', error);
+    if (!success || !reviewId || !sessionId || !/^[a-f\d]{64}$/i.test(accessToken || '')) {
+      return { success: false };
     }
-
-    // Open the drawer regardless so the user is never blocked.
+    try {
+      localStorage.setItem(REVIEW_ID_KEY, reviewId);
+      localStorage.setItem(SESSION_ID_KEY, sessionId);
+    } catch { /* The current drawer can still use the returned capability. */ }
+    setShowReview(false);
+    const savedPayload = submission || payload;
     setTimeout(() => {
       openDrawer('audit', {
         profileData: {
-          reviewId: reviewId || null,
-          sessionId: sessionId || null,
-          name:           payload.fullName || payload.name,
-          brandName:      payload.brandName,
-          email:          payload.email,
-          whatsapp:       payload.whatsapp,
-          platform:       payload.socialPlatform || null,
-          handle:         payload.socialLink     || null,
-          businessDomain: payload.platformType   || payload.presenceType,
-          screenshot:     payload.screenshotBase64 || null,
-          screenshotFileName: payload.screenshotFileName || null,
-          websiteUrl:     payload.websiteUrl     || null,
-          mainGoal:       payload.mainGoal       || null,
+          reviewId,
+          sessionId,
+          accessToken,
+          name:           savedPayload.fullName || savedPayload.name,
+          brandName:      savedPayload.brandName,
+          email:          savedPayload.email,
+          whatsapp:       savedPayload.whatsapp,
+          platform:       savedPayload.socialPlatform || null,
+          handle:         savedPayload.socialLink     || null,
+          businessDomain: savedPayload.platformType   || savedPayload.presenceType,
+          screenshot:     savedPayload.screenshotBase64 || null,
+          screenshotFileName: savedPayload.screenshotFileName || null,
+          websiteUrl:     savedPayload.websiteUrl     || null,
+          mainGoal:       savedPayload.mainGoal       || null,
           isReturningUser: false,
-          silentAccountId: payload.id            || null,
-          agreedToTerms:  payload.agreedToTerms  || false,
-          agreedAt:       payload.agreedAt       || null,
-          utmSource:      tracking.utmSource     || null,
-          utmCampaign:    tracking.utmCampaign   || null,
-          referrerUrl:    tracking.referrerUrl   || null,
-          deviceType:     tracking.deviceType    || null,
-          visitCount:     tracking.visitCount    ?? null,
-          firstVisitAt:   tracking.firstVisitAt  || null,
-          daysToConvert:  tracking.daysToConvert ?? null,
+          silentAccountId: reviewId,
+          agreedToTerms:  savedPayload.agreedToTerms  || false,
+          agreedAt:       savedPayload.agreedAt       || null,
+          utmSource:      savedPayload.utmSource     ?? tracking.utmSource ?? null,
+          utmCampaign:    savedPayload.utmCampaign   ?? tracking.utmCampaign ?? null,
+          referrerUrl:    savedPayload.referrerUrl   ?? tracking.referrerUrl ?? null,
+          deviceType:     savedPayload.deviceType    ?? tracking.deviceType ?? null,
+          visitCount:     savedPayload.visitCount    ?? tracking.visitCount ?? null,
+          firstVisitAt:   savedPayload.firstVisitAt  ?? tracking.firstVisitAt ?? null,
+          daysToConvert:  savedPayload.daysToConvert ?? tracking.daysToConvert ?? null,
         },
       });
     }, 300);
+    return { success: true };
   };
 
   return (
@@ -212,6 +210,8 @@ function AppInner() {
 export default function App() {
   return (
     <BrowserRouter>
+      <SiteErrorBoundary>
+      <Suspense fallback={<div role="status" className="flex min-h-screen items-center justify-center bg-zinc-950 text-sm text-zinc-400">Loading page…</div>}>
       <Routes>
         <Route path="/admin" element={<AdminRoute />} />
         <Route path="/privacy" element={<PrivacyPage />} />
@@ -226,6 +226,8 @@ export default function App() {
           }
         />
       </Routes>
+      </Suspense>
+      </SiteErrorBoundary>
     </BrowserRouter>
   );
 }

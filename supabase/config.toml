@@ -1,5 +1,23 @@
 project_id = "tmh-platform"
 
+[functions.haven-chat]
+verify_jwt = false
+
+[functions.scrape-website]
+verify_jwt = false
+
+[functions.score-social]
+verify_jwt = false
+
+[functions.send-flag-customer]
+verify_jwt = false
+
+[functions.admin-retry-purchase-email]
+verify_jwt = false
+
+[functions.create-brand-review]
+verify_jwt = false
+
 [functions.verify-paystack]
 verify_jwt = false
 

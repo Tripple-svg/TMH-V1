@@ -1,8 +1,54 @@
 import { supabase } from './supabase';
+import { reviewScreenshotError } from './reviewScreenshot';
 
 const SCREENSHOT_BUCKET = 'tmh-screenshots';
 
 const makeId = () => crypto.randomUUID();
+const CREATION_TIMEOUT_MS = 30000;
+const UUID_PATTERN = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
+const pendingCreations = new Map();
+
+function creationCredentials(id, payload) {
+  const storageKey = `haven_review_creation_${id}`;
+  let credentials = pendingCreations.get(id);
+  try {
+    if (!credentials) {
+      const saved = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+      if (UUID_PATTERN.test(saved?.sessionId || '') && /^[a-f\d]{64}$/i.test(saved?.accessToken || '')) {
+        credentials = saved;
+      }
+    }
+  } catch { /* Storage can be unavailable in private browsing. */ }
+  if (!credentials) {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    credentials = {
+      sessionId: makeId(),
+      accessToken: Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(''),
+    };
+  }
+  // A lost response may hide an already committed review. Retrying its id
+  // must use the original details rather than silently creating a new profile.
+  const submission = credentials.submission || { ...payload };
+  delete submission.hcaptchaToken;
+  delete submission.sessionId;
+  delete submission.accessToken;
+  submission.email = credentials.email ?? submission.email;
+  submission.screenshotBase64 ||= credentials.screenshotBase64 || payload.screenshotBase64 || null;
+  submission.screenshotFileName ||= credentials.screenshotFileName || payload.screenshotFileName || null;
+  credentials = { sessionId: credentials.sessionId, accessToken: credentials.accessToken, submission };
+  pendingCreations.set(id, credentials);
+  try {
+    sessionStorage.setItem(storageKey, JSON.stringify(credentials));
+  } catch {
+    // Large screenshots can exceed the browser quota. Keep the ownership key
+    // so a reload can retry after the user reselects the original image.
+    try {
+      const { sessionId, accessToken } = credentials;
+      sessionStorage.setItem(storageKey, JSON.stringify({ sessionId, accessToken, submission: { ...submission, screenshotBase64: null } }));
+    } catch { /* The in-memory copy still supports retries in this tab. */ }
+  }
+  return credentials;
+}
 
 function asNumber(value) {
   const result = Number(value);
@@ -37,85 +83,36 @@ export function calculateLeadTemperature({
   return 'Cold';
 }
 
-async function uploadScreenshot(reviewId, base64DataUrl) {
-  if (!base64DataUrl || !base64DataUrl.startsWith('data:image/')) return null;
-  try {
-    const [meta, b64] = base64DataUrl.split(',');
-    const mimeType = meta.replace('data:', '').replace(';base64', '');
-    const extension = mimeType.split('/')[1] || 'jpg';
-    const path = `${reviewId}/${Date.now()}.${extension}`;
-    const byteChars = atob(b64);
-    const byteArr = new Uint8Array(byteChars.length);
-    for (let index = 0; index < byteChars.length; index += 1) byteArr[index] = byteChars.charCodeAt(index);
-    const blob = new Blob([byteArr], { type: mimeType });
-    const { error } = await supabase.storage.from(SCREENSHOT_BUCKET).upload(path, blob, {
-      contentType: mimeType,
-      upsert: false,
-    });
-    if (error) {
-      console.warn('Screenshot upload failed:', error);
-      return null;
-    }
-    return path;
-  } catch (error) {
-    console.warn('Screenshot upload error:', error);
-    return null;
-  }
-}
-
 export async function createBrandReview(payload) {
   try {
-    const id = payload.id || makeId();
-    const sessionId = makeId();
-    const screenshotUrl = await uploadScreenshot(id, payload.screenshotBase64 || null);
-
-    const review = {
-      id,
-      full_name: payload.fullName || payload.full_name,
-      brand_name: payload.brandName || payload.brand_name,
-      email: payload.email,
-      whatsapp: payload.whatsapp,
-      main_goal: payload.mainGoal || payload.main_goal || null,
-      platform_type: payload.platformType || payload.platform_type || 'none',
-      social_platform: payload.socialPlatform || payload.social_platform || null,
-      social_link: payload.socialLink || payload.social_link || payload.socialHandle || null,
-      website_url: payload.websiteUrl || payload.website_url || null,
-      screenshot_url: screenshotUrl,
-      is_returning_user: Boolean(payload.isReturningUser || payload.is_returning_user),
-      utm_source: payload.utmSource || payload.utm_source || null,
-      utm_campaign: payload.utmCampaign || payload.utm_campaign || null,
-      referrer_url: payload.referrerUrl || payload.referrer_url || null,
-      device_type: payload.deviceType || payload.device_type || null,
-      visit_count: payload.visitCount || payload.visit_count || 1,
-      first_visit_at: payload.firstVisitAt || payload.first_visit_at || new Date().toISOString(),
-      days_to_convert: payload.daysToConvert ?? payload.days_to_convert ?? 0,
-      country: payload.country || null,
-      city: payload.city || null,
-      agreed_to_terms: Boolean(payload.agreedToTerms ?? payload.agreed_to_terms ?? false),
-      agreed_at: payload.agreedAt || payload.agreed_at || null,
-    };
-
-    const { error } = await supabase.from('brand_reviews').insert(review);
-    if (error) throw error;
-
-    const session = {
-      id: sessionId,
-      review_id: id,
-      scope: 'audit',
-      service_id: null,
-      messages: [],
-      current_step: 'GREETING',
-      last_step_reached: 'GREETING',
-      total_exchanges: 0,
-    };
-
-    const { error: sessionError } = await supabase.from('haven_sessions').insert(session);
-    if (sessionError) throw sessionError;
-
-    return { success: true, reviewId: id, sessionId };
-  } catch (error) {
-    console.error('Unable to create brand review:', error);
-    return { success: false, reviewId: null, sessionId: null, error };
+    if (!UUID_PATTERN.test(payload?.id || '')) throw new Error('Invalid review id');
+    if (reviewScreenshotError(payload.screenshotBase64)) throw new Error('Invalid screenshot');
+    const url = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!url || !anonKey) throw new Error('Review service unavailable');
+    const credentials = creationCredentials(payload.id, payload);
+    const { sessionId, accessToken } = credentials;
+    const response = await fetch(`${url}/functions/v1/create-brand-review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${anonKey}`, apikey: anonKey },
+      body: JSON.stringify({
+        ...credentials.submission,
+        hcaptchaToken: payload.hcaptchaToken,
+        sessionId, accessToken,
+      }),
+      signal: AbortSignal.timeout(CREATION_TIMEOUT_MS),
+    });
+    const result = await response.json();
+    if (!response.ok || result?.ok !== true || result.reviewId !== payload.id || result.sessionId !== sessionId) {
+      throw new Error('Review was not saved');
+    }
+    pendingCreations.delete(payload.id);
+    try {
+      sessionStorage.removeItem(`haven_review_creation_${payload.id}`);
+    } catch { /* The saved profile owns the capability after success. */ }
+    return { success: true, reviewId: result.reviewId, sessionId, accessToken, submission: credentials.submission };
+  } catch {
+    return { success: false, reviewId: null, sessionId: null, accessToken: null, error: new Error('Unable to save brand review') };
   }
 }
 

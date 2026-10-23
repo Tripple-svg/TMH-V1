@@ -1,7 +1,9 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { drainModerationNotifications } from '../_shared/haven-moderation.ts';
 
 const TEAM_RECIPIENTS = ['francis.teamhaven@gmail.com', 'paschal.tmh@gmail.com'];
+const SOURCE_LABELS: Record<string, string> = { lead: 'Lead / Brand review', support: 'Support', service: 'Services', admin: 'Admin action', unknown: 'Admin action / legacy record' };
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 serve(async (req) => {
@@ -25,14 +27,18 @@ serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => null);
+    const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
+    if (body?.retryPending === true) {
+      const result = await drainModerationNotifications(supabase);
+      return json({ ok: !result.deliveryPending, ...result }, result.deliveryPending ? 502 : 200);
+    }
     if (typeof body?.notificationId !== 'string' || !UUID_PATTERN.test(body.notificationId)) {
       return json({ ok: false, error: 'Invalid notificationId' }, 400);
     }
 
-    const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
     // Email content comes only from the database snapshot created by the flag trigger.
     const { data: notification, error } = await supabase.from('flag_alert_notifications')
-      .select('id, email, status, reason, sent_at').eq('id', body.notificationId).maybeSingle();
+      .select('id,email,visitor_id,full_name,source,session_id,status,reason,sent_at').eq('id', body.notificationId).maybeSingle();
     if (error) {
       console.error('send-flag-alert: notification lookup failed');
       return json({ ok: false, error: 'Unable to load flag notification' }, 500);
@@ -55,11 +61,13 @@ serve(async (req) => {
           to: TEAM_RECIPIENTS,
           reply_to: 'info@themarketinghaven.xyz',
           subject: `URGENT: User Flagged - ${notification.status}`,
-          text: `User ${notification.email} has been flagged as ${notification.status}. Reason Haven flagged them: ${notification.reason || 'Not provided'}. Please review in the Admin Dashboard.`,
+          text: `User ${notification.email || `visitor ${notification.visitor_id}`} has been flagged as ${notification.status}. Reason Haven flagged them: ${notification.reason || 'Not provided'}. Please review in the Admin Dashboard.\n\nName: ${notification.full_name || (notification.email ? 'Not recorded' : 'Not provided (guest)')}\nSource: ${SOURCE_LABELS[notification.source] || 'Admin action / legacy record'}\nSession ID: ${notification.session_id || 'Not recorded'}\nVisitor ID: ${notification.visitor_id || 'Linked saved review'}\nAdmin Dashboard: https://themarketinghaven.xyz/admin`,
         }),
         signal: AbortSignal.timeout(15000),
       });
       if (!sent.ok) return json({ ok: false, error: 'Flag alert delivery failed. Please retry.' }, 502);
+      const accepted = await sent.json().catch(() => null);
+      if (typeof accepted?.id !== 'string' || !accepted.id) return json({ ok: false, error: 'Flag alert acceptance could not be confirmed. Please retry.' }, 502);
     } catch {
       return json({ ok: false, error: 'Flag alert delivery failed. Please retry.' }, 502);
     }

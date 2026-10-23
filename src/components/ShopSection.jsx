@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
-  BookOpen, CheckCircle2, ArrowRight, X, ShieldCheck, Zap,
+  BookOpen, CheckCircle2, ArrowRight, X, ShieldCheck,
   Download,
 } from 'lucide-react';
 import ConfirmModal from './ui/ConfirmModal';
@@ -29,6 +29,7 @@ const playbookModules = [
 ];
 
 export default function ShopSection() {
+  const reduceMotion = useReducedMotion();
   const [isPreviewOpen, setIsPreviewOpen]       = useState(false);
   const [email, setEmail]                       = useState('');
   const [loading, setLoading]                   = useState(false);
@@ -295,10 +296,10 @@ export default function ShopSection() {
       <div className="max-w-5xl mx-auto relative z-10">
         <motion.div
           className="text-center mb-12"
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: reduceMotion ? 0 : 16 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
+          transition={{ duration: reduceMotion ? 0 : 0.4 }}
         >
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-4 text-zinc-900 dark:text-white">
             Digital Products
@@ -309,25 +310,27 @@ export default function ShopSection() {
         </motion.div>
 
         <motion.div
-          className="relative rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/5 backdrop-blur-sm shadow-xl dark:shadow-none overflow-hidden transition-colors duration-300"
-          initial={{ opacity: 0, y: 30 }}
+          className="relative rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900/80 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.3)] overflow-hidden transition-colors duration-300"
+          initial={{ opacity: 0, y: reduceMotion ? 0 : 16 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
+          transition={{ duration: reduceMotion ? 0 : 0.4 }}
         >
           <div className="grid grid-cols-1 md:grid-cols-2">
-            <div className="relative aspect-square md:aspect-auto flex items-center justify-center p-8 bg-gradient-to-br from-blue-50 via-zinc-100 to-blue-100/50 dark:from-blue-950/40 dark:via-zinc-900 dark:to-black transition-colors duration-300">
-              <div className="relative w-48 h-64 sm:w-56 sm:h-72 rounded-lg shadow-2xl transform rotate-[-2deg] hover:rotate-0 transition-transform duration-500 overflow-hidden">
+            <div className="relative aspect-square md:aspect-auto flex items-center justify-center p-8 bg-zinc-100 dark:bg-zinc-900 transition-colors duration-300">
+              <div className={`relative w-48 h-64 sm:w-56 sm:h-72 rounded-lg shadow-2xl overflow-hidden ${reduceMotion ? '' : 'rotate-[-2deg] hover:rotate-0 transition-transform duration-300'}`}>
                 <img
                   src="/Playbook.jpeg"
                   alt="The Unseen Playbook"
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover rounded-lg"
                 />
               </div>
             </div>
 
             <div className="p-8 sm:p-10 flex flex-col justify-center">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider w-fit mb-4 bg-zinc-100 border border-zinc-200 text-zinc-700 dark:bg-white/5 dark:border-white/10 dark:text-zinc-300">
+              <div className="text-[10px] font-medium uppercase tracking-[0.24em] mb-4 text-zinc-500 dark:text-zinc-400">
                 Featured Playbook
               </div>
 
@@ -342,17 +345,16 @@ export default function ShopSection() {
               <ul className="space-y-3 mb-8">
                 {features.map((f, i) => (
                   <li key={i} className="flex items-start gap-3 text-sm text-zinc-700 dark:text-zinc-300">
-                    <CheckCircle2 className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                    <span aria-hidden="true" className="w-1 h-1 rounded-full bg-zinc-400 mt-2 shrink-0" />
                     {f}
                   </li>
                 ))}
               </ul>
 
-              <p className="mb-4 text-2xl font-bold text-zinc-900 dark:text-white">₦9,639</p>
-
+              <p className="mb-5 text-2xl font-medium tracking-tight text-zinc-900 dark:text-white">₦9,639 <span className="ml-2 text-xs font-normal tracking-normal text-zinc-500">Playbook price</span></p>
               <button
                 onClick={() => setIsPreviewOpen(true)}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-600/25 transition-all active:scale-95"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold text-sm hover:bg-zinc-700 dark:hover:bg-white transition-colors active:scale-[0.98]"
               >
                 Get The Unseen Playbook <ArrowRight className="w-4 h-4" />
               </button>
@@ -370,36 +372,37 @@ export default function ShopSection() {
             exit={{ opacity: 0 }}
           >
             <div
-              className="fixed inset-0 bg-black/80 backdrop-blur-md"
+              className="fixed inset-0 bg-black/80"
               onClick={handleCloseModal}
             />
 
             <motion.div
-              className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-2xl overflow-hidden my-auto z-10 transition-colors duration-300"
-              initial={{ scale: 0.95, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-white/10 bg-zinc-900 text-white shadow-[0_32px_96px_rgba(0,0,0,0.5)] overflow-hidden my-auto z-10"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Playbook checkout"
+              style={{ colorScheme: 'dark' }}
+              initial={{ opacity: 0, scale: reduceMotion ? 1 : 0.98, y: reduceMotion ? 0 : 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: reduceMotion ? 1 : 0.98, y: reduceMotion ? 0 : 16 }}
+              transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.22, 1, 0.36, 1] }}
             >
-              <div className="flex items-center justify-between p-6 border-b border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5">
+              <div className="flex items-center justify-between gap-4 p-6 sm:px-8 border-b border-white/10">
                 <div className="flex items-center gap-3">
                   <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
-                      paymentSuccess
-                        ? 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
-                        : 'bg-blue-100 dark:bg-blue-600/20 border-blue-200 dark:border-blue-500/30'
-                    }`}
+                    className="w-10 h-10 rounded-lg flex items-center justify-center bg-white/5 text-zinc-300"
                   >
                     {paymentSuccess ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                      <CheckCircle2 className="w-5 h-5" />
                     ) : (
-                      <BookOpen className="w-5 h-5 text-blue-600" />
+                      <BookOpen className="w-5 h-5" />
                     )}
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
+                    <h3 className="text-lg font-semibold tracking-tight text-white">
                       {paymentSuccess ? "You're In." : 'The Unseen Playbook'}
                     </h3>
-                    <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                    <p className="text-xs text-zinc-400">
                       {paymentSuccess
                         ? (alreadyDownloaded ? 'Download Delivered' : 'Payment Confirmed')
                         : 'Digital Blueprint & Strategy Guide'}
@@ -408,7 +411,8 @@ export default function ShopSection() {
                 </div>
                 <button
                   onClick={handleCloseModal}
-                  className="w-9 h-9 rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center transition-all"
+                  aria-label="Close Playbook checkout"
+                  className="w-11 h-11 shrink-0 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 flex items-center justify-center transition-colors focus-visible:outline-2 focus-visible:outline-zinc-400"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -417,40 +421,40 @@ export default function ShopSection() {
               {paymentSuccess ? (
                 <div className="p-6 sm:p-8 overflow-y-auto overscroll-contain space-y-6 text-center">
                   <motion.div
-                    initial={{ scale: 0.6, opacity: 0 }}
+                    initial={{ scale: reduceMotion ? 1 : 0.92, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
-                    transition={{ type: 'spring', stiffness: 260, damping: 18 }}
-                    className="w-20 h-20 mx-auto rounded-full flex items-center justify-center bg-emerald-100 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30"
+                    transition={{ duration: reduceMotion ? 0 : 0.24, ease: 'easeOut' }}
+                    className="w-16 h-16 mx-auto rounded-full flex items-center justify-center bg-white/5"
                   >
-                    <CheckCircle2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
+                    <CheckCircle2 className="w-8 h-8 text-zinc-200" />
                   </motion.div>
 
                   <div className="space-y-2">
-                    <h4 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white">
+                    <h4 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">
                       Payment Successful
                     </h4>
-                    <p className="text-sm text-zinc-600 dark:text-zinc-400 max-w-md mx-auto leading-relaxed">
+                    <p className="text-sm text-zinc-400 max-w-md mx-auto leading-relaxed">
                       Thank you for grabbing The Unseen Playbook. Your copy is ready. Click below to download it straight to your device.
                     </p>
                   </div>
 
-                  <div className="flex flex-col items-center gap-3 p-4 rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 text-xs">
-                    <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
-                      <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <div className="flex flex-col items-center gap-3 py-4 text-xs">
+                    <div className="flex flex-wrap justify-center items-center gap-2 text-zinc-400">
+                      <ShieldCheck className="w-4 h-4 text-zinc-400" />
                       <span>Reference:</span>
-                      <span className="font-mono font-semibold text-zinc-900 dark:text-white">
+                      <span className="font-mono break-all text-zinc-200">
                         {paymentReference || '—'}
                       </span>
                     </div>
                     {deliveryContact && (
-                      <div className="text-[11px] text-zinc-500 dark:text-zinc-500">
-                        Receipt sent to <span className="font-medium text-zinc-700 dark:text-zinc-300">{deliveryContact}</span>
+                      <div className="text-[11px] text-zinc-400 break-all">
+                        Receipt sent to <span className="text-zinc-300">{deliveryContact}</span>
                       </div>
                     )}
                   </div>
 
                   {alreadyDownloaded ? (
-                    <div className="w-full inline-flex items-center justify-center gap-3 px-8 py-4 rounded-xl bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-semibold text-base cursor-not-allowed select-none border border-zinc-300 dark:border-zinc-700">
+                    <div className="w-full inline-flex items-center justify-center gap-3 px-8 py-4 rounded-lg bg-white/5 text-zinc-400 font-medium text-base cursor-not-allowed select-none">
                       <Download className="w-5 h-5" />
                       Download Completed
                     </div>
@@ -461,35 +465,35 @@ export default function ShopSection() {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(event) => { event.preventDefault(); handleDownloadPlaybook(); }}
-                      className="w-full inline-flex items-center justify-center gap-3 px-8 py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-base transition-all shadow-lg shadow-emerald-600/25 active:scale-[0.98]"
+                      className="w-full inline-flex items-center justify-center gap-3 px-8 py-4 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-base transition-colors active:scale-[0.98]"
                     >
                       <Download className="w-5 h-5" />
                       Download The Unseen Playbook
                     </a>
                   ) : null}
-                  {verifying && <p role="status" className="text-sm text-zinc-500">Verifying your payment...</p>}
-                  {verificationError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{verificationError}</p>}
+                  {verifying && <p role="status" className="text-sm text-zinc-400">Verifying your payment...</p>}
+                  {verificationError && <p role="alert" className="text-sm text-red-300">{verificationError}</p>}
                   {alreadyDownloaded && downloadUrl && !verifying && (
-                    <a href={downloadUrl} onClick={handleRedownloadPlaybook} className="block text-xs text-blue-600 dark:text-blue-400 underline">
+                    <a href={downloadUrl} onClick={handleRedownloadPlaybook} className="block text-xs text-zinc-300 underline underline-offset-4 hover:text-white">
                       Re-download Playbook
                     </a>
                   )}
 
-                  <div className="pt-6 mt-2 border-t border-zinc-200 dark:border-white/10 text-left">
+                  <div className="pt-6 mt-2 border-t border-white/10 text-left">
                     <div className="flex items-center gap-2">
-                      <span className="block w-5 h-px bg-blue-500" />
-                      <span className="text-[10px] font-mono uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-500">
+                      <span className="block w-5 h-px bg-zinc-600" />
+                      <span className="text-[10px] uppercase tracking-[0.24em] text-zinc-400">
                         A Note From Us
                       </span>
                     </div>
-                    <p className="mt-4 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
+                    <p className="mt-4 text-sm leading-relaxed text-zinc-300">
                       Congratulations on your copy. Enjoy the read. And if you need any clarity or help applying anything, reach out to us anytime. We are here.
                     </p>
                   </div>
 
                   <button
                     onClick={handleCloseModal}
-                    className="w-full px-4 py-3 rounded-xl text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-600 transition-all active:scale-[0.98] shadow-md shadow-emerald-700/20"
+                    className="w-full px-4 py-3 rounded-lg text-sm font-medium text-zinc-300 hover:text-white hover:bg-white/5 transition-colors active:scale-[0.98]"
                   >
                     Close
                   </button>
@@ -498,25 +502,25 @@ export default function ShopSection() {
                 <>
                   <div className="p-6 sm:p-8 overflow-y-auto overscroll-contain space-y-6">
                     <div>
-                      <h4 className="text-base font-semibold mb-2 text-zinc-900 dark:text-white">
+                      <h4 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-3 text-white">
                         What's Inside The Playbook?
                       </h4>
-                      <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
+                      <p className="text-sm leading-relaxed text-zinc-400">
                         Removes the confusion and noise. This playbook gives founders, creators, and marketers the exact lenses needed to stop guessing and build systems with absolute clarity.
                       </p>
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="divide-y divide-white/10">
                       {playbookModules.map((m, idx) => (
                         <div
                           key={idx}
-                          className="p-4 rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5"
+                          className="py-4 first:pt-0 last:pb-0"
                         >
-                          <div className="flex items-center gap-2 text-sm font-semibold text-blue-600 mb-1">
-                            <Zap className="w-4 h-4" />
+                          <div className="flex items-center gap-3 text-sm font-medium text-zinc-100 mb-2">
+                            <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-zinc-500" />
                             {m.title}
                           </div>
-                          <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+                          <p className="pl-4 text-sm leading-relaxed text-zinc-400">
                             {m.desc}
                           </p>
                         </div>
@@ -524,44 +528,46 @@ export default function ShopSection() {
                     </div>
 
                     <form id="paystack-form" onSubmit={handlePaystackCheckout} className="space-y-3 pt-2">
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+                      <label htmlFor="playbook-receipt-email" className="block text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-300">
                         Email for your receipt
                       </label>
                       <input
+                        id="playbook-receipt-email"
                         type="email"
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="your@email.com"
-                        className="w-full px-4 py-3 rounded-xl border border-zinc-300 dark:border-white/10 bg-zinc-50 dark:bg-white/5 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-600 transition-colors"
+                        className="w-full px-4 py-3 rounded-lg border border-white/15 bg-zinc-950/40 text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-400 transition-colors"
                       />
-                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                      <p className="text-xs text-zinc-400">
                         Your receipt will be sent here. Your download starts the moment payment confirms.
                       </p>
                     </form>
 
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 text-zinc-500 dark:text-zinc-400 text-xs">
+                    <div className="flex items-center gap-2 text-zinc-400 text-xs">
                       <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                      <span>Secure checkout via Paystack.</span>
+                      <span>Secure checkout via Paystack</span>
                     </div>
                   </div>
 
-                  <div className="p-6 border-t border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="p-6 sm:px-8 border-t border-white/10 bg-zinc-900 flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div>
-                      <span className="text-xs uppercase tracking-wider block text-zinc-500 dark:text-zinc-400">
+                      <span className="text-[10px] uppercase tracking-[0.2em] block text-zinc-400">
                         Total Investment
                       </span>
                       <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-bold text-zinc-900 dark:text-white">₦9,639</span>
+                        <span className="text-3xl font-medium tracking-tight text-white">₦9,639</span>
                         <span className="text-xs text-zinc-400 line-through">₦15,000</span>
                       </div>
+                      {PAYSTACK_AMOUNT_KOBO === 10000 && <p className="mt-2 text-xs text-zinc-300">Current live checkout charge: ₦100 (testing).</p>}
                     </div>
 
                     <button
                       type="button"
                       onClick={handlePaystackCheckout}
                       disabled={loading}
-                      className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition-all shadow-lg shadow-blue-600/30 active:scale-95 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="w-full sm:w-auto px-8 py-3.5 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-sm transition-colors active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Opening Checkout...' : 'Confirm & Pay via Paystack'}
                     </button>

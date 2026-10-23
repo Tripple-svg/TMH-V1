@@ -2,8 +2,7 @@
 // Admin-only endpoint. Verifies the admin password against a
 // Supabase secret, then reads brand_reviews + haven_sessions with
 // the service_role key (bypasses RLS) and returns leads with
-// 1-hour signed screenshot URLs. Sessions include the last 60
-// messages with image fields stripped.
+// 1-hour signed screenshot URLs. Transcripts load on demand after admin auth.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -14,7 +13,22 @@ const ADMIN_PASSWORD = Deno.env.get('ADMIN_PASSWORD');
 
 const SCREENSHOT_BUCKET = 'tmh-screenshots';
 const SIGNED_URL_TTL = 60 * 60; // 1 hour
-const MAX_TRANSCRIPT_MESSAGES = 60;
+const MAX_TRANSCRIPT_MESSAGES = 200;
+const MAX_RECORDS = 500;
+const MAX_LINKED_SESSIONS = 5000;
+const SESSION_FIELDS = 'id,review_id,visitor_id,scope,service_id,current_step,last_step_reached,total_exchanges,message_count,created_at,updated_at';
+// Keep credentials and future private columns out of the admin payload.
+const REVIEW_FIELDS = [
+  'id', 'full_name', 'brand_name', 'email', 'whatsapp', 'main_goal',
+  'platform_type', 'social_platform', 'social_link', 'website_url', 'screenshot_url',
+  'is_returning_user', 'haven_score', 'score_breakdown', 'biggest_leak',
+  'biggest_problems', 'assessment_summary', 'pre_call_briefing', 'lead_temperature',
+  'utm_source', 'utm_campaign', 'referrer_url', 'device_type', 'visit_count',
+  'first_visit_at', 'days_to_convert', 'country', 'city', 'clicked_booking_link',
+  'clicked_playbook_link', 'converted_to_call', 'converted_to_purchase', 'deal_value',
+  'followup_status', 'followup_notes', 'call_booked_at', 'flag_status', 'flag_reason',
+  'agreed_to_terms', 'agreed_at', 'created_at', 'updated_at',
+];
 
 const ALLOWED_ORIGINS = [
   'https://themarketinghaven.xyz',
@@ -36,7 +50,7 @@ function corsHeaders(origin: string | null) {
 function json(body: unknown, origin: string | null, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   });
 }
 
@@ -48,11 +62,23 @@ function sanitiseMessage(m: unknown) {
   return {
     id: typeof msg.id === 'string' ? msg.id : null,
     role: typeof msg.role === 'string' ? msg.role : null,
-    content: typeof msg.content === 'string' ? msg.content : '',
-    timestamp: typeof msg.timestamp === 'number' ? msg.timestamp : null,
+    content: typeof msg.content === 'string' ? msg.content.slice(0, 8000) : '',
+    timestamp: typeof msg.timestamp === 'number' || typeof msg.timestamp === 'string' ? msg.timestamp : null,
     hasImage: Boolean(msg.hasImage),
     isChipIntent: Boolean(msg.isChipIntent),
     isSeedGreeting: Boolean(msg.isSeedGreeting),
+  };
+}
+
+function sessionMetadata(session: Record<string, any>) {
+  return {
+    id: session.id, review_id: session.review_id || null, visitor_id: session.visitor_id || null,
+    scope: session.scope, service_id: session.service_id || null,
+    current_step: session.current_step || null, last_step_reached: session.last_step_reached || null,
+    total_exchanges: session.total_exchanges || 0, created_at: session.created_at || null,
+    updated_at: session.updated_at || null, last_session_update: session.updated_at || null,
+    message_count: Number.isFinite(Number(session.message_count)) ? Number(session.message_count) : null,
+    messages_returned: 0, transcript_loaded: false,
   };
 }
 
@@ -79,11 +105,27 @@ serve(async (req) => {
       auth: { persistSession: false },
     });
 
+    if (body.action === 'transcript') {
+      const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
+      if (!sessionId || sessionId.length > 200) return json({ ok: false, error: 'Invalid session ID' }, origin, 400);
+      const { data: session, error } = await supabase.from('haven_sessions')
+        .select(`${SESSION_FIELDS},messages`).eq('id', sessionId).maybeSingle();
+      if (error) return json({ ok: false, error: 'Could not load this transcript. Please retry.' }, origin, 500);
+      if (!session) return json({ ok: false, error: 'This conversation is no longer available.' }, origin, 404);
+      const raw = Array.isArray(session.messages) ? session.messages : [];
+      const messages = raw.slice(-MAX_TRANSCRIPT_MESSAGES).map(sanitiseMessage).filter(Boolean);
+      return json({ ok: true, session: {
+        ...sessionMetadata(session), messages, message_count: raw.length,
+        messages_returned: messages.length, transcript_loaded: true,
+      }, transcript_limit: MAX_TRANSCRIPT_MESSAGES }, origin);
+    }
+    if (body.action !== undefined && body.action !== 'overview') return json({ ok: false, error: 'Invalid action' }, origin, 400);
+
     const { data: reviews, error: reviewsError } = await supabase
       .from('brand_reviews')
-      .select('*')
+      .select(REVIEW_FIELDS.join(','))
       .order('created_at', { ascending: false })
-      .limit(500);
+      .limit(MAX_RECORDS);
 
     if (reviewsError) {
       console.error('admin-fetch-leads: reviews query failed', reviewsError);
@@ -93,34 +135,26 @@ serve(async (req) => {
     const rows = reviews || [];
     const reviewIds = rows.map((r) => r.id).filter(Boolean);
 
-    let sessionByReviewId: Record<string, unknown> = {};
+    const sessionsByReviewId: Record<string, any[]> = {};
+    let linkedSessionsError: string | null = null;
+    let linkedSessionsTruncated = false;
     if (reviewIds.length > 0) {
-      const { data: sessions, error: sessionsError } = await supabase
-        .from('haven_sessions')
-        .select('review_id, current_step, last_step_reached, total_exchanges, messages, updated_at')
-        .in('review_id', reviewIds);
-
-      if (sessionsError) {
-        console.warn('admin-fetch-leads: sessions query failed', sessionsError);
-      } else {
-        for (const s of sessions || []) {
-          if (!s.review_id) continue;
-          const raw = Array.isArray(s.messages) ? s.messages : [];
-          const capped = raw.length > MAX_TRANSCRIPT_MESSAGES
-            ? raw.slice(-MAX_TRANSCRIPT_MESSAGES)
-            : raw;
-          const messages = capped.map(sanitiseMessage).filter(Boolean);
-
-          sessionByReviewId[s.review_id] = {
-            current_step: s.current_step || null,
-            last_step_reached: s.last_step_reached || null,
-            total_exchanges: s.total_exchanges || 0,
-            message_count: raw.length,
-            messages_returned: messages.length,
-            last_session_update: s.updated_at || null,
-            messages,
-          };
+      for (let offset = 0; offset < MAX_LINKED_SESSIONS; offset += MAX_RECORDS) {
+        const { data: sessions, error: sessionsError } = await supabase.from('haven_sessions')
+          .select(SESSION_FIELDS).in('review_id', reviewIds).in('scope', ['audit', 'support', 'service'])
+          .order('updated_at', { ascending: false }).order('id', { ascending: false })
+          .range(offset, offset + MAX_RECORDS - 1);
+        if (sessionsError) {
+          console.warn('admin-fetch-leads: linked sessions query failed', sessionsError);
+          linkedSessionsError = 'Could not load linked conversations. Refresh to retry.';
+          break;
         }
+        for (const session of sessions || []) {
+          if (!session.review_id) continue;
+          (sessionsByReviewId[session.review_id] ||= []).push(sessionMetadata(session));
+        }
+        if ((sessions || []).length < MAX_RECORDS) break;
+        if (offset + MAX_RECORDS === MAX_LINKED_SESSIONS) linkedSessionsTruncated = true;
       }
     }
 
@@ -147,33 +181,55 @@ serve(async (req) => {
     }
 
     const leads = rows.map((r) => ({
-      ...r,
+      ...Object.fromEntries(REVIEW_FIELDS.filter((field) => field in r).map((field) => [field, r[field]])),
       screenshot_signed_url: r.screenshot_url ? signedByPath[r.screenshot_url] || null : null,
-      session: sessionByReviewId[r.id] || null,
+      sessions: sessionsByReviewId[r.id] || [],
+      session: (sessionsByReviewId[r.id] || []).find((session) => session.scope === 'audit') || null,
+      sessions_error: linkedSessionsError,
     }));
 
-    const { data: supportSessions, error: supportError } = await supabase
-      .from('haven_sessions')
-      .select('id, current_step, last_step_reached, total_exchanges, updated_at, messages')
-      .eq('scope', 'support')
-      .order('updated_at', { ascending: false });
-
-    if (supportError) {
-      console.error('admin-fetch-leads: support sessions query failed', supportError);
-      return json({ ok: false, error: supportError.message }, origin, 500);
+    const fetchStandalone = async (scope: string) => {
+      const { data, error } = await supabase.from('haven_sessions').select(SESSION_FIELDS)
+        .eq('scope', scope).is('review_id', null).order('updated_at', { ascending: false }).limit(MAX_RECORDS);
+      if (error) console.error(`admin-fetch-leads: ${scope} sessions query failed`, error);
+      return { sessions: (data || []).map(sessionMetadata), error: error ? `Could not load ${scope} chats. Refresh to retry.` : null };
+    };
+    const [support, service] = await Promise.all([fetchStandalone('support'), fetchStandalone('service')]);
+    const standalone = [...support.sessions, ...service.sessions];
+    const visitorIds = [...new Set(standalone.map((session) => session.visitor_id).filter(Boolean))];
+    let visitorsError: string | null = null;
+    if (visitorIds.length) {
+      const { data: visitors, error } = await supabase.from('haven_chat_visitors')
+        .select('id,flag_status,flag_reason').in('id', visitorIds);
+      if (error) visitorsError = 'Guest flag status could not be loaded. Refresh before moderating these chats.';
+      const byId = new Map((visitors || []).map((visitor: any) => [visitor.id, visitor]));
+      for (const session of standalone) {
+        const visitor: any = byId.get(session.visitor_id);
+        Object.assign(session, { flag_status: visitor?.flag_status || 'white', flag_reason: visitor?.flag_reason || null, flag_error: error ? visitorsError : null });
+      }
     }
 
-    const support_sessions = (supportSessions || []).map((s) => ({
-      id: s.id,
-      current_step: s.current_step || null,
-      last_step_reached: s.last_step_reached || null,
-      total_exchanges: s.total_exchanges || 0,
-      last_session_update: s.updated_at || null,
-      messages: (Array.isArray(s.messages) ? s.messages : [])
-        .slice(-MAX_TRANSCRIPT_MESSAGES).map(sanitiseMessage).filter(Boolean),
+    const { data: purchaseRows, error: purchaseError } = await supabase
+      .from('playbook_purchases')
+      .select('id,email,reference,amount,created_at,thankyou_sent,thankyou_sent_at,thankyou_attempted_at,thankyou_last_error,thankyou_email_id')
+      .order('created_at', { ascending: false })
+      .limit(MAX_RECORDS);
+
+    if (purchaseError) console.error('admin-fetch-leads: purchases query failed', purchaseError);
+    const purchases = (purchaseRows || []).map((purchase) => ({
+      id: purchase.id, email: purchase.email, reference: purchase.reference,
+      amount: purchase.amount, created_at: purchase.created_at, thankyou_sent: purchase.thankyou_sent,
+      thankyou_sent_at: purchase.thankyou_sent_at, thankyou_attempted_at: purchase.thankyou_attempted_at,
+      thankyou_last_error: purchase.thankyou_last_error, thankyou_email_id: purchase.thankyou_email_id,
     }));
 
-    return json({ ok: true, leads, count: leads.length, support_sessions }, origin);
+    return json({
+      ok: true, leads, count: leads.length, support_sessions: support.sessions, service_sessions: service.sessions,
+      purchases, playbook_purchases: purchases, records_limit: MAX_RECORDS, transcript_limit: MAX_TRANSCRIPT_MESSAGES,
+      support_sessions_error: support.error, service_sessions_error: service.error,
+      linked_sessions_error: linkedSessionsError, linked_sessions_truncated: linkedSessionsTruncated,
+      purchases_error: purchaseError ? 'Could not load purchases. Check the purchase migrations and server logs, then refresh.' : null,
+    }, origin);
   } catch (err) {
     console.error('admin-fetch-leads error:', err);
     return json({ ok: false, error: String(err) }, origin, 500);

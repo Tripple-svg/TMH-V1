@@ -1,398 +1,141 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { webcrypto } from 'node:crypto';
-import { transformSync } from 'esbuild';
-
-const ENV = {
-  SUPABASE_URL: 'https://project.supabase.co',
-  SUPABASE_SERVICE_ROLE_KEY: 'service-test',
-  ADMIN_PASSWORD: 'admin-test',
-  RESEND_API_KEY: 'resend-test',
-};
-const json = (body, status = 200) => new Response(JSON.stringify(body), { status });
-const request = (body, headers = {}, method = 'POST') => new Request('https://project.supabase.co/functions/v1/test', {
-  method,
-  headers: { 'Content-Type': 'application/json', origin: 'http://localhost:5175', ...headers },
-  ...(method === 'POST' ? { body: JSON.stringify(body) } : {}),
-});
-const flag = (status = 'red', extras = {}) => ({ email: 'owner@example.com', status, reason: 'Terms violation', ...extras });
-
-function database(seed = [{ id: 'review-1', email: 'Owner@Example.com', flag_status: 'white', flag_reason: null }], options = {}) {
-  const rows = structuredClone(seed);
-  const writes = [], reads = [], authTokens = [], notifications = [], alerts = [];
+import { buildSync } from 'esbuild';
+const REVIEW = '10000000-0000-4000-8000-000000000001';
+const VISITOR = '20000000-0000-4000-8000-000000000001';
+const EVENT = '30000000-0000-4000-8000-000000000001';
+const source = buildSync({ entryPoints: [new URL('../supabase/functions/flag-user/index.ts', import.meta.url).pathname.replace(/^\/(\w:)/,'$1')],
+  bundle: true, write: false, platform: 'node', format: 'cjs', external: ['https://*'], logLevel: 'silent' }).outputFiles[0].text;
+function load({ flag = 'white', rpcError = null, deliveryFailure = null, pendingFailure = false, auth = null, env = {}, guest = false } = {}) {
+  let handler; const calls = [], sends = [], notifications = [], events = new Set();
+  let currentFlag = flag;
   const client = {
-    auth: { async getUser(token) {
-      authTokens.push(token);
-      return options.authResult || { data: { user: null }, error: { message: 'Invalid token' } };
-    } },
+    auth: { async getUser() { return auth || { data: { user: null }, error: { message: 'Invalid' } }; } },
+    async rpc(name, args) {
+      calls.push({ name, args }); if (rpcError) return { data: null, error: rpcError };
+      const targetReview = args.p_review_id || (!guest && !args.p_visitor_id ? REVIEW : null);
+      const visitor = args.p_visitor_id || null;
+      let changed = false;
+      if (name === 'apply_haven_ai_flag') {
+        changed = !events.has(args.p_event_key) && currentFlag === 'white'; events.add(args.p_event_key);
+        if (changed) currentFlag = 'yellow';
+      } else { changed = currentFlag !== args.p_status; currentFlag = args.p_status; }
+      if (changed && ['yellow','red'].includes(currentFlag)) notifications.push({ id: EVENT, review_id: targetReview, visitor_id: visitor,
+        status: currentFlag, sent_at: null, customer_required: Boolean(targetReview), customer_sent_at: null });
+      return { data: { flagStatus: currentFlag, changed, reviewId: targetReview, visitorId: visitor,
+        review: targetReview ? { id: targetReview, flag_status: currentFlag, flag_reason: args.p_reason } : null,
+        visitor: visitor ? { id: visitor, flag_status: currentFlag, flag_reason: args.p_reason } : null }, error: null };
+    },
     functions: { async invoke(name, { body }) {
-      assert.equal(name, 'send-flag-alert');
-      alerts.push(body);
-      if (options.alertThrows) throw new Error('Team alert unavailable');
-      if (options.alertFailure) return { data: { ok: false }, error: null };
-      notifications.find((row) => row.id === body.notificationId).sent_at = new Date().toISOString();
+      sends.push({ name, body }); if (deliveryFailure === name) return { data: { ok: false }, error: null };
+      const row = notifications.find((item) => item.id === body.notificationId);
+      row[name === 'send-flag-alert' ? 'sent_at' : 'customer_sent_at'] = new Date().toISOString();
       return { data: { ok: true }, error: null };
     } },
-    from(table) {
-      if (table === 'flag_alert_notifications') {
-        let cap = Infinity;
-        const filters = [];
-        return {
-          select() { return this; },
-          limit(value) { cap = value; return this; },
-          eq(column, value) { filters.push((row) => row[column] === value); return this; },
-          is(column, value) { filters.push((row) => row[column] === value); return this; },
-          order() { return this; },
-          then(resolve, reject) {
-            return Promise.resolve(options.outboxUnavailable || (cap > 0 && options.pendingFailure)
-              ? { data: null, error: { message: 'Outbox unavailable' } }
-              : { data: notifications.filter((row) => filters.every((filter) => filter(row))).slice(0, cap), error: null }).then(resolve, reject);
-          },
-        };
-      }
-      assert.equal(table, 'brand_reviews');
-      let values, fields, column, pattern, cap = Infinity;
-      const run = async (single = false) => {
-        if (options.throwQuery) throw new Error('Database network failure');
-        if (options.queryError) return { data: null, error: { message: 'Database unavailable' } };
-        const exactEmail = pattern.replace(/\\([\\%_])/g, '$1').toLowerCase();
-        const matches = rows.filter((row) => String(row[column]).toLowerCase() === exactEmail).slice(0, cap);
-        const call = { table, fields, column, pattern };
-        if (values) {
-          writes.push({ ...call, values: structuredClone(values) });
-          matches.forEach((row) => {
-            if (['yellow', 'red'].includes(values.flag_status) && row.flag_status !== values.flag_status) {
-              notifications.push({
-                id: `00000000-0000-4000-8000-${String(notifications.length + 1).padStart(12, '0')}`,
-                review_id: row.id, email: row.email, status: values.flag_status, reason: values.flag_reason, sent_at: null,
-              });
-            }
-            Object.assign(row, values);
-          });
-        } else reads.push(call);
-        const projected = matches.map((row) => Object.fromEntries(fields.split(',').map((field) => field.trim()).map((field) => [field, row[field]])));
-        return { data: single ? projected[0] || null : projected, error: null };
-      };
-      return {
-        update(value) { values = value; return this; },
-        select(value) { fields = value; return this; },
-        ilike(name, value) { column = name; pattern = value; return this; },
-        limit(value) { cap = value; return this; },
-        maybeSingle() { return run(true); },
-        then(resolve, reject) { return run().then(resolve, reject); },
-      };
+    from(table) { assert.equal(table, 'flag_alert_notifications'); const filters = [];
+      return { select() { return this; }, or() { return this; }, order() { return this; }, limit() { return this; },
+        eq(column, value) { filters.push((row) => row[column] === value); return this; },
+        then(resolve, reject) { return Promise.resolve(pendingFailure ? { data: null, error: { message: 'Offline' } }
+          : { data: notifications.filter((row) => filters.every((filter) => filter(row)) && (!row.sent_at || (row.customer_required && !row.customer_sent_at))), error: null }).then(resolve,reject); } };
     },
   };
-  return { client, rows, writes, reads, authTokens, notifications, alerts };
-}
-
-function load(name, { db = database(), env = {}, fetch: send = async () => json({ id: 'email-1' }) } = {}) {
-  let handler;
-  const mail = [];
-  const code = transformSync(readFileSync(new URL(`../supabase/functions/${name}/index.ts`, import.meta.url), 'utf8'), { loader: 'ts', format: 'cjs' }).code;
-  vm.runInNewContext(code, {
-    require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: () => db.client },
-    Deno: { env: { get: (key) => ({ ...ENV, ...env })[key] } },
-    fetch: async (url, options) => { mail.push({ url, ...options, body: JSON.parse(options.body) }); return send(url, options); },
-    Response, Request, Headers, AbortSignal, TextEncoder, Uint8Array, crypto: webcrypto,
-    console: { error() {}, warn() {}, log() {} },
+  vm.runInNewContext(source, {
+    require(name) { return name.includes('server.ts') ? { serve(fn) { handler = fn; } } : { createClient: () => client }; },
+    Deno: { env: { get(name) { return ({ SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-test', ADMIN_PASSWORD: 'admin-test', ...env })[name]; } } },
+    Request, Response, Headers, console: { error() {} },
   });
-  return { handler, db, mail };
+  const request = (body, authorization = 'Bearer service-test', origin = 'http://localhost:5173') => new Request('https://project.supabase.co/functions/v1/flag-user', {
+    method: 'POST', headers: { 'Content-Type':'application/json', authorization, origin }, body: JSON.stringify(body),
+  });
+  return { handler, request, calls, sends, notifications, get flag() { return currentFlag; } };
 }
+const admin = (status = 'yellow', extra = {}) => ({ email: 'Owner@Example.com', status, reason: 'Terms violation', ...extra });
+const automatic = (extra = {}) => ({ source: 'ai', reviewId: REVIEW, eventKey: 'chat:session:turn', reason: 'Haven detected harassment.', ...extra });
 
-test('flags: service-role and existing admin password each authorize moderation', async () => {
-  for (const [body, headers] of [
-    [flag(), { Authorization: 'Bearer service-test' }],
-    [flag('red', { password: 'admin-test' }), { Authorization: 'Bearer public-anon-key' }],
-  ]) {
-    const { handler, db, mail } = load('flag-user');
-    const result = await handler(request(body, headers));
-    assert.equal(result.status, 200);
-    assert.equal((await result.json()).ok, true);
-    assert.equal(db.rows[0].flag_status, 'red');
-    assert.equal(db.writes.length, 1);
-    assert.equal(db.authTokens.length, 0);
-    assert.equal(mail.length, 0);
+test('moderation admin: service bearer and existing password authorize the atomic RPC', async () => {
+  for (const [body, token] of [[admin(), 'Bearer service-test'], [admin('red',{password:'admin-test'}), 'Bearer anon']]) {
+    const app=load(); const response=await app.handler(app.request(body,token)); assert.equal(response.status,200);
+    assert.equal(app.calls[0].name,'set_haven_moderation_flag'); assert.equal(app.calls[0].args.p_email,'owner@example.com');
   }
 });
-
-test('flags: server-verified app_metadata admin claim authorizes moderation', async () => {
-  const db = database(undefined, { authResult: { data: { user: { app_metadata: { role: 'admin' } } }, error: null } });
-  const { handler } = load('flag-user', { db });
-  const result = await handler(request(flag(), { Authorization: 'Bearer verified-admin-session' }));
-  assert.equal(result.status, 200);
-  assert.deepEqual(db.authTokens, ['verified-admin-session']);
-  assert.equal(db.writes.length, 1);
-});
-
-test('flags: missing credentials, wrong password, anon key and forged token cannot write or send mail', async () => {
-  const forged = `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ role: 'service_role', app_metadata: { role: 'admin' } })).toString('base64url')}.forged`;
-  for (const [body, headers] of [
-    [flag('yellow'), {}],
-    [flag('yellow', { password: 'wrong' }), {}],
-    [flag('yellow'), { Authorization: 'Bearer public-anon-key' }],
-    [flag('yellow'), { Authorization: `Bearer ${forged}` }],
-  ]) {
-    const { handler, db, mail } = load('flag-user');
-    const result = await handler(request(body, headers));
-    assert.equal(result.status, 401);
-    assert.deepEqual(await result.json(), { ok: false, error: 'Unauthorised' });
-    assert.equal(db.writes.length, 0);
-    assert.equal(db.reads.length, 0);
-    assert.equal(mail.length, 0);
+test('moderation admin: only server-verified app_metadata administrator claims authorize', async () => {
+  for (const allowed of [true,false]) {
+    const app=load({auth:{data:{user:allowed ? {app_metadata:{role:'admin'}} : {user_metadata:{role:'admin'}}},error:null}});
+    assert.equal((await app.handler(app.request(admin(),'Bearer user-session'))).status,allowed?200:401);
   }
 });
-
-test('flags: user-controlled metadata and unverified admin claims do not authorize', async () => {
-  for (const authResult of [
-    { data: { user: { user_metadata: { role: 'admin' }, app_metadata: { role: 'user' } } }, error: null },
-    { data: { user: { app_metadata: { role: 'admin' } } }, error: { message: 'Token verification failed' } },
-  ]) {
-    const db = database(undefined, { authResult });
-    const { handler, mail } = load('flag-user', { db });
-    assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer session' }))).status, 401);
-    assert.equal(db.writes.length, 0);
-    assert.equal(mail.length, 0);
+test('moderation admin: missing, forged, wrong-password and absent-password credentials cannot write', async () => {
+  for (const [body,token,env] of [[admin(),'',{}],[admin('red',{password:'wrong'}),'Bearer forged',{}],[admin('red',{password:''}),'',{ADMIN_PASSWORD:undefined}]]) {
+    const app=load({env}); assert.equal((await app.handler(app.request(body,token))).status,401); assert.equal(app.calls.length,0);
   }
 });
-
-test('flags: unset admin password does not authenticate an empty password', async () => {
-  const { handler, db } = load('flag-user', { env: { ADMIN_PASSWORD: undefined } });
-  assert.equal((await handler(request(flag('red', { password: '' })))).status, 401);
-  assert.equal(db.writes.length, 0);
-  assert.equal((await handler(request(flag(), { Authorization: 'Bearer service-test' }))).status, 200);
+test('moderation admin: visitor restrictions target the verified stored identity rather than an invented email', async () => {
+  const app=load({guest:true}); const response=await app.handler(app.request({visitorId:VISITOR,status:'red',reason:'Admin review'}));
+  assert.equal(response.status,200); const data=await response.json(); assert.equal(data.visitor.flag_status,'red');
+  assert.equal(app.calls[0].args.p_visitor_id,VISITOR); assert.equal(app.calls[0].args.p_email,null);
+  assert.deepEqual(app.sends.map((item)=>item.name),['send-flag-alert']);
 });
-
-test('flags: invalid email, status and reason are rejected before writes or email', async () => {
-  const invalid = [
-    { email: 'invalid' }, { email: '' }, { email: `${'a'.repeat(243)}@example.com` },
-    { status: 'green' }, { status: 'RED' }, { status: null },
-    { reason: { text: 'bad' } }, { reason: 1 }, { reason: 'a'.repeat(2001) },
-  ];
-  const { handler, db, mail } = load('flag-user');
-  for (const patch of invalid) {
-    const result = await handler(request(flag('yellow', patch), { Authorization: 'Bearer service-test' }));
-    assert.equal(result.status, 400, JSON.stringify(patch));
-    assert.equal((await result.json()).ok, false);
-  }
-  assert.equal(db.writes.length, 0);
-  assert.equal(mail.length, 0);
-});
-
-test('flags: moderation matches a trimmed case-insensitive literal email and changes only flag columns', async () => {
-  const db = database([
-    { id: 'target', email: 'A_%@Example.com', flag_status: 'white', flag_reason: null, full_name: 'Original' },
-    { id: 'other', email: 'another@example.com', flag_status: 'white', flag_reason: null },
-  ]);
-  const { handler } = load('flag-user', { db });
-  const result = await handler(request(flag('red', {
-    email: ' A_%@EXAMPLE.COM ', reason: '  Restricted for testing  ', full_name: 'Changed', converted_to_call: true,
-  }), { Authorization: 'Bearer service-test' }));
-  assert.equal(result.status, 200);
-  assert.equal(db.writes[0].pattern, 'a\\_\\%@example.com');
-  assert.deepEqual(db.writes[0].values, { flag_status: 'red', flag_reason: 'Restricted for testing' });
-  assert.equal(db.rows[0].full_name, 'Original');
-  assert.equal(db.rows[0].flag_status, 'red');
-  assert.equal(db.rows[1].flag_status, 'white');
-});
-
-test('flags: null, omitted and blank reasons clear the reason; 2000 characters are accepted', async () => {
-  const { handler, db } = load('flag-user');
-  for (const reason of [null, undefined, '  ', 'x'.repeat(2000)]) {
-    const result = await handler(request(flag('white', { reason }), { Authorization: 'Bearer service-test' }));
-    assert.equal(result.status, 200);
-    assert.equal(db.rows[0].flag_reason, typeof reason === 'string' && reason.trim() ? reason.trim() : null);
+test('moderation admin: yellow and red queue both team and customer delivery; white queues neither', async () => {
+  for(const status of ['yellow','red','white']) {
+    const app=load(); await app.handler(app.request(admin(status)));
+    assert.equal(app.sends.length,status==='white'?0:2);
+    if(status!=='white') assert.deepEqual(app.sends.map((item)=>item.name),['send-flag-alert','send-flag-customer']);
   }
 });
-
-test('flags: yellow sends the warning with plain text, sender, subject and normalized recipient', async () => {
-  const { handler, mail } = load('flag-user');
-  const result = await handler(request(flag('yellow', { email: ' Owner@EXAMPLE.com ', reason: '<script>unsafe</script>' }), { Authorization: 'Bearer service-test' }));
-  assert.equal(result.status, 200);
-  assert.equal(mail.length, 1);
-  assert.equal(mail[0].url, 'https://api.resend.com/emails');
-  assert.equal(mail[0].method, 'POST');
-  assert.equal(mail[0].headers.Authorization, 'Bearer resend-test');
-  assert.deepEqual(mail[0].body.to, ['owner@example.com']);
-  assert.equal(mail[0].body.from, 'The Marketing Haven <info@themarketinghaven.xyz>');
-  assert.equal(mail[0].body.reply_to, 'info@themarketinghaven.xyz');
-  assert.equal(mail[0].body.subject, 'Warning regarding your usage of Haven.');
-  assert.match(mail[0].body.text, /Warning regarding your usage of Haven\./);
-  assert.match(mail[0].body.text, /Reason: <script>unsafe<\/script>/);
-  assert.equal(mail[0].body.html, undefined);
-  assert.match(mail[0].headers['Idempotency-Key'], /^haven-flag-warning\/review-1\/[a-f0-9]{64}$/);
-});
-
-test('flags: white and red never send warning email', async () => {
-  const { handler, db, mail } = load('flag-user');
-  for (const status of ['white', 'red']) {
-    assert.equal((await handler(request(flag(status), { Authorization: 'Bearer service-test' }))).status, 200);
-    assert.equal(db.rows[0].flag_status, status);
-  }
-  assert.equal(mail.length, 0);
-});
-
-test('flags: failed Resend response, network error or missing key preserves flag and reports partial failure', async () => {
-  for (const options of [
-    { fetch: async () => json({ error: 'delivery failed' }, 503) },
-    { fetch: async () => { throw new Error('Resend unavailable'); } },
-    { env: { RESEND_API_KEY: undefined } },
-  ]) {
-    const { handler, db, mail } = load('flag-user', options);
-    const result = await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }));
-    assert.equal(result.status, 502);
-    const body = await result.json();
-    assert.equal(body.ok, false);
-    assert.equal(body.review.flag_status, 'yellow');
-    assert.match(body.error, /Flag saved.*retry/i);
-    assert.equal(db.rows[0].flag_status, 'yellow');
-    assert.equal(db.rows[0].flag_reason, 'Terms violation');
-    if (options.env) assert.equal(mail.length, 0);
+test('moderation admin: saved red restriction survives email failure and both recipients are attempted independently', async () => {
+  for(const failed of ['send-flag-alert','send-flag-customer']) {
+    const app=load({deliveryFailure:failed}); const response=await app.handler(app.request(admin('red')));
+    assert.equal(response.status,502); assert.equal(app.flag,'red'); assert.equal(app.sends.length,2);
+    assert.equal((await response.json()).review.flag_status,'red');
   }
 });
-
-test('flags: warning retries reuse an idempotency key; changed warning text receives a different key', async () => {
-  let attempt = 0;
-  const { handler, mail } = load('flag-user', { fetch: async () => json({}, ++attempt === 1 ? 503 : 200) });
-  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 502);
-  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 200);
-  assert.equal((await handler(request(flag('yellow', { reason: 'Different violation' }), { Authorization: 'Bearer service-test' }))).status, 200);
-  assert.equal(mail[0].headers['Idempotency-Key'], mail[1].headers['Idempotency-Key']);
-  assert.notEqual(mail[1].headers['Idempotency-Key'], mail[2].headers['Idempotency-Key']);
+test('moderation admin: same-status retry drains pending delivery without sending already-delivered channels', async () => {
+  const app=load({deliveryFailure:'send-flag-customer'});
+  await app.handler(app.request(admin('yellow'))); await app.handler(app.request(admin('yellow')));
+  assert.equal(app.notifications.length,1); assert.equal(app.sends.filter((item)=>item.name==='send-flag-alert').length,1);
+  assert.equal(app.sends.filter((item)=>item.name==='send-flag-customer').length,2);
 });
-
-test('flags: missing review and database errors never send a warning or falsely report success', async () => {
-  for (const [db, expected] of [[database([]), 404], [database(undefined, { queryError: true }), 500]]) {
-    const { handler, mail } = load('flag-user', { db });
-    const result = await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }));
-    assert.equal(result.status, expected);
-    assert.equal((await result.json()).ok, false);
-    assert.equal(mail.length, 0);
+test('moderation admin: invalid targets, status, reason and origins are rejected without writes', async () => {
+  for(const body of [admin('blue'),admin('yellow',{reason:'x'.repeat(2001)}),admin('yellow',{email:'bad'}),admin('red',{visitorId:VISITOR}),{visitorId:'bad',status:'red'}]) {
+    const app=load(); assert.equal((await app.handler(app.request(body))).status,400); assert.equal(app.calls.length,0);
+  }
+  const app=load(); assert.equal((await app.handler(app.request(admin(),'Bearer service-test','https://attacker.example'))).status,403);
+});
+test('moderation admin: missing migrations and missing users report actionable errors without delivery', async () => {
+  for(const [code,status] of [['42883',503],['P0002',404]]) {
+    const app=load({rpcError:{code}}); assert.equal((await app.handler(app.request(admin()))).status,status); assert.equal(app.sends.length,0);
   }
 });
-
-test('flags: preflight, methods, origins and missing server configuration perform no writes', async () => {
-  const { handler, db, mail } = load('flag-user');
-  const preflight = await handler(request({}, {}, 'OPTIONS'));
-  assert.equal(preflight.status, 204);
-  assert.equal(preflight.headers.get('Access-Control-Allow-Origin'), 'http://localhost:5175');
-  assert.equal((await handler(request({}, {}, 'GET'))).status, 405);
-  assert.equal((await handler(request(flag('yellow'), { origin: 'https://evil.example', Authorization: 'Bearer service-test' }))).status, 403);
-  for (const env of [{ SUPABASE_URL: undefined }, { SUPABASE_SERVICE_ROLE_KEY: undefined }]) {
-    const missing = load('flag-user', { db, env });
-    assert.equal((await missing.handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 500);
-  }
-  assert.equal(db.writes.length, 0);
-  assert.equal(mail.length, 0);
+test('automatic moderation: only internal service credentials may create AI events', async () => {
+  const app=load(); assert.equal((await app.handler(app.request({...automatic(),password:'admin-test'},'Bearer anon'))).status,401);
+  assert.equal(app.calls.length,0);
 });
-
-test('team alerts: status transitions notify once, repeated status/reason edits do not, and later transitions notify again', async () => {
-  const { handler, db, mail } = load('flag-user');
-  for (const [status, reason] of [['yellow', 'Initial warning'], ['yellow', 'Initial warning'], ['yellow', 'Reworded warning'], ['red', 'Restricted'], ['white', null], ['red', 'Restricted']]) {
-    assert.equal((await handler(request(flag(status, { reason }), { Authorization: 'Bearer service-test' }))).status, 200);
-  }
-  assert.equal(db.notifications.length, 3);
-  assert.equal(db.alerts.length, 3);
-  assert.equal(new Set(db.alerts.map((body) => body.notificationId)).size, 3);
-  assert.ok(db.notifications.every((row) => row.sent_at));
-  assert.equal(mail.length, 3); // Existing yellow customer-warning requests remain independent.
+test('automatic moderation: first event becomes yellow; repeated events cannot become red or spam notifications', async () => {
+  const app=load(); for(let i=0;i<3;i++) assert.equal((await app.handler(app.request(automatic()))).status,200);
+  assert.equal(app.flag,'yellow'); assert.equal(app.notifications.length,1); assert.equal(app.sends.length,2);
+  assert.equal(app.calls[0].name,'apply_haven_ai_flag'); assert.equal('p_status' in app.calls[0].args,false);
 });
-
-test('team alerts: failed delivery preserves a pending event and still attempts the yellow customer warning', async () => {
-  const options = { alertFailure: true };
-  const db = database(undefined, options);
-  const { handler, mail } = load('flag-user', { db });
-  const first = await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }));
-  assert.equal(first.status, 502);
-  const firstBody = await first.json();
-  assert.equal(firstBody.review.flag_status, 'yellow'); assert.match(firstBody.error, /team flag alert/);
-  assert.equal(db.notifications.length, 1); assert.equal(db.notifications[0].sent_at, null);
-  assert.equal(mail.length, 1);
-  options.alertFailure = false;
-  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 200);
-  assert.equal(db.notifications.length, 1); assert.equal(db.alerts.length, 2);
-  assert.equal(db.alerts[0].notificationId, db.alerts[1].notificationId);
-  assert.ok(db.notifications[0].sent_at);
+test('automatic moderation: a new AI event cannot clear or escalate an existing administrator restriction', async () => {
+  const app=load({flag:'red'}); const response=await app.handler(app.request(automatic()));
+  assert.equal((await response.json()).flagStatus,'red'); assert.equal(app.sends.length,0);
+  assert.equal((await app.handler(app.request(automatic({status:'red'})))).status,400);
 });
-
-test('team alerts: customer-warning failure does not suppress the team notification or resend an already delivered alert', async () => {
-  let fail = true;
-  const { handler, db } = load('flag-user', { fetch: async () => json({}, fail ? 503 : 200) });
-  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 502);
-  assert.equal(db.alerts.length, 1); assert.ok(db.notifications[0].sent_at);
-  fail = false;
-  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 200);
-  assert.equal(db.alerts.length, 1);
+test('automatic moderation: guests receive a durable yellow flag and team alert without pretending to know an email', async () => {
+  const app=load({guest:true}); const response=await app.handler(app.request(automatic({reviewId:undefined,visitorId:VISITOR})));
+  assert.equal((await response.json()).flagStatus,'yellow'); assert.equal(app.notifications[0].visitor_id,VISITOR);
+  assert.equal(app.notifications[0].customer_required,false); assert.deepEqual(app.sends.map((item)=>item.name),['send-flag-alert']);
 });
-
-test('team alerts: missing outbox migration blocks the transition before saving or sending', async () => {
-  const db = database(undefined, { outboxUnavailable: true });
-  const { handler, mail } = load('flag-user', { db });
-  const result = await handler(request(flag('red'), { Authorization: 'Bearer service-test' }));
-  assert.equal(result.status, 503); assert.match((await result.json()).error, /migration/);
-  assert.equal(db.writes.length, 0); assert.equal(db.alerts.length, 0); assert.equal(mail.length, 0);
+test('automatic moderation: email transport failure is pending durable work rather than a lost flag or failed chat', async () => {
+  const app=load({deliveryFailure:'send-flag-alert'}); const response=await app.handler(app.request(automatic()));
+  const data=await response.json(); assert.equal(response.status,200); assert.equal(data.flagStatus,'yellow'); assert.equal(data.deliveryPending,true);
 });
-
-test('team alerts: pending-read failure preserves the saved transition for a later retry', async () => {
-  const options = { pendingFailure: true };
-  const db = database(undefined, options);
-  const { handler, mail } = load('flag-user', { db });
-  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 502);
-  assert.equal(db.notifications.length, 1); assert.equal(db.notifications[0].sent_at, null); assert.equal(mail.length, 1);
-  options.pendingFailure = false;
-  assert.equal((await handler(request(flag('yellow'), { Authorization: 'Bearer service-test' }))).status, 200);
-  assert.equal(db.notifications.length, 1); assert.ok(db.notifications[0].sent_at);
+test('automatic moderation: pending read failure preserves saved status for later drain', async () => {
+  const app=load({pendingFailure:true}); const response=await app.handler(app.request(automatic()));
+  assert.equal((await response.json()).deliveryPending,true); assert.equal(app.flag,'yellow');
 });
-
-test('flag lookup: legacy email-check response remains exactly { exists } without moderation data', async () => {
-  const db = database([{ id: 'review-1', email: 'Owner@Example.com', flag_status: 'red', flag_reason: 'Private reason' }]);
-  const { handler } = load('check-email-exists', { db });
-  const result = await handler(request({ email: ' Owner@Example.com ' }));
-  assert.equal(result.status, 200);
-  assert.deepEqual(await result.json(), { exists: true });
-  assert.equal(db.reads[0].fields, 'id');
-  assert.deepEqual(await (await handler(request({ email: 'missing@example.com' }))).json(), { exists: false });
-});
-
-test('flag lookup: includeFlag returns current red or white without exposing reason, email or review ID', async () => {
-  const db = database([
-    { id: 'red', email: 'A_%@Example.com', flag_status: 'red', flag_reason: 'Private reason' },
-    { id: 'legacy', email: 'legacy@example.com', flag_status: null },
-  ]);
-  const { handler } = load('check-email-exists', { db });
-  const result = await handler(request({ email: ' A_%@EXAMPLE.com ', includeFlag: true }));
-  assert.equal(result.status, 200);
-  assert.equal(result.headers.get('Cache-Control'), 'no-store');
-  assert.deepEqual(await result.json(), { exists: true, flag_status: 'red' });
-  assert.equal(db.reads[0].pattern, 'A\\_\\%@EXAMPLE.com');
-  assert.equal(db.reads[0].fields, 'id, flag_status');
-  assert.deepEqual(await (await handler(request({ email: 'legacy@example.com', includeFlag: true }))).json(), { exists: true, flag_status: 'white' });
-  assert.deepEqual(await (await handler(request({ email: 'missing@example.com', includeFlag: true }))).json(), { exists: false, flag_status: 'white' });
-});
-
-test('flag lookup: includeFlag errors are non-200 while legacy database failures retain their response shape', async () => {
-  for (const options of [{ queryError: true }, { throwQuery: true }]) {
-    const { handler } = load('check-email-exists', { db: database(undefined, options) });
-    const lookup = await handler(request({ email: 'owner@example.com', includeFlag: true }));
-    assert.ok(lookup.status >= 400, `includeFlag failure returned HTTP ${lookup.status}`);
-    assert.equal((await lookup.json()).flag_status, undefined);
-    const legacy = await handler(request({ email: 'owner@example.com' }));
-    assert.equal(legacy.status, 200);
-    assert.deepEqual(await legacy.json(), { exists: false });
-  }
-});
-
-test('flag lookup: invalid email or missing secrets cannot silently return a white flag', async () => {
-  for (const [body, env] of [
-    [{ email: 'invalid', includeFlag: true }, {}],
-    [{ email: 'owner@example.com', includeFlag: true }, { SUPABASE_SERVICE_ROLE_KEY: undefined }],
-  ]) {
-    const { handler, db } = load('check-email-exists', { env });
-    const result = await handler(request(body));
-    assert.ok(result.status >= 400);
-    assert.equal((await result.json()).flag_status, undefined);
-    assert.equal(db.reads.length, 0);
+test('automatic moderation: malformed event keys, IDs and reasons cannot reach the RPC', async () => {
+  for(const body of [automatic({eventKey:'person@example.com'}),automatic({reviewId:'bad'}),automatic({reason:''})]) {
+    const app=load(); assert.equal((await app.handler(app.request(body))).status,400); assert.equal(app.calls.length,0);
   }
 });

@@ -4,6 +4,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, AlertCircle, Loader2, RotateCcw } from 'lucide-react';
+import { SCORING_COPY } from '../config/prompts';
 
 const WEBSITE_LABELS = {
   clarity:    'Clarity & Positioning',
@@ -42,7 +43,8 @@ function ScoreBar({ value, max = 20 }) {
 
 function FailedState({ error, onProceed, onRetry, retryCount = 0, kindLabel }) {
   const maxRetries = 2;
-  const canRetry = retryCount < maxRetries;
+  const needsRecovery = /access recovery/.test(error || '');
+  const canRetry = !needsRecovery && retryCount < maxRetries;
 
   return (
     <div className="flex flex-col items-center justify-center flex-1 min-h-full text-center px-6 py-12 space-y-6">
@@ -51,10 +53,11 @@ function FailedState({ error, onProceed, onRetry, retryCount = 0, kindLabel }) {
       </div>
       <div className="space-y-2 max-w-xs">
         <h3 className="text-base font-semibold text-white">
-          {canRetry ? `Couldn't read your ${kindLabel}` : `Still can't read your ${kindLabel}`}
+          {needsRecovery ? 'This saved review needs access recovery'
+            : canRetry ? `Couldn't read your ${kindLabel}` : `Still can't read your ${kindLabel}`}
         </h3>
         <p className="text-[13px] text-zinc-400 leading-relaxed">
-          {error || 'Something went wrong on our end. Try again in a moment.'}
+            {error || SCORING_COPY.failed}
         </p>
         {retryCount > 0 && (
           <p className="text-[11px] text-zinc-500 pt-1">
@@ -147,6 +150,25 @@ export default function HavenScoreCard({ preflight, kind: kindProp, userName, br
   }
 
   // ─── Score unavailable ───
+  if (status === 'bad_data') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-full px-6 py-10 space-y-6 text-center">
+        <AlertCircle className="w-6 h-6 text-zinc-400" />
+        <div className="space-y-3 max-w-sm">
+          <h3 className="text-base font-semibold text-white">Not enough readable content to score</h3>
+          <p className="text-[13px] leading-relaxed text-zinc-400">
+            {kind === 'social'
+              ? SCORING_COPY.profile_bad_data
+              : SCORING_COPY.bad_data}
+          </p>
+        </div>
+        <button type="button" onClick={onProceed}
+          className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-500 transition-colors">
+          Continue to Chat <ArrowRight className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
   if (score == null) {
     return (
       <div className="flex flex-col items-center justify-center flex-1 min-h-full text-center px-6 py-12 space-y-6">

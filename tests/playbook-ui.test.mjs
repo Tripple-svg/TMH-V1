@@ -17,7 +17,7 @@ function shop(saved, invoke) {
     module: { exports: {} },
     require(name) {
       if (name === 'react') return react;
-      if (name === 'framer-motion') return { motion: new Proxy({}, { get: (_, key) => key }), AnimatePresence: 'presence' };
+      if (name === 'framer-motion') return { motion: new Proxy({}, { get: (_, key) => key }), AnimatePresence: 'presence', useReducedMotion: () => false };
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => key });
       if (name.includes('supabase')) return { supabase: { functions: { invoke } } };
       return { default: 'ConfirmModal', __esModule: true };
@@ -41,6 +41,15 @@ function shop(saved, invoke) {
   return { render, mount, storage, downloads };
 }
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test('Playbook card shows the launch price before opening, and checkout discloses the real test charge', () => {
+  const ui = shop(null, async () => ({ data: {} }));
+  const text = (node) => Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props.children) : typeof node === 'string' ? node : '';
+  const card = ui.render();
+  assert.ok(!card.some((node) => node.props['aria-label'] === 'Playbook checkout'));
+  assert.ok(card.some((node) => node.type === 'p' && text(node).includes('₦9,639')));
+  assert.ok(ui.mount().some((node) => node.type === 'p' && text(node).includes('Current live checkout charge: ₦100 (testing).')));
+});
 
 test('Task 5 UI: remount verifies stored reference and withholds download until a fresh URL arrives', async () => {
   const saved = JSON.stringify({ reference: 'UNSEEN_paid', email: 'buyer@example.com', downloadedAt: null });

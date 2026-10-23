@@ -4,8 +4,9 @@
 // and click flags.
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { buildHavenSystemPrompt, STEPS, LEADS } from '../config/prompts';
+import { STEPS, LEADS, SCORING_COPY } from '../config/prompts';
 import { scheduleHavenSessionSync } from '../../../lib/havenSessionSync';
+import { getHavenIdentity, CHAT_NOTICE_VERSION } from '../../../lib/havenIdentity';
 
 export const HavenContext = createContext(null);
 
@@ -17,17 +18,14 @@ const STORAGE_KEYS = {
 
 const PROFILE_STORAGE_KEY        = 'tmh_haven_user_profile_v1';
 const PREFLIGHT_STORAGE_KEY      = 'tmh_haven_audit_preflight_v1';
-const SCORE_CACHE_KEY            = 'tmh_haven_score_cache_v1';
 const LAST_SUPPORT_SESSION_KEY   = 'tmh_haven_last_support_session';
-const SESSION_ID_KEY             = 'haven_session_id';
-const REVIEW_ID_KEY              = 'haven_review_id';
-const SCORE_CACHE_TTL            = 24 * 60 * 60 * 1000;
+const REVIEW_RECOVERY_MESSAGE = 'This saved review needs access recovery. Please contact info@themarketinghaven.xyz to continue.';
 
 const DEFAULT_USER_PROFILE = {
   name: '', brandName: '', email: '', whatsapp: '',
   businessDomain: '', mainGoal: '', platform: '', handle: '',
   screenshot: null, screenshotFileName: null, websiteUrl: null,
-  scrapedWebSummary: null, scrapeFailed: false,
+  scrapedWebSummary: null, scrapeFailed: false, scrapeState: null,
   auditScore: null, scoreBreakdown: null, biggestIssue: null,
   assessmentSummary: null, biggestLeak: null,
   biggestProblems: [], silentAccountId: null, exchangeCount: 0,
@@ -36,6 +34,7 @@ const DEFAULT_USER_PROFILE = {
   clickedBookingLink: false,
   clickedPlaybookLink: false,
   flag_status: 'white',
+  reviewId: null, sessionId: null, accessToken: null,
 };
 
 const DEFAULT_PREFLIGHT = {
@@ -76,7 +75,7 @@ function parseStepMarker(rawText) {
   if (!rawText || typeof rawText !== 'string') {
     return { step: null, cleanedText: rawText || '' };
   }
-  const regex = /\[\[STEP:([A-Z_]+)\]\]/g;
+  const regex = /\[\[STEP:([A-Z0-9_]+)\]\]/g;
   let step = null;
   let match;
   while ((match = regex.exec(rawText)) !== null) {
@@ -104,6 +103,7 @@ function makeDefaultSupportSession() {
   return {
     id: 'session-default', title: 'General Support Chat', scope: 'support',
     serviceId: null, isPinned: false, createdAt: Date.now(), messages: [], hasGreeted: false,
+    currentStep: STEPS.CUSTOMER_SUPPORT_OPEN,
   };
 }
 
@@ -155,31 +155,28 @@ function savePreflight(pf) {
   catch (e) { console.warn('Haven: Failed to save preflight', e); }
 }
 
-function loadScoreCache() {
-  try {
-    const raw = localStorage.getItem(SCORE_CACHE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return {};
+function reviewAccess(profile = {}) {
+  return { reviewId: profile.reviewId, sessionId: profile.sessionId, accessToken: profile.accessToken };
 }
 
-function getCachedScore(key) {
-  const cache = loadScoreCache();
-  const hit = cache[key];
-  if (!hit) return null;
-  if (Date.now() - hit.timestamp > SCORE_CACHE_TTL) return null;
-  return hit;
+function matchingAuditSession(sessions, profile) {
+  return sessions.find((session) => session.scope === 'audit' && session.id === profile.sessionId) || null;
 }
 
-function setCachedScore(key, result) {
-  try {
-    const cache = loadScoreCache();
-    cache[key] = { ...result, timestamp: Date.now() };
-    localStorage.setItem(SCORE_CACHE_KEY, JSON.stringify(cache));
-  } catch {}
+async function readHavenResponse(response) {
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 403) {
+    throw new Error(REVIEW_RECOVERY_MESSAGE);
+  }
+  if (!response.ok || data.ok === false) {
+    const error = new Error(data.error || 'Haven could not complete the request. Please try again.');
+    error.status = response.status;
+    throw error;
+  }
+  return data;
 }
 
-async function callHavenAPI({ systemPrompt, messages, screenshot, scope, signal }) {
+async function callHavenAPI({ context, messages, screenshot, scope, signal, requestId, action }) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseAnonKey) throw new Error('Supabase is not configured.');
@@ -192,14 +189,13 @@ async function callHavenAPI({ systemPrompt, messages, screenshot, scope, signal 
       apikey: supabaseAnonKey,
     },
     signal,
-    body: JSON.stringify({ systemPrompt, messages, screenshot, scope }),
+    body: JSON.stringify({ context, messages, screenshot, scope, requestId, ...(action ? { action } : {}), noticeVersion: CHAT_NOTICE_VERSION }),
   });
-  if (!response.ok) throw new Error(`Haven function error ${response.status}: ${await response.text()}`);
-  const data = await response.json();
-  return { text: data.text || '', chips: data.chips || [], model: data.model || null };
+  const data = await readHavenResponse(response);
+  return { ...data, text: data.text || '', chips: data.chips || [] };
 }
 
-async function callScrapeWebsite(url) {
+async function callScrapeWebsite(url, access, force = false) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseAnonKey) throw new Error('Supabase is not configured.');
@@ -211,31 +207,12 @@ async function callScrapeWebsite(url) {
       Authorization: `Bearer ${supabaseAnonKey}`,
       apikey: supabaseAnonKey,
     },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, context: access, force }),
   });
-  if (!response.ok) throw new Error(`Scraper error ${response.status}: ${await response.text()}`);
-  return await response.json();
+  return readHavenResponse(response);
 }
 
-async function fetchUserFlag(email, signal) {
-  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/check-email-exists`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify({ email, includeFlag: true }),
-    signal,
-  });
-  const data = await response.json();
-  if (!response.ok || !['white', 'yellow', 'red'].includes(data.flag_status)) {
-    throw new Error('Unable to check Haven access status.');
-  }
-  return data.flag_status;
-}
-
-async function callScoreSocial(screenshot) {
+async function callScoreSocial(screenshot, access, force = false) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseAnonKey) throw new Error('Supabase is not configured.');
@@ -247,10 +224,9 @@ async function callScoreSocial(screenshot) {
       Authorization: `Bearer ${supabaseAnonKey}`,
       apikey: supabaseAnonKey,
     },
-    body: JSON.stringify({ screenshot }),
+    body: JSON.stringify({ screenshot, context: access, force }),
   });
-  if (!response.ok) throw new Error(`Social scorer error ${response.status}: ${await response.text()}`);
-  return await response.json();
+  return readHavenResponse(response);
 }
 
 export function HavenProvider({ children }) {
@@ -274,8 +250,12 @@ export function HavenProvider({ children }) {
   const [viewState, setViewState]             = useState('landing');
   const [userProfile, setUserProfile]         = useState({ ...DEFAULT_USER_PROFILE });
   const [auditPreflight, setAuditPreflight]   = useState({ ...DEFAULT_PREFLIGHT });
+  const [sessionSaveState, setSessionSaveState] = useState('saved');
 
   const abortControllerRef = useRef(null);
+  const publicSessionIdsRef = useRef(new Map());
+  const pendingTurnsRef = useRef(new Map());
+  const scoringRequestRef = useRef(0);
 
   useEffect(() => {
     setSupportSessions(loadSessionsForScope('support'));
@@ -294,6 +274,14 @@ export function HavenProvider({ children }) {
   useEffect(() => { if (mounted) savePreflight(auditPreflight); },                   [auditPreflight,  mounted]);
 
   useEffect(() => {
+    const handleSave = (event) => {
+      if (event.detail?.sessionId === userProfile.sessionId) setSessionSaveState(event.detail.state);
+    };
+    window.addEventListener('haven-session-sync', handleSave);
+    return () => window.removeEventListener('haven-session-sync', handleSave);
+  }, [userProfile.sessionId]);
+
+  useEffect(() => {
     if (!mounted) return;
     if (activeScope !== 'support') return;
     try {
@@ -301,53 +289,31 @@ export function HavenProvider({ children }) {
     } catch {}
   }, [activeScope, activeSessionId, mounted]);
 
-  // Debounced, fire-and-forget sync. Now includes score + leak + summary.
+  // Sync only the owned conversation snapshot and click metadata. AI results stay server-owned.
   useEffect(() => {
     if (!mounted) return;
 
-    let storedSessionId = null;
-    let storedReviewId = null;
-    try {
-      storedSessionId = localStorage.getItem(SESSION_ID_KEY);
-      storedReviewId = localStorage.getItem(REVIEW_ID_KEY);
-    } catch {}
-    if (!storedSessionId) return;
-
-    const session = auditSessions.find(s => s.id === storedSessionId);
+    const access = reviewAccess({ reviewId: userProfile.reviewId, sessionId: userProfile.sessionId, accessToken: userProfile.accessToken });
+    if (!access.sessionId || !access.reviewId || !access.accessToken) return;
+    const session = matchingAuditSession(auditSessions, access);
     if (!session) return;
-
-    const totalExchanges = session.messages.filter(
-      m => m.role === 'user' && !m.isChipIntent
-    ).length;
-    const currentStep = userProfile.currentStep || STEPS.GREETING;
 
     scheduleHavenSessionSync({
       sessionId: session.id,
-      reviewId: storedReviewId,
+      reviewId: access.reviewId,
+      accessToken: access.accessToken,
       messages: session.messages,
-      currentStep,
-      lastStepReached: currentStep,
-      totalExchanges,
-      leadTemperature: userProfile.leadTemperature || null,
+      metadataOnly: true,
       clickedBookingLink: userProfile.clickedBookingLink || false,
       clickedPlaybookLink: userProfile.clickedPlaybookLink || false,
-      websiteScore: userProfile.auditScore ?? null,
-      scoreBreakdown: userProfile.scoreBreakdown || null,
-      // HavenContext stores the scorer's output as `biggestIssue`. Map it
-      // to the DB column `biggest_leak`.
-      biggestLeak: userProfile.biggestIssue || null,
-      assessmentSummary: userProfile.assessmentSummary || null,
     });
   }, [
     auditSessions,
-    userProfile.currentStep,
-    userProfile.leadTemperature,
     userProfile.clickedBookingLink,
     userProfile.clickedPlaybookLink,
-    userProfile.auditScore,
-    userProfile.scoreBreakdown,
-    userProfile.biggestIssue,
-    userProfile.assessmentSummary,
+    userProfile.accessToken,
+    userProfile.reviewId,
+    userProfile.sessionId,
     mounted,
   ]);
 
@@ -409,6 +375,9 @@ export function HavenProvider({ children }) {
       isPinned: false, createdAt: Date.now(),
       messages: initialMessage ? [initialMessage] : [],
       hasGreeted: Boolean(initialMessage),
+      currentStep: scope === 'audit' ? STEPS.AWAITING_DIAGNOSTIC_Q1
+        : scope === 'service' ? STEPS.SERVICE_GRID_OPEN
+          : serviceId === 'team-inquiry' ? STEPS.TEAM_INQUIRY : STEPS.CUSTOMER_SUPPORT_OPEN,
     };
     setSessionsForScope(scope, prev => [newSession, ...prev]);
     setActiveScope(scope);
@@ -417,132 +386,84 @@ export function HavenProvider({ children }) {
     return newSession.id;
   }, [setSessionsForScope]);
 
-  const runScraper = useCallback(async (url, { force = false } = {}) => {
+  const runScraper = useCallback(async (url, { force = false, access = userProfile } = {}) => {
     if (!url) return;
-    if (!force && auditPreflight.status === 'ready' && auditPreflight.url === url && auditPreflight.summary?.length >= 300) return;
-
-    const cacheKey = `website:${url}`;
-    if (!force) {
-      const cached = getCachedScore(cacheKey);
-      if (cached && cached.summary?.length >= 300) {
-        console.log('[Haven] Website score cache hit for', url);
-        setAuditPreflight(prev => ({
-          status: 'ready', url,
-          score: cached.score, breakdown: cached.breakdown,
-          biggestIssue: cached.biggestIssue, summary: cached.summary,
-          error: null, dismissed: false, retryCount: prev.retryCount || 0,
-        }));
-        setUserProfile(prev => ({
-          ...prev,
-          scrapedWebSummary: cached.summary, scrapeFailed: false,
-          auditScore: cached.score, scoreBreakdown: cached.breakdown,
-          biggestIssue: cached.biggestIssue,
-        }));
-        return;
-      }
-    }
+    const requestId = ++scoringRequestRef.current;
 
     setAuditPreflight(prev => ({
       status: 'scraping', url, score: null, breakdown: null, biggestIssue: null,
       summary: null, error: null, dismissed: false, retryCount: prev.retryCount || 0,
     }));
-    setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: false }));
+    setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: false, scrapeState: null,
+      auditScore: null, scoreBreakdown: null, biggestIssue: null }));
 
     try {
-      const result = await callScrapeWebsite(url);
-      if (!result.summary || result.summary.length < 300) {
-        throw new Error('Insufficient content extracted from site.');
-      }
+      // Only a fresh server response may supply scores; browser caches are not authority.
+      const result = await callScrapeWebsite(url, reviewAccess(access), force);
+      if (requestId !== scoringRequestRef.current) return;
       if (!result.ok) throw new Error(result.error || 'Scraper returned ok: false');
+      if (!['valid', 'bad_data'].includes(result.state)) throw new Error(SCORING_COPY.failed);
+      const valid = result.state === 'valid' && Number.isInteger(result.score);
 
       setAuditPreflight(prev => ({
-        status: 'ready', url,
-        score: result.score ?? null, breakdown: result.breakdown ?? null,
+        status: valid ? 'ready' : 'bad_data', url,
+        score: valid ? result.score : null, breakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null, summary: result.summary || '',
         error: null, dismissed: false, retryCount: prev.retryCount || 0,
       }));
       setUserProfile(prev => ({
         ...prev,
-        scrapedWebSummary: result.summary || null, scrapeFailed: false,
-        auditScore: result.score ?? null, scoreBreakdown: result.breakdown ?? null,
+        scrapedWebSummary: result.summary || null, scrapeFailed: false, scrapeState: result.state,
+        auditScore: valid ? result.score : null, scoreBreakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null,
       }));
 
-      if (result.score != null) {
-        setCachedScore(cacheKey, {
-          score: result.score, breakdown: result.breakdown,
-          biggestIssue: result.biggestIssue, summary: result.summary || '',
-        });
-      }
-
-      console.log('[Haven] Website scrape + score complete:', result.score);
     } catch (err) {
+      if (requestId !== scoringRequestRef.current) return;
       console.warn('[Haven] Website scrape failed:', err);
       setAuditPreflight(prev => ({
         status: 'failed', url, score: null, breakdown: null, biggestIssue: null,
         summary: null,
-        error: err instanceof Error ? err.message : 'Unknown error',
+        error: err instanceof Error && /access recovery/.test(err.message) ? err.message : SCORING_COPY.failed,
         dismissed: false, retryCount: (prev.retryCount || 0) + 1,
       }));
-      setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true, auditScore: null, scoreBreakdown: null, biggestIssue: null }));
+      setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true, scrapeState: 'failed', auditScore: null, scoreBreakdown: null, biggestIssue: null }));
     }
-  }, [auditPreflight.status, auditPreflight.url, auditPreflight.summary]);
+  }, [userProfile]);
 
-  const runSocialScorer = useCallback(async (screenshot, { force = false } = {}) => {
+  const runSocialScorer = useCallback(async (screenshot, { force = false, access = userProfile } = {}) => {
     if (!screenshot) return;
-    const fingerprint = screenshot.slice(0, 200);
-    const cacheKey = `social:${fingerprint}`;
-
-    if (!force) {
-      const cached = getCachedScore(cacheKey);
-      if (cached) {
-        console.log('[Haven] Social score cache hit');
-        setAuditPreflight(prev => ({
-          status: 'ready', url: null,
-          score: cached.score, breakdown: cached.breakdown,
-          biggestIssue: cached.biggestIssue, summary: null,
-          error: null, dismissed: false, retryCount: prev.retryCount || 0,
-        }));
-        setUserProfile(prev => ({
-          ...prev,
-          auditScore: cached.score, scoreBreakdown: cached.breakdown,
-          biggestIssue: cached.biggestIssue,
-        }));
-        return;
-      }
-    }
+    const requestId = ++scoringRequestRef.current;
 
     setAuditPreflight(prev => ({
       status: 'scraping', url: null, score: null, breakdown: null, biggestIssue: null,
       summary: null, error: null, dismissed: false, retryCount: prev.retryCount || 0,
     }));
+    setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: false, scrapeState: null,
+      auditScore: null, scoreBreakdown: null, biggestIssue: null }));
 
     try {
-      const result = await callScoreSocial(screenshot);
+      const result = await callScoreSocial(screenshot, reviewAccess(access), force);
+      if (requestId !== scoringRequestRef.current) return;
       if (!result.ok) throw new Error(result.error || 'Social scorer returned ok: false');
+      if (!['valid', 'bad_data'].includes(result.state)) throw new Error('Social scoring failed.');
+      const valid = result.state === 'valid' && Number.isInteger(result.score);
 
       setAuditPreflight(prev => ({
-        status: 'ready', url: null,
-        score: result.score ?? null, breakdown: result.breakdown ?? null,
+        status: valid ? 'ready' : 'bad_data', url: null,
+        score: valid ? result.score : null, breakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null, summary: null,
         error: null, dismissed: false, retryCount: prev.retryCount || 0,
       }));
       setUserProfile(prev => ({
         ...prev,
-        auditScore: result.score ?? null, scoreBreakdown: result.breakdown ?? null,
+        auditScore: valid ? result.score : null, scoreBreakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null,
         scrapedWebSummary: null,
-        scrapeFailed: false,
+        scrapeFailed: false, scrapeState: result.state,
       }));
-
-      if (result.score != null) {
-        setCachedScore(cacheKey, {
-          score: result.score, breakdown: result.breakdown, biggestIssue: result.biggestIssue,
-        });
-      }
-
-      console.log('[Haven] Social score complete:', result.score);
     } catch (err) {
+      if (requestId !== scoringRequestRef.current) return;
       console.warn('[Haven] Social score failed:', err);
       setAuditPreflight(prev => ({
         status: 'failed', url: null, score: null, breakdown: null, biggestIssue: null,
@@ -550,9 +471,9 @@ export function HavenProvider({ children }) {
         error: err instanceof Error ? err.message : 'Unknown error',
         dismissed: false, retryCount: (prev.retryCount || 0) + 1,
       }));
-      setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true }));
+      setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true, scrapeState: 'failed', auditScore: null, scoreBreakdown: null, biggestIssue: null }));
     }
-  }, []);
+  }, [userProfile]);
 
   const retryScrape = useCallback(() => {
     if (userProfile.businessDomain === 'social' && userProfile.screenshot) {
@@ -567,6 +488,7 @@ export function HavenProvider({ children }) {
   }, []);
 
   const resetPreflight = useCallback(() => {
+    scoringRequestRef.current += 1;
     setAuditPreflight({ ...DEFAULT_PREFLIGHT });
   }, []);
 
@@ -581,7 +503,7 @@ export function HavenProvider({ children }) {
       setUserProfile(prev => ({
         ...prev, ...profileData,
         exchangeCount: prev.exchangeCount || 0,
-        currentStep: STEPS.GREETING,
+        currentStep: targetMode === 'audit' ? STEPS.AWAITING_DIAGNOSTIC_Q1 : prev.currentStep,
       }));
     }
 
@@ -611,13 +533,20 @@ export function HavenProvider({ children }) {
       const businessDomain = profileData?.businessDomain || userProfile.businessDomain;
       const screenshot     = profileData?.screenshot     || userProfile.screenshot;
       const websiteUrl     = profileData?.websiteUrl     || userProfile.websiteUrl;
+      const access = { ...userProfile, ...profileData };
+      if (access.sessionId !== userProfile.sessionId) scoringRequestRef.current += 1;
+      if (!access.reviewId || !access.sessionId || !access.accessToken) {
+        scoringRequestRef.current += 1;
+        setActiveScope('audit');
+        setActiveSessionId(access.sessionId || 'legacy-review');
+        setViewState('chatting');
+        setAuditPreflight({ ...DEFAULT_PREFLIGHT, status: 'failed', error: REVIEW_RECOVERY_MESSAGE, retryCount: 2 });
+        setIsOpen(true);
+        return;
+      }
 
       if (isReturning) {
-        const existingAudit = auditSessions.length > 0
-          ? auditSessions.reduce((best, s) =>
-              (s.messages?.length || 0) > (best.messages?.length || 0) ? s : best
-            , auditSessions[0])
-          : null;
+        const existingAudit = matchingAuditSession(auditSessions, access);
 
         if (existingAudit && existingAudit.messages.length > 0) {
           setActiveScope('audit');
@@ -628,12 +557,12 @@ export function HavenProvider({ children }) {
         }
       }
 
-      setAuditPreflight({ ...DEFAULT_PREFLIGHT });
+      resetPreflight();
 
       if (businessDomain === 'website' && websiteUrl) {
-        runScraper(websiteUrl);
+        runScraper(websiteUrl, { access });
       } else if (businessDomain === 'social' && screenshot) {
-        runSocialScorer(screenshot);
+        runSocialScorer(screenshot, { access });
       }
 
       const greetingName = name ? `Hi ${name}` : 'Hi there';
@@ -646,16 +575,14 @@ export function HavenProvider({ children }) {
         greetingContent = `${greetingName}! I've received your submission${brand}.\n\nBefore we dig into anything — what's the single biggest challenge you're facing with ${brandName || 'your brand'} at the moment?`;
       }
 
-      let storedSessionId = null;
-      try { storedSessionId = localStorage.getItem(SESSION_ID_KEY); } catch {}
-
       createSession('audit', {
-        id: storedSessionId || undefined,
+        id: access.sessionId || undefined,
         title: `${brandName || 'Brand'} Review`,
         serviceId: 'brand-audit',
         initialMessage: {
           id: `agent-${Date.now()}`, role: 'agent',
           content: greetingContent, image: null, timestamp: Date.now(),
+          isSeedGreeting: true,
         },
       });
     } else if (targetMode === 'booking') {
@@ -700,7 +627,7 @@ export function HavenProvider({ children }) {
             const greeting = {
               id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
               isSeedGreeting: true,
-              content: `Hi there! I'm Haven — TMH's elite digital marketing strategist.\n\nI help brands cut through the noise, fix the exact thing killing their sales, and turn attention into real revenue. What's going on with your brand right now?`,
+              content: `Hi, I'm Haven. I help individual creators and business owners work through their marketing.\n\nWhat are you building, and where are you getting stuck?`,
             };
             setSessionsForScope('support', prev =>
               prev.map(s => s.id === target.id ? { ...s, messages: [greeting], hasGreeted: true } : s)
@@ -716,7 +643,7 @@ export function HavenProvider({ children }) {
     }
 
     setIsOpen(true);
-  }, [createSession, userProfile, serviceSessions, supportSessions, auditSessions, setSessionsForScope, runScraper, runSocialScorer]);
+  }, [createSession, userProfile, serviceSessions, supportSessions, auditSessions, setSessionsForScope, runScraper, runSocialScorer, resetPreflight]);
 
   const closeDrawer  = useCallback(() => setIsOpen(false), []);
   const toggleDrawer = useCallback(() => setIsOpen(prev => !prev), []);
@@ -798,80 +725,75 @@ export function HavenProvider({ children }) {
     }
 
     setViewState('chatting');
-    addMessage('user', content, image || null);
+    const turnKey = `${activeScope}/${activeSessionId}`;
+    const pending = pendingTurnsRef.current.get(turnKey);
+    const retrying = pending?.content === content && pending?.image === image;
+    const requestId = retrying ? pending.requestId : crypto.randomUUID();
+    pendingTurnsRef.current.set(turnKey, { requestId, content, image });
+    if (!retrying) addMessage('user', content, image || null, { requestId });
     setUserProfile(prev => ({ ...prev, exchangeCount: (prev.exchangeCount || 0) + 1 }));
     setIsThinking(true);
 
-    const isReturningInThisScope =
-      activeScope === 'audit' ? (userProfile.isReturningUser || false) : false;
-
-    const auditData = {
-      currentStep:     userProfile.currentStep || STEPS.GREETING,
-      presenceType:    userProfile.businessDomain,
-      hasWebsite:      userProfile.businessDomain === 'website' || userProfile.businessDomain === 'website_and_social',
-      websiteUrl:      userProfile.websiteUrl,
-      hasNoPresence:   userProfile.businessDomain === 'none',
-      platform:        userProfile.platform,
-      handle:          userProfile.handle,
-      isReturningUser: isReturningInThisScope,
-      mainGoal:        userProfile.mainGoal,
-      leadTemperature: userProfile.leadTemperature || null,
-    };
-    if (activeScope === 'audit') {
-      auditData.scrapedWebSummary = userProfile.scrapedWebSummary || null;
-      auditData.scrapeFailed      = userProfile.scrapeFailed || false;
-      auditData.score             = userProfile.auditScore ?? null;
-      auditData.scoreBreakdown    = userProfile.scoreBreakdown ?? null;
-      auditData.biggestIssue      = userProfile.biggestIssue ?? null;
+    const identity = getHavenIdentity();
+    let publicSessionId = currentSession?.serverSessionId || publicSessionIdsRef.current.get(turnKey);
+    if (activeScope !== 'audit' && !publicSessionId) {
+      publicSessionId = crypto.randomUUID();
+      publicSessionIdsRef.current.set(turnKey, publicSessionId);
+      setSessionsForScope(activeScope, prev => prev.map(session => session.id === activeSessionId ? { ...session, serverSessionId: publicSessionId } : session));
     }
-
-    let systemPrompt = buildHavenSystemPrompt({
-      userName:  userProfile.name      || 'there',
-      brandName: userProfile.brandName || 'your business',
-      entryPoint: activeScope === 'audit'   ? 'AUDIT_FLOW'
-                : activeScope === 'service' ? 'SERVICE_GRID'
-                : 'CUSTOMER_SUPPORT',
-      serviceName: activeService?.title || null,
-      auditData,
-    });
+    const linkedAccess = userProfile.reviewId && userProfile.sessionId && userProfile.accessToken
+      ? { reviewId: userProfile.reviewId, reviewSessionId: userProfile.sessionId, accessToken: userProfile.accessToken } : {};
+    const context = activeScope === 'audit' ? { ...identity, ...reviewAccess(userProfile) } : {
+      ...identity, ...linkedAccess, sessionId: publicSessionId,
+      userName: userProfile.name || 'there', brandName: userProfile.brandName || 'your business',
+      serviceId: activeService?.id || null,
+      entryContext: currentSession?.serviceId === 'team-inquiry' ? 'team_inquiry' : null,
+      currentStep: currentSession?.currentStep,
+    };
 
     const sessionMessages = currentSession?.messages || [];
     const priorUserMessages = sessionMessages
-      .slice(0, Math.max(0, sessionMessages.length - 1))
       .filter(m => m.role === 'user' && !m.isChipIntent);
     const isFirstRealUserMessage = priorUserMessages.length === 0;
 
     const aiMessages = sessionMessages
       .filter(m => !m.isChipIntent)
       .filter(m => !(isFirstRealUserMessage && m.isSeedGreeting))
-      .map(m => ({ role: m.role, content: m.content }));
+      .slice(-39)
+      .map(m => ({ role: m.role, content: (m.content || '').slice(0, 4000) }));
 
-    const allMessages = [...aiMessages, { role: 'user', content: content || '' }];
+    const allMessages = [{ role: 'user', content: content || '' }];
+    let historyChars = content?.length || 0;
+    for (let index = aiMessages.length - 1; index >= 0; index--) {
+      if (historyChars + aiMessages[index].content.length > 24000) break;
+      allMessages.unshift(aiMessages[index]);
+      historyChars += aiMessages[index].content.length;
+    }
     const isFirstAuditMessage = activeScope === 'audit' && priorUserMessages.length === 0;
     const screenshotToSend = image || (isFirstAuditMessage ? userProfile.screenshot : null);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
     if (options?.signal) {
+      if (options.signal.aborted) controller.abort();
       options.signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
 
     try {
-      const flagStatus = userProfile.email
-        ? await fetchUserFlag(userProfile.email, controller.signal)
-        : userProfile.flag_status;
-      if (userProfile.email) setUserProfile(prev => ({ ...prev, flag_status: flagStatus }));
-      if (flagStatus === 'red') {
-        systemPrompt += "\n\nCRITICAL: THIS USER IS RESTRICTED. Reply ONLY with: 'Your access is currently restricted due to a violation of our terms. Please contact info@themarketinghaven.xyz.' Do not answer any other questions.";
-      }
       const result = await callHavenAPI({
-        systemPrompt, messages: allMessages,
+        context, messages: allMessages, requestId,
         screenshot: screenshotToSend, scope: activeScope, signal: controller.signal,
       });
 
+      pendingTurnsRef.current.delete(turnKey);
+      if (result.flagStatus) setUserProfile(prev => ({ ...prev, flag_status: result.flagStatus }));
       const { step: newStep, cleanedText: textAfterStep } = parseStepMarker(result.text);
       const { lead: newLead, cleanedText: textAfterLead } = parseLeadMarker(textAfterStep);
       const { navChips: navChipsFromTag, cleanedText } = parseNavChipsFromText(textAfterLead);
+      if (result.currentStep || newStep) {
+        setSessionsForScope(activeScope, prev => prev.map((session) => session.id === activeSessionId
+          ? { ...session, currentStep: result.currentStep || newStep } : session));
+      }
 
       const regularChips = [];
       const navChipObjects = [];
@@ -896,8 +818,9 @@ export function HavenProvider({ children }) {
 
       if (activeScope === 'audit') {
         const profileUpdates = {};
-        if (newStep) profileUpdates.currentStep = newStep;
-        if (newLead) profileUpdates.leadTemperature = newLead;
+        if (result.currentStep || newStep) profileUpdates.currentStep = result.currentStep || newStep;
+        if (result.leadTemperature || newLead) profileUpdates.leadTemperature = result.leadTemperature || newLead;
+        if (result.flagStatus) profileUpdates.flag_status = result.flagStatus;
         if (Object.keys(profileUpdates).length > 0) {
           setUserProfile(prev => ({ ...prev, ...profileUpdates }));
         }
@@ -910,7 +833,7 @@ export function HavenProvider({ children }) {
       } else {
         console.error('Haven: API error', err);
         const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
-        addMessage('agent', isOffline
+        addMessage('agent', /access recovery/.test(err.message) || err.status === 400 || err.status === 413 ? err.message : isOffline
           ? "Looks like your connection dropped. Once you're back online, send that again — I've kept your spot."
           : "I'm having trouble reaching the server right now. Give it a moment and try again — I'm still here."
         );
@@ -919,7 +842,7 @@ export function HavenProvider({ children }) {
       setIsThinking(false);
       abortControllerRef.current = null;
     }
-  }, [activeScope, activeSessionId, currentSession, getSessionsForScope, createSession, addMessage, userProfile, activeService]);
+  }, [activeScope, activeSessionId, currentSession, getSessionsForScope, setSessionsForScope, createSession, addMessage, userProfile, activeService]);
 
   const clearChat = useCallback(() => {
     setSessionsForScope(activeScope, prev =>
@@ -948,6 +871,9 @@ export function HavenProvider({ children }) {
     platform:       userProfile.platform       || '',
     handle:         userProfile.handle         || '',
     screenshot:     null,
+    reviewId:       userProfile.reviewId,
+    sessionId:      userProfile.sessionId,
+    accessToken:    userProfile.accessToken,
   }), [userProfile]);
 
   const clearExistingReview = useCallback(() => {
@@ -962,18 +888,33 @@ export function HavenProvider({ children }) {
     resetPreflight();
   }, [resetPreflight]);
 
+  const recheckHavenAccess = useCallback(async () => {
+    const identity = getHavenIdentity();
+    const linked = userProfile.reviewId && userProfile.sessionId && userProfile.accessToken
+      ? { reviewId: userProfile.reviewId, reviewSessionId: userProfile.sessionId, accessToken: userProfile.accessToken } : {};
+    const key = `${activeScope}/${activeSessionId}`;
+    let sessionId = currentSession?.serverSessionId || publicSessionIdsRef.current.get(key);
+    if (!sessionId) { sessionId = crypto.randomUUID(); publicSessionIdsRef.current.set(key, sessionId); }
+    const context = activeScope === 'audit' ? { ...identity, ...reviewAccess(userProfile) }
+      : { ...identity, ...linked, sessionId, serviceId: activeService?.id || null };
+    const result = await callHavenAPI({ action: 'access', context, scope: activeScope });
+    if (!['white','yellow','red'].includes(result.flagStatus)) throw new Error('Could not verify your access. Please try again.');
+    setUserProfile((previous) => ({ ...previous, flag_status: result.flagStatus }));
+    return result.flagStatus;
+  }, [activeScope, activeSessionId, currentSession, userProfile, activeService]);
+
   const value = {
     isOpen, mode, setMode, toggleDrawer, openDrawer, closeDrawer,
     activeScope, activeService, viewState,
     sessions, activeSessionId, currentSession, messages,
     createNewSession, switchSession, togglePinSession, deleteSession, clearChat,
     addMessage, sendMessage, sendNavChipIntent, isThinking, setIsThinking, stopResponse,
-    userProfile, updateUserProfile,
+    userProfile, updateUserProfile, recheckHavenAccess,
     bookingNoticeOpen, setBookingNoticeOpen, bookingContext,
     showToast, toastMessage, triggerToast,
     activeMenuSessionId, setActiveMenuSessionId,
     hasExistingReview, getSavedReviewFormData, clearExistingReview,
-    auditPreflight, proceedFromPreflight, resetPreflight, runScraper, runSocialScorer, retryScrape,
+    auditPreflight, proceedFromPreflight, resetPreflight, runScraper, runSocialScorer, retryScrape, sessionSaveState,
   };
 
   return <HavenContext.Provider value={value}>{children}</HavenContext.Provider>;

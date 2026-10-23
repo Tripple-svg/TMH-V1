@@ -12,12 +12,20 @@ function getOrCreateVisitorId() {
 }
 
 export function captureTrackingData() {
+  let consented = false;
+  try { consented = localStorage.getItem('tmh_cookie_consent') === 'true'; } catch { /* Optional analytics stays off. */ }
   const params = new URLSearchParams(window.location.search);
-  const firstVisitAt = localStorage.getItem(FIRST_VISIT_KEY) || new Date().toISOString();
-  const visitCount = Number.parseInt(localStorage.getItem(VISIT_COUNT_KEY) || '0', 10) + 1;
-
-  localStorage.setItem(FIRST_VISIT_KEY, firstVisitAt);
-  localStorage.setItem(VISIT_COUNT_KEY, String(visitCount));
+  let firstVisitAt = new Date().toISOString();
+  let visitCount = 1;
+  if (consented) {
+    try {
+      firstVisitAt = localStorage.getItem(FIRST_VISIT_KEY) || firstVisitAt;
+      const savedCount = Number.parseInt(localStorage.getItem(VISIT_COUNT_KEY) || '0', 10);
+      visitCount = Number.isFinite(savedCount) && savedCount >= 0 ? savedCount + 1 : 1;
+      localStorage.setItem(FIRST_VISIT_KEY, firstVisitAt);
+      localStorage.setItem(VISIT_COUNT_KEY, String(visitCount));
+    } catch { /* Review submission must still work when storage is blocked. */ }
+  }
 
   const firstVisitMs = new Date(firstVisitAt).getTime();
   const daysToConvert = Number.isFinite(firstVisitMs)
@@ -30,9 +38,9 @@ export function captureTrackingData() {
     : 'desktop';
 
   return {
-    utmSource: params.get('utm_source'),
-    utmCampaign: params.get('utm_campaign'),
-    referrerUrl: document.referrer || null,
+    utmSource: consented ? params.get('utm_source') : null,
+    utmCampaign: consented ? params.get('utm_campaign') : null,
+    referrerUrl: consented ? document.referrer || null : null,
     deviceType,
     visitCount,
     firstVisitAt,

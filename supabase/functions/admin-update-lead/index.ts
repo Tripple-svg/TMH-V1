@@ -1,5 +1,5 @@
 // supabase/functions/admin-update-lead/index.ts
-// Admin-only endpoint for follow-up edits.
+// Admin-only endpoint for follow-up edits and confirmed lead deletion.
 // Whitelists the columns that can be updated.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
@@ -31,7 +31,7 @@ function corsHeaders(origin: string | null) {
 function json(body: unknown, origin: string | null, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   });
 }
 
@@ -53,8 +53,47 @@ serve(async (req) => {
     if (password !== ADMIN_PASSWORD) {
       return json({ ok: false, error: 'Unauthorised' }, origin, 401);
     }
-    if (!reviewId) {
+    if (!reviewId || reviewId.length > 200) {
       return json({ ok: false, error: 'Missing reviewId' }, origin, 400);
+    }
+
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+    });
+
+    if (body.action === 'delete') {
+      if (body.confirmation !== reviewId) {
+        return json({ ok: false, error: 'Deletion requires confirmation of the selected review.' }, origin, 400);
+      }
+      // One database transaction removes the review and its associated sessions.
+      // The RPC is executable only by service_role, never by browser credentials.
+      const { data: deletion, error: deletionError } = await supabase.rpc('admin_delete_lead', {
+        p_review_id: reviewId,
+      });
+      if (deletionError) {
+        console.error('admin-update-lead: deletion failed', deletionError);
+        return json({ ok: false, error: 'Could not delete the lead. Check the admin deletion migration and try again.' }, origin, 500);
+      }
+      if (!deletion?.deleted) return json({ ok: false, error: 'Review not found' }, origin, 404);
+
+      let warning: string | null = null;
+      if (typeof deletion.screenshot_path === 'string' && deletion.screenshot_path) {
+        if (!deletion.screenshot_path.startsWith(`${reviewId}/`) || deletion.screenshot_path.split('/').includes('..')) {
+          warning = 'Lead deleted. Its screenshot path needs manual review in Supabase Storage.';
+        } else {
+          try {
+            const { error: storageError } = await supabase.storage.from('tmh-screenshots').remove([deletion.screenshot_path]);
+            if (storageError) throw storageError;
+          } catch (error) {
+            console.error('admin-update-lead: screenshot cleanup failed', error);
+            warning = 'Lead deleted, but its screenshot could not be removed. Retry cleanup in Supabase Storage.';
+          }
+        }
+      }
+      return json({ ok: true, deletedId: reviewId, warning }, origin);
+    }
+    if (body.action !== undefined && body.action !== 'update') {
+      return json({ ok: false, error: 'Invalid action' }, origin, 400);
     }
 
     // Whitelist-safe update object.
@@ -81,10 +120,6 @@ serve(async (req) => {
     if (typeof body.callBookedAt === 'string') {
       update.call_booked_at = body.callBookedAt;
     }
-
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-      auth: { persistSession: false },
-    });
 
     const { data, error } = await supabase
       .from('brand_reviews')
