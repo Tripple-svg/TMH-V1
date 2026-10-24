@@ -318,7 +318,7 @@ export default function ShopSection() {
         >
           <div className="grid grid-cols-1 md:grid-cols-2">
             <div className="relative aspect-square md:aspect-auto flex items-center justify-center p-8 bg-zinc-100 dark:bg-zinc-900 transition-colors duration-300">
-              <div className={`relative w-48 h-64 sm:w-56 sm:h-72 rounded-lg shadow-2xl overflow-hidden ${reduceMotion ? '' : 'rotate-[-2deg] hover:rotate-0 transition-transform duration-300'}`}>
+              <motion.div initial={false} whileHover={reduceMotion ? undefined : { y: -6, rotate: 0 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }} transition={{ duration: 0.25 }} className={`relative w-48 h-64 sm:w-56 sm:h-72 rounded-lg shadow-2xl overflow-hidden ${reduceMotion ? '' : 'rotate-[-2deg] hover:rotate-0 transition-transform duration-300'}`}>
                 <img
                   src="/Playbook.jpeg"
                   alt="The Unseen Playbook"
@@ -326,7 +326,7 @@ export default function ShopSection() {
                   decoding="async"
                   className="w-full h-full object-cover rounded-lg"
                 />
-              </div>
+              </motion.div>
             </div>
 
             <div className="p-8 sm:p-10 flex flex-col justify-center">
@@ -351,7 +351,7 @@ export default function ShopSection() {
                 ))}
               </ul>
 
-              <p className="mb-5 text-2xl font-medium tracking-tight text-zinc-900 dark:text-white">₦9,639 <span className="ml-2 text-xs font-normal tracking-normal text-zinc-500">Playbook price</span></p>
+              <p className="mb-5 text-2xl font-medium tracking-tight text-zinc-900 dark:text-white">₦9,639 <del className="ml-2 text-sm font-normal text-zinc-500">₦15,000</del> <span className="ml-2 text-xs font-normal tracking-normal text-zinc-500">Playbook price</span></p>
               <button
                 onClick={() => setIsPreviewOpen(true)}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold text-sm hover:bg-zinc-700 dark:hover:bg-white transition-colors active:scale-[0.98]"

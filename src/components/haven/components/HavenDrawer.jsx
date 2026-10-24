@@ -1,5 +1,5 @@
 // src/components/haven/components/HavenDrawer.jsx
-// Restrained chat surface; messages remain readable immediately.
+// Viewport sizing and slide animation are isolated for mobile keyboards.
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
@@ -9,6 +9,7 @@ import {
   BarChart3, Target, Zap, Trash2, RotateCcw, Settings, ExternalLink,
   ChevronDown, AlertCircle,
 } from 'lucide-react';
+import useDrawerViewport from '../hooks/useDrawerViewport';
 import { useHaven } from '../hooks/useHaven';
 import ActionModals from './ActionModals';
 import ChatMessage from './chat/ChatMessage';
@@ -321,7 +322,8 @@ export default function HavenDrawer() {
   const [autoFollow, setAutoFollow] = useState(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
 
-  const [viewport, setViewport] = useState({ top: 0, height: null });
+  const viewportFollowRef = useRef(null);
+  const viewportRef = useDrawerViewport(isOpen, viewportFollowRef);
 
   const scrollRef         = useRef(null);
   const dialogRef         = useRef(null);
@@ -350,31 +352,6 @@ export default function HavenDrawer() {
 
   const hasUserMessage = messages.some((m) => m.role === 'user');
   const showConsentLine = !hasUserMessage && !showPreflight;
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
-    if (!vv) return;
-
-    const update = () => {
-      setViewport({ top: vv.offsetTop, height: vv.height });
-    };
-
-    update();
-    vv.addEventListener('resize', update);
-    vv.addEventListener('scroll', update);
-    return () => {
-      vv.removeEventListener('resize', update);
-      vv.removeEventListener('scroll', update);
-    };
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = previousOverflow; };
-  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || modalType || showBookingModal || bookingNoticeOpen) return;
@@ -460,7 +437,7 @@ export default function HavenDrawer() {
     if (!autoFollow) return;
     if (!scrollRef.current) return;
     requestAnimationFrame(() => {
-      endRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'end' });
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'instant' });
     });
   }, [messages.length, isThinking, autoFollow, reduceMotion]);
 
@@ -473,7 +450,7 @@ export default function HavenDrawer() {
     setAutoFollow(true);
     setShowScrollBtn(false);
     requestAnimationFrame(() => {
-      endRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'end' });
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'instant' });
     });
   }, [messages, autoFollow, reduceMotion]);
 
@@ -564,8 +541,8 @@ export default function HavenDrawer() {
   const handleScrollToBottom = useCallback(() => {
     setAutoFollow(true);
     setShowScrollBtn(false);
-    endRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'end' });
-  }, [reduceMotion]);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'instant' });
+  }, []);
 
   const pinned   = sessions.filter(s => s.isPinned);
   const unpinned = sessions.filter(s => !s.isPinned);
@@ -583,9 +560,11 @@ export default function HavenDrawer() {
     </motion.button>
   );
 
-  const drawerStyle = viewport.height
-    ? { top: `${viewport.top}px`, height: `${viewport.height}px` }
-    : { top: 0, height: '100dvh' };
+  useEffect(() => {
+    viewportFollowRef.current = () => {
+      if (autoFollow && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    };
+  }, [autoFollow]);
 
   return (
     <>
@@ -597,18 +576,18 @@ export default function HavenDrawer() {
               onClick={() => { setShowHistorySidebar(false); setShowOptionsMenu(false); closeDrawer(); }}
               className="fixed inset-0 z-40 bg-black/60" />
 
+            <div ref={viewportRef} className="fixed right-0 top-0 z-50 h-dvh w-full max-w-md">
             <motion.div
               initial={{ x: reduceMotion ? 0 : '100%', opacity: reduceMotion ? 0 : 1 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: reduceMotion ? 0 : '100%', opacity: reduceMotion ? 0 : 1 }}
               transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
-              style={drawerStyle}
               ref={dialogRef}
               tabIndex={-1}
               role="dialog"
               aria-modal="true"
               aria-label="Chat with Haven"
-              className="fixed right-0 z-50 w-full max-w-md flex flex-col bg-zinc-950 sm:bg-zinc-950/95 sm:backdrop-blur-lg border-l border-white/[0.08] shadow-2xl shadow-black/60 overflow-hidden overflow-x-hidden">
+              className="relative h-full w-full flex flex-col bg-zinc-950 sm:bg-zinc-950/95 sm:backdrop-blur-lg border-l border-white/[0.08] shadow-2xl shadow-black/60 overflow-hidden overflow-x-hidden">
 
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.02] via-transparent to-transparent" />
 
@@ -642,7 +621,7 @@ export default function HavenDrawer() {
                       <span className="text-sm font-semibold text-white tracking-tight">Haven</span>
                       <div className="flex items-center gap-1.5">
                         <span className="relative flex h-1.5 w-1.5">
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-zinc-400" />
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-zinc-400 animate-pulse motion-reduce:animate-none" />
                         </span>
                         <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">{scopeLabel}</span>
                       </div>
@@ -707,9 +686,9 @@ export default function HavenDrawer() {
 
               {needsReviewRecovery && (
                 <p role="status" className="relative px-5 py-3 border-b border-white/[0.08] text-xs leading-relaxed text-amber-100/80">
-                  This saved review needs access recovery. Contact{' '}
+                  This device is missing the secure access key for its saved review. A local chat copy may still be available, but reopening the saved review requires ownership verification. Contact{' '}
                   <a href="mailto:info@themarketinghaven.xyz" className="underline underline-offset-2">info@themarketinghaven.xyz</a>{' '}
-                  to restore access.
+                  to recover the review. You can also <button type="button" className="underline underline-offset-2" onClick={() => openDrawer('support')}>ask for help in Support</button>.
                 </p>
               )}
 
@@ -792,12 +771,19 @@ export default function HavenDrawer() {
                         key={msg.id || idx}
                         message={msg}
                         size="full"
-                        animateEntry={idx === messages.length - 1 && isFreshMessage(msg)}
+                        animateEntry={idx === messages.length - 1 && (msg.reveal === true || isFreshMessage(msg))}
                         shouldShowChips={idx === messages.length - 1}
                         onChipSelect={handleChipSelect}
                         onNavChipSelect={handleNavChipSelect}
                       />
                     ))
+                  )}
+                  {currentSession?.failedTurn && !isThinking && (
+                    <div role="alert" className="rounded-xl border border-amber-200/15 bg-amber-200/[0.04] p-4 text-xs leading-relaxed text-zinc-300">
+                      <p>{currentSession.failedTurn.error}</p>
+                      <button type="button" disabled={isRestricted || needsReviewRecovery} className="mt-2 rounded-lg border border-white/15 px-3 py-2 text-zinc-100 disabled:opacity-50"
+                        onClick={() => sendMessage(currentSession.failedTurn.content, currentSession.failedTurn.image)}>Retry saved message</button>
+                    </div>
                   )}
                   {isThinking && <ThinkingIndicator />}
                   <div ref={endRef} />
@@ -820,7 +806,7 @@ export default function HavenDrawer() {
               </AnimatePresence>
 
               {!showPreflight && (
-                <div className="relative px-4 pt-3 pb-4 border-t border-white/[0.08] bg-zinc-950 flex-shrink-0">
+                <div className="relative px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-white/[0.08] bg-zinc-950 flex-shrink-0">
                   {showConsentLine && (
                     <div className="mb-3 text-[11px] leading-relaxed text-zinc-400">
                       <p className="text-center">
@@ -865,6 +851,7 @@ export default function HavenDrawer() {
                 </div>
               )}
             </motion.div>
+            </div>
           </>
         )}
       </AnimatePresence>

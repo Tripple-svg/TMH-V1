@@ -1,6 +1,9 @@
+import { isInternalRequest } from '../_shared/internal-auth.js';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { drainModerationNotifications } from '../_shared/haven-moderation.ts';
+
+import { deliverFlagNotification, MailDeliveryError } from '../_shared/resend-delivery.js';
 
 const TEAM_RECIPIENTS = ['francis.teamhaven@gmail.com', 'paschal.tmh@gmail.com'];
 const SOURCE_LABELS: Record<string, string> = { lead: 'Lead / Brand review', support: 'Support', service: 'Services', admin: 'Admin action', unknown: 'Admin action / legacy record' };
@@ -21,7 +24,7 @@ serve(async (req) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!url || !serviceKey) return json({ ok: false, error: 'Server misconfigured' }, 500);
   // Internal-only sender: admin passwords and public/client tokens cannot send mail.
-  if (req.headers.get('authorization') !== `Bearer ${serviceKey}`) {
+  if (!isInternalRequest(req, serviceKey)) {
     return json({ ok: false, error: 'Unauthorised' }, 401);
   }
 
@@ -38,7 +41,7 @@ serve(async (req) => {
 
     // Email content comes only from the database snapshot created by the flag trigger.
     const { data: notification, error } = await supabase.from('flag_alert_notifications')
-      .select('id,email,visitor_id,full_name,source,session_id,status,reason,sent_at').eq('id', body.notificationId).maybeSingle();
+      .select('id,email,visitor_id,full_name,source,session_id,status,reason,sent_at,team_email_id').eq('id', body.notificationId).maybeSingle();
     if (error) {
       console.error('send-flag-alert: notification lookup failed');
       return json({ ok: false, error: 'Unable to load flag notification' }, 500);
@@ -46,40 +49,15 @@ serve(async (req) => {
     if (!notification) return json({ ok: false, error: 'Flag notification not found' }, 404);
     if (notification.sent_at) return json({ ok: true, skipped: 'already sent' });
 
-    const resendKey = Deno.env.get('RESEND_API_KEY');
-    if (!resendKey) return json({ ok: false, error: 'Email service is not configured' }, 500);
-    try {
-      const sent = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendKey}`,
-          'Content-Type': 'application/json',
-          'Idempotency-Key': `flag-alert/${notification.id}`,
-        },
-        body: JSON.stringify({
-          from: 'The Marketing Haven <info@themarketinghaven.xyz>',
+    await deliverFlagNotification(supabase, notification, 'team', {
           to: TEAM_RECIPIENTS,
           reply_to: 'info@themarketinghaven.xyz',
           subject: `URGENT: User Flagged - ${notification.status}`,
           text: `User ${notification.email || `visitor ${notification.visitor_id}`} has been flagged as ${notification.status}. Reason Haven flagged them: ${notification.reason || 'Not provided'}. Please review in the Admin Dashboard.\n\nName: ${notification.full_name || (notification.email ? 'Not recorded' : 'Not provided (guest)')}\nSource: ${SOURCE_LABELS[notification.source] || 'Admin action / legacy record'}\nSession ID: ${notification.session_id || 'Not recorded'}\nVisitor ID: ${notification.visitor_id || 'Linked saved review'}\nAdmin Dashboard: https://themarketinghaven.xyz/admin`,
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!sent.ok) return json({ ok: false, error: 'Flag alert delivery failed. Please retry.' }, 502);
-      const accepted = await sent.json().catch(() => null);
-      if (typeof accepted?.id !== 'string' || !accepted.id) return json({ ok: false, error: 'Flag alert acceptance could not be confirmed. Please retry.' }, 502);
-    } catch {
-      return json({ ok: false, error: 'Flag alert delivery failed. Please retry.' }, 502);
-    }
-
-    const { error: updateError } = await supabase.from('flag_alert_notifications')
-      .update({ sent_at: new Date().toISOString() }).eq('id', notification.id).is('sent_at', null);
-    if (updateError) {
-      console.error('send-flag-alert: delivery marker update failed');
-      return json({ ok: false, error: 'Flag alert sent, but delivery could not be recorded. Please retry.' }, 500);
-    }
+    }, Deno.env);
     return json({ ok: true });
-  } catch {
+  } catch (error) {
+    if (error instanceof MailDeliveryError) return json({ ok: false, code: error.code, error: error.message }, error.status);
     console.error('send-flag-alert: request failed');
     return json({ ok: false, error: 'Unable to send flag alert' }, 500);
   }

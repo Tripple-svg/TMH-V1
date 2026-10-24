@@ -1,10 +1,10 @@
 // supabase/functions/haven-chat/index.ts
 // Server-owned instructions and verified private audit context.
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { buildHavenSystemPrompt, STEPS, LEADS } from '../_shared/haven-prompts.js';
 import { ReviewAccessError, hashReviewToken } from '../_shared/review-access.ts';
 import { prepareConversation, substantiveAnswer, explicitCallRequest, RESTRICTED_MESSAGE } from '../_shared/haven-conversation.ts';
-import { gateHavenRouting } from '../_shared/haven-routing.js';
+import { resolveHavenRouting, supportHelpReply } from '../_shared/haven-routing.js';
 import { geminiProcessingEnabled } from '../_shared/haven-model.ts';
 import { applyAutomaticFlag, ModerationError } from '../_shared/haven-moderation.ts';
 import {
@@ -261,9 +261,10 @@ Deno.serve(async (request) => {
     const conversation = await prepareConversation(supabase, scope, context, body.noticeVersion);
     if (conversation.flagStatus === 'red') return json({ ok: true, text: RESTRICTED_MESSAGE, chips: [], flagStatus: 'red', model: null });
     const latest = messages[messages.length-1].content || '';
+    const directHelp = supportHelpReply(latest, scope);
     const { data: turn, error: turnError } = await supabase.rpc('begin_haven_turn', {
       p_session_id: conversation.session.id, p_turn_id: requestId, p_content: latest,
-      p_has_image: Boolean(screenshot), p_substantive: substantiveAnswer(latest), p_explicit_call: explicitCallRequest(latest),
+      p_has_image: Boolean(screenshot), p_substantive: !directHelp && substantiveAnswer(latest), p_explicit_call: explicitCallRequest(latest),
       p_request_hash: await hashReviewToken(JSON.stringify({ content: latest, screenshot })),
     });
     if (turnError || !turn) throw new HavenRequestError('Could not save your message. Please try again.', 500);
@@ -279,7 +280,7 @@ Deno.serve(async (request) => {
         userName: textValue(review.full_name, 120, 'there'), brandName: textValue(review.brand_name, 200, 'your business'),
         entryPoint: 'AUDIT_FLOW',
         auditData: {
-          ...qualification, currentStep: savedStep(session.current_step), presenceType: review.platform_type,
+          ...qualification, routingState: session.routing_state || null, currentStep: savedStep(session.current_step), presenceType: review.platform_type,
           hasWebsite: review.platform_type === 'website', websiteUrl: textValue(review.website_url, 2048),
           hasNoPresence: review.platform_type === 'none', platform: textValue(review.social_platform, 80),
           handle: textValue(review.social_link, 500), mainGoal: textValue(review.main_goal, 500),
@@ -301,7 +302,7 @@ Deno.serve(async (request) => {
       promptContext = {
         userName: textValue(conversation.review?.full_name, 120, 'there'), brandName: textValue(conversation.review?.brand_name, 200, 'your business'),
         serviceName, entryPoint: scope === 'service' ? 'SERVICE_GRID' : 'CUSTOMER_SUPPORT',
-        auditData: { ...qualification, currentStep: allowedPublicSteps.includes(session.current_step as string) ? session.current_step : defaultStep },
+        auditData: { ...qualification, routingState: session.routing_state || null, currentStep: allowedPublicSteps.includes(session.current_step as string) ? session.current_step : defaultStep },
       };
     }
     const systemPrompt = buildHavenSystemPrompt(promptContext);
@@ -314,7 +315,9 @@ Deno.serve(async (request) => {
       if (history.length >= 40 || chars+content.length > 24000) break;
       history.unshift({ role: message.role, content }); chars += content.length;
     }
-    const { text: modelText, model } = await callModel(systemPrompt, history.length ? history : [{ role:'user', content:latest }], screenshot);
+    const { text: modelText, model } = directHelp
+      ? { text: directHelp, model: null }
+      : await callModel(systemPrompt, history.length ? history : [{ role:'user', content:latest }], screenshot);
     let rawText = modelText;
     if (!rawText.trim()) throw new Error('Empty model response');
     let flagStatus = conversation.flagStatus;
@@ -329,7 +332,8 @@ Deno.serve(async (request) => {
       flagStatus = moderation.flagStatus;
       warned = moderation.changed && flagStatus === 'yellow';
     }
-    rawText = gateHavenRouting(rawText, { scope, ...qualification, serviceId: session.service_id, latestUserText: latest });
+    const routed = resolveHavenRouting(rawText, { scope, ...qualification, routingState: session.routing_state, serviceId: session.service_id, latestUserText: latest });
+    rawText = routed.text;
     const askedQuestion = rawText.includes('[[DIAGNOSTIC_QUESTION]]') && rawText.includes('?');
     rawText = rawText.replace(/\[\[(?:FLAG:[A-Z_]+|NEED:[A-Z_]+|DIAGNOSTIC_QUESTION)\]\]/g,'').trim();
     if (warned) rawText += '\n\nPlease keep this conversation respectful and follow our terms. This is a warning; the team may review further misuse.';
@@ -339,7 +343,7 @@ Deno.serve(async (request) => {
     const leadMatch = [...rawText.matchAll(/\[\[LEAD:([A-Z]+)\]\]/g)].at(-1)?.[1];
     const currentStep = Object.values(STEPS).includes(stepMatch || '') && stepMatch !== STEPS.GREETING ? stepMatch : promptContext.auditData.currentStep;
     const leadTemperature = Object.values(LEADS).includes(leadMatch || '') ? leadMatch : null;
-    const response = { ok: true, ...parsed, model, currentStep, leadTemperature, flagStatus, sessionId: session.id };
+    const response = { ok: true, ...parsed, model, currentStep, leadTemperature, flagStatus, sessionId: session.id, routingState: routed.routingState };
     const { error: completionError } = await supabase.rpc('complete_haven_turn', {
       p_session_id: session.id, p_turn_id: requestId, p_response: response, p_question: askedQuestion, p_step: currentStep,
     });

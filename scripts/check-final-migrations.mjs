@@ -42,6 +42,8 @@ try {
     '20261023000003_haven_conversations.sql',
     '20261023000004_moderation.sql',
     '20261023000005_purchase_delivery.sql',
+    '20261024000000_email_delivery_diagnostics.sql',
+    '20261024000001_haven_routing_state.sql',
   ].map((name) => `migrations/${name}`)]) {
     await db.exec(await readFile(new URL(`../supabase/${file}`, import.meta.url), 'utf8'));
   }
@@ -96,6 +98,20 @@ try {
     assert.equal(await scalar('select status from haven_chat_turns where id=$1', [next]), 'processing');
     assert.equal(await scalar('select message_count from haven_sessions where id=$1', [support]), before);
     await complete(next); await db.exec('drop trigger reject_test_reply on haven_sessions; drop function reject_test_reply();');
+  });
+  await check('diagnosis and permission commit atomically and survive the next turn', async () => {
+    const stateTurn = randomUUID(); await begin(stateTurn);
+    const routingState = { problemType: 'foundational', permission: 'asked' };
+    await rpc('complete_haven_turn', [support, stateTurn, JSON.stringify({ ok: true, text: 'Would you like to see what it covers?', routingState }), false, 'AWAITING_PERMISSION']);
+    assert.deepEqual(await scalar('select routing_state from haven_sessions where id=$1', [support]), routingState);
+    const next = randomUUID();
+    const resumed = await rpc('begin_haven_turn', [support, next, 'Please do', false, false, false, hash]);
+    assert.deepEqual(resumed.session.routing_state, routingState);
+    await rpc('complete_haven_turn', [support, next, JSON.stringify({ ok: true, text: 'The Unseen Playbook', routingState: { ...routingState, permission: 'granted' } }), false, 'ROUTING_TO_PLAYBOOK']);
+    assert.equal((await scalar('select routing_state from haven_sessions where id=$1', [support])).permission, 'granted');
+    const invalid = randomUUID(); await begin(invalid);
+    await rpc('complete_haven_turn', [support, invalid, JSON.stringify({ ok: true, text: 'Still here', routingState: { problemType: 'forged', permission: 'granted' } }), false, 'CUSTOMER_SUPPORT_OPEN']);
+    assert.equal((await scalar('select routing_state from haven_sessions where id=$1', [support])).problemType, 'foundational');
   });
   await check('legacy browser snapshots cannot overwrite server-owned transcripts', async () => {
     const before = await scalar('select messages from haven_sessions where id=$1', [audit]);

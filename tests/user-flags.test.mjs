@@ -139,3 +139,14 @@ test('automatic moderation: malformed event keys, IDs and reasons cannot reach t
     const app=load(); assert.equal((await app.handler(app.request(body))).status,400); assert.equal(app.calls.length,0);
   }
 });
+
+
+test('notification retry: admin can drain pending mail without changing flags, reasons or creating new events', async () => {
+  const app = load({ flag: 'red' });
+  app.notifications.push({ id: EVENT, sent_at: null, customer_required: true, customer_sent_at: null });
+  const response = await app.handler(app.request({ action: 'retryNotifications', password: 'admin-test' }, 'Bearer anon'));
+  assert.equal(response.status, 200); assert.equal((await response.json()).attempted, 1);
+  assert.equal(app.flag, 'red'); assert.equal(app.calls.length, 0); assert.equal(app.notifications.length, 1);
+  assert.deepEqual(app.sends.map(({ name }) => name), ['send-flag-alert', 'send-flag-customer']);
+  assert.equal((await app.handler(app.request({ action: 'retryNotifications', password: 'wrong' }, 'Bearer anon'))).status, 401);
+});

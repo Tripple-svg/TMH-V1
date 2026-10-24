@@ -1,7 +1,7 @@
 // src/pages/AdminDashboard.jsx
 // Admin workspace. Password-gated. Data flows through
 // admin-fetch-leads / admin-update-lead edge functions.
-// Responsive: table on md+, stacked cards on mobile.
+// Responsive: roomy cards on laptops, a contained table on wide screens.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -708,7 +708,7 @@ function LeadRow({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showT
         <td className="p-4 align-top">
           <FlagSelect lead={lead} onChange={onFlagChange} disabled={saving} />
         </td>
-        <td className="p-4 align-top text-xs text-zinc-300 max-w-[200px]">
+        <td className="p-4 align-top text-xs text-zinc-300 min-w-[280px] max-w-[360px] leading-relaxed">
           {lead.biggest_leak || '—'}
         </td>
         <td className="p-4 align-top text-xs text-zinc-400">{lead.utm_source || 'direct'}</td>
@@ -843,6 +843,16 @@ function PurchasesPanel({ purchases, error, password, onAuthLost, onPurchaseChan
   const [query, setQuery] = useState('');
   const [retrying, setRetrying] = useState({});
   const [retryErrors, setRetryErrors] = useState({});
+  const [checkingSetup, setCheckingSetup] = useState(false);
+  const [emailSetup, setEmailSetup] = useState(null);
+  const checkEmailSetup = async () => {
+    setCheckingSetup(true);
+    try {
+      const result = await apiRequest(RETRY_PURCHASE_URL, password, { action: 'checkConfiguration' });
+      if (result.code === 'unauthorised') onAuthLost?.();
+      setEmailSetup(result);
+    } finally { setCheckingSetup(false); }
+  };
   const retryLocks = useRef(new Set());
   const filtered = purchases.filter((purchase) => `${purchase.email || ''} ${purchase.reference || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -868,8 +878,10 @@ function PurchasesPanel({ purchases, error, password, onAuthLost, onPurchaseChan
     <section aria-labelledby="purchases-heading" className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.025] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-zinc-800 p-4">
         <h2 id="purchases-heading" className="text-base font-semibold">Playbook Purchases</h2>
+        <button type="button" disabled={checkingSetup} onClick={checkEmailSetup} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-200 disabled:opacity-50">{checkingSetup ? 'Checking…' : 'Check email setup'}</button>
         <p className="text-xs text-zinc-500">{filtered.length} shown / {purchases.length} loaded · newest 500 maximum · NGN</p>
       </div>
+      {emailSetup && <p role="status" className="border-b border-white/[0.06] px-4 py-3 text-xs leading-relaxed text-zinc-300">{emailSetup.from && <span className="mr-2">Sender: {emailSetup.from}.</span>}{emailSetup.message || emailSetup.error}</p>}
       <div className="p-4"><input aria-label="Search purchases" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search buyer email or payment reference" className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm outline-none focus:border-white/30" /></div>
       {error ? <p role="alert" className="p-4 text-sm text-red-300">{error}</p> : rows.length === 0 ? (
         <p className="p-4 text-sm text-zinc-500">{query ? 'No purchases match this search.' : 'No purchases recorded yet.'}</p>
@@ -979,6 +991,9 @@ export default function AdminDashboard() {
   const [chatErrors, setChatErrors] = useState({});
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [linkedSessionsTruncated, setLinkedSessionsTruncated] = useState(false);
+  const [retryingFlagEmails, setRetryingFlagEmails] = useState(false);
+  const [flagEmailError, setFlagEmailError] = useState('');
+  const flagEmailLock = useRef(false);
 
   const showToast = useCallback((kind, text) => {
     setToast({ kind, text, id: Date.now() });
@@ -1002,6 +1017,18 @@ export default function AdminDashboard() {
     transcriptCache.clear();
     transcriptRequests.clear();
   }, []);
+
+  const retryFlagEmails = async () => {
+    if (flagEmailLock.current) return;
+    flagEmailLock.current = true; setRetryingFlagEmails(true); setFlagEmailError('');
+    try {
+      const result = await apiRequest(FLAG_URL, password, { action: 'retryNotifications' });
+      if (result.ok) showToast('success', `Flag email queue checked. ${result.attempted || 0} pending events processed.`);
+      else if (result.code === 'unauthorised') handleAuthLost();
+      else setFlagEmailError(result.error || 'Flag email retry is still pending.');
+    } finally { flagEmailLock.current = false; setRetryingFlagEmails(false); }
+  };
+
 
   const load = useCallback(async (pw) => {
     setLoading(true);
@@ -1192,7 +1219,8 @@ export default function AdminDashboard() {
         {activeTab === 'leads' && <>
 
         <p className="mb-3 text-xs text-zinc-500">Reviews show the newest 500 records maximum. Counts, filters and exports apply to loaded reviews.</p>
-        <div className="mb-4 flex flex-wrap gap-3 text-xs text-zinc-500"><span>Yellow warnings <strong className="ml-1 font-medium text-amber-300">{leads.filter((lead) => lead.flag_status === 'yellow').length}</strong></span><span>Restricted <strong className="ml-1 font-medium text-red-300">{leads.filter((lead) => lead.flag_status === 'red').length}</strong></span></div>
+        <div className="mb-4 flex flex-wrap gap-3 text-xs text-zinc-500"><span>Yellow warnings <strong className="ml-1 font-medium text-amber-300">{leads.filter((lead) => lead.flag_status === 'yellow').length}</strong></span><span>Restricted <strong className="ml-1 font-medium text-red-300">{leads.filter((lead) => lead.flag_status === 'red').length}</strong></span><button type="button" disabled={retryingFlagEmails} onClick={retryFlagEmails} className="ml-auto rounded-lg border border-white/15 px-3 py-2 text-zinc-300 disabled:opacity-50">{retryingFlagEmails ? 'Retrying…' : 'Retry flag emails'}</button></div>
+        {flagEmailError && <p role="alert" className="mb-4 text-xs leading-relaxed text-amber-300">{flagEmailError}</p>}
         {chatErrors.linked && <p role="alert" className="mb-4 text-xs text-amber-300">{chatErrors.linked}</p>}
         {linkedSessionsTruncated && <p role="alert" className="mb-4 text-xs text-amber-300">The linked conversation index reached 5,000 entries. Older linked chats require a server export.</p>}
         <section className="mb-4 grid gap-2 sm:gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4 grid-cols-2 md:grid-cols-4">
@@ -1233,7 +1261,7 @@ export default function AdminDashboard() {
         </section>
 
         {/* Desktop table */}
-        <section aria-label="Leads table" tabIndex={0} className="hidden w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-2xl border border-white/[0.08] bg-white/[0.025] md:block">
+        <section aria-label="Leads table" tabIndex={0} className="hidden w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-2xl border border-white/[0.08] bg-white/[0.025] 2xl:block">
           <table className="w-full min-w-[1380px] text-left text-sm [&_td]:p-4 [&_td]:align-top [&_td]:[overflow-wrap:anywhere] [&_th]:p-4">
             <thead className="border-b border-white/[0.08] bg-white/[0.015] text-[10px] font-medium uppercase tracking-wider text-zinc-500">
               <tr>
@@ -1275,7 +1303,7 @@ export default function AdminDashboard() {
         </section>
 
         {/* Mobile cards */}
-        <section className="md:hidden space-y-3">
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:hidden">
           {loading && leads.length === 0 ? (
             <p className="p-6 text-center text-zinc-500 text-sm">Loading…</p>
           ) : pagedLeads.length === 0 ? (

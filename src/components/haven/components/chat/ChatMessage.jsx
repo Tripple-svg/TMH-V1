@@ -5,6 +5,8 @@ import React, { memo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { User, Sparkles, Calendar, ArrowRight, BookOpen, Music2 } from 'lucide-react';
 
+import useTypingReveal from '../../hooks/useTypingReveal';
+
 const LOGO_SRC = "/Tmhh.jpeg";
 
 function formatTime(timestamp) {
@@ -133,7 +135,9 @@ const ChatMessage = memo(function ChatMessage({
   const [imgError, setImgError] = useState(false);
   const [attachmentLoading, setAttachmentLoading] = useState(Boolean(message.image) && !message.image?.startsWith('data:'));
 
-  const displayedText = stripTagArtifacts(message.content || '');
+  const fullText = stripTagArtifacts(message.content || '');
+  const reveal = useTypingReveal(message.id, fullText, !isUser && animateEntry, reduceMotion);
+  const displayedText = reveal.text;
 
   const rawChips    = message.chips || [];
   const rawNavChips = message.navChips || [];
@@ -156,8 +160,8 @@ const ChatMessage = memo(function ChatMessage({
   const timeTextSize   = isCompact ? 'text-[9px]' : 'text-[10px]';
   const gapSize        = isCompact ? 'gap-2.5' : 'gap-3';
 
-  const showChipRows = !isUser && shouldShowChips && (chips.length > 0 || rawNavChips.length > 0);
-  const hasBubbleContent = Boolean(displayedText) || Boolean(message.image);
+  const showChipRows = reveal.complete && !isUser && shouldShowChips && (chips.length > 0 || rawNavChips.length > 0);
+  const hasBubbleContent = Boolean(fullText) || Boolean(message.image);
 
   return (
     <motion.div
@@ -213,8 +217,10 @@ const ChatMessage = memo(function ChatMessage({
                   />
                 </div>
               )}
+              {!reveal.complete && <span className="sr-only">{fullText}</span>}
+              {!displayedText && !reveal.complete && <span aria-hidden="true" className="inline-block animate-pulse text-zinc-500 motion-reduce:animate-none">•••</span>}
               {displayedText && (
-                <span className="whitespace-pre-wrap break-words">
+                <span aria-hidden={!reveal.complete} className="whitespace-pre-wrap break-words">
                   {renderInlineMarkdown(displayedText)}
                 </span>
               )}

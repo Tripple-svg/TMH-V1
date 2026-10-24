@@ -32,7 +32,7 @@ export default function CookieBanner() {
           <p className="flex-1">We use cookies to improve your experience.</p>
           <div className="flex shrink-0 items-center gap-3">
             <button type="button" onClick={() => choose(false)} className="text-xs text-zinc-400 transition hover:text-white">Decline</button>
-            <button type="button" onClick={() => choose(true)} className="rounded-full bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-500">Accept All</button>
+            <button type="button" onClick={() => choose(true)} className="rounded-full bg-zinc-100 px-4 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-white">Accept All</button>
           </div>
           <button type="button" onClick={() => choose(false)} aria-label="Dismiss cookie notice" className="absolute right-3 top-3 text-zinc-500 transition hover:text-white"><X className="h-4 w-4" /></button>
         </motion.aside>

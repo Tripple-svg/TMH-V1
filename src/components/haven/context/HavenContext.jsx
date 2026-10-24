@@ -255,6 +255,7 @@ export function HavenProvider({ children }) {
   const abortControllerRef = useRef(null);
   const publicSessionIdsRef = useRef(new Map());
   const pendingTurnsRef = useRef(new Map());
+  const inFlightTurnsRef = useRef(new Set());
   const scoringRequestRef = useRef(0);
 
   useEffect(() => {
@@ -348,7 +349,7 @@ export function HavenProvider({ children }) {
   const addMessage = useCallback((role, content, image = null, extraProps = {}) => {
     const newMessage = {
       id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      role, content, image, timestamp: Date.now(), ...extraProps,
+      role, content, image, timestamp: Date.now(), reveal: role === 'agent', ...extraProps,
     };
     setSessionsForScope(activeScope, prev =>
       prev.map(session => {
@@ -373,7 +374,7 @@ export function HavenProvider({ children }) {
       id: providedId || `session-${scope}-${serviceId || 'gen'}-${Date.now()}`,
       title: title || 'New Chat', scope, serviceId,
       isPinned: false, createdAt: Date.now(),
-      messages: initialMessage ? [initialMessage] : [],
+      messages: initialMessage ? [{ ...initialMessage, reveal: true }] : [],
       hasGreeted: Boolean(initialMessage),
       currentStep: scope === 'audit' ? STEPS.AWAITING_DIAGNOSTIC_Q1
         : scope === 'service' ? STEPS.SERVICE_GRID_OPEN
@@ -521,7 +522,7 @@ export function HavenProvider({ children }) {
           title: serviceData.title, serviceId: sid,
           initialMessage: {
             id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
-            content: `${greetingName}! I can see you're interested in our **${serviceData.title}** service.\n\nWe build this specifically to create high-converting growth architecture for brands ready to scale. What's the specific bottleneck you're trying to eliminate right now?`,
+            content: `${greetingName}! I can see you're interested in our **${serviceData.title}** service.\n\nWhat would you like to improve, and what is getting in the way right now?`,
             chips: ['Getting people to notice us', 'Turning attention into sales', 'Not sure where we lose them'],
           },
         });
@@ -582,7 +583,7 @@ export function HavenProvider({ children }) {
         initialMessage: {
           id: `agent-${Date.now()}`, role: 'agent',
           content: greetingContent, image: null, timestamp: Date.now(),
-          isSeedGreeting: true,
+          isSeedGreeting: true, reveal: true,
         },
       });
     } else if (targetMode === 'booking') {
@@ -626,8 +627,8 @@ export function HavenProvider({ children }) {
           if (target.messages.length === 0 && !target.hasGreeted) {
             const greeting = {
               id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
-              isSeedGreeting: true,
-              content: `Hi, I'm Haven. I help individual creators and business owners work through their marketing.\n\nWhat are you building, and where are you getting stuck?`,
+              isSeedGreeting: true, reveal: true,
+              content: `Hi, I'm Haven, your digital marketing assistant at TMH. I help individual creators and business owners work through their marketing, and I can help you find your way around this website.\n\nWhat are you building, and where are you getting stuck?`,
             };
             setSessionsForScope('support', prev =>
               prev.map(s => s.id === target.id ? { ...s, messages: [greeting], hasGreeted: true } : s)
@@ -726,64 +727,73 @@ export function HavenProvider({ children }) {
 
     setViewState('chatting');
     const turnKey = `${activeScope}/${activeSessionId}`;
-    const pending = pendingTurnsRef.current.get(turnKey);
+    if (inFlightTurnsRef.current.has(turnKey)) return;
+    const pending = pendingTurnsRef.current.get(turnKey) || (currentSession?.failedTurn ? { ...currentSession.failedTurn, failed: true } : null);
+    if (pending?.failed && /^(?:please )?(?:try again|retry|please do(?: it)? again)[.!\s]*$/i.test(content || '')) {
+      content = pending.content; image = pending.image;
+    }
     const retrying = pending?.content === content && pending?.image === image;
     const requestId = retrying ? pending.requestId : crypto.randomUUID();
-    pendingTurnsRef.current.set(turnKey, { requestId, content, image });
+    pendingTurnsRef.current.set(turnKey, retrying ? { ...pending, failed: false } : { requestId, content, image });
+    inFlightTurnsRef.current.add(turnKey);
+    setSessionsForScope(activeScope, prev => prev.map(s => s.id === activeSessionId ? { ...s, failedTurn: null } : s));
     if (!retrying) addMessage('user', content, image || null, { requestId });
-    setUserProfile(prev => ({ ...prev, exchangeCount: (prev.exchangeCount || 0) + 1 }));
+    if (!retrying) setUserProfile(prev => ({ ...prev, exchangeCount: (prev.exchangeCount || 0) + 1 }));
     setIsThinking(true);
-
-    const identity = getHavenIdentity();
-    let publicSessionId = currentSession?.serverSessionId || publicSessionIdsRef.current.get(turnKey);
-    if (activeScope !== 'audit' && !publicSessionId) {
-      publicSessionId = crypto.randomUUID();
-      publicSessionIdsRef.current.set(turnKey, publicSessionId);
-      setSessionsForScope(activeScope, prev => prev.map(session => session.id === activeSessionId ? { ...session, serverSessionId: publicSessionId } : session));
-    }
-    const linkedAccess = userProfile.reviewId && userProfile.sessionId && userProfile.accessToken
-      ? { reviewId: userProfile.reviewId, reviewSessionId: userProfile.sessionId, accessToken: userProfile.accessToken } : {};
-    const context = activeScope === 'audit' ? { ...identity, ...reviewAccess(userProfile) } : {
-      ...identity, ...linkedAccess, sessionId: publicSessionId,
-      userName: userProfile.name || 'there', brandName: userProfile.brandName || 'your business',
-      serviceId: activeService?.id || null,
-      entryContext: currentSession?.serviceId === 'team-inquiry' ? 'team_inquiry' : null,
-      currentStep: currentSession?.currentStep,
-    };
-
-    const sessionMessages = currentSession?.messages || [];
-    const priorUserMessages = sessionMessages
-      .filter(m => m.role === 'user' && !m.isChipIntent);
-    const isFirstRealUserMessage = priorUserMessages.length === 0;
-
-    const aiMessages = sessionMessages
-      .filter(m => !m.isChipIntent)
-      .filter(m => !(isFirstRealUserMessage && m.isSeedGreeting))
-      .slice(-39)
-      .map(m => ({ role: m.role, content: (m.content || '').slice(0, 4000) }));
-
-    const allMessages = [{ role: 'user', content: content || '' }];
-    let historyChars = content?.length || 0;
-    for (let index = aiMessages.length - 1; index >= 0; index--) {
-      if (historyChars + aiMessages[index].content.length > 24000) break;
-      allMessages.unshift(aiMessages[index]);
-      historyChars += aiMessages[index].content.length;
-    }
-    const isFirstAuditMessage = activeScope === 'audit' && priorUserMessages.length === 0;
-    const screenshotToSend = image || (isFirstAuditMessage ? userProfile.screenshot : null);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const abort = () => controller.abort();
     if (options?.signal) {
       if (options.signal.aborted) controller.abort();
-      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+      options.signal.addEventListener('abort', abort, { once: true });
     }
-
     try {
-      const result = await callHavenAPI({
+      if (activeScope === 'audit' && (!userProfile.reviewId || !userProfile.sessionId || !userProfile.accessToken)) throw new Error(REVIEW_RECOVERY_MESSAGE);
+      const identity = getHavenIdentity();
+      let publicSessionId = currentSession?.serverSessionId || publicSessionIdsRef.current.get(turnKey);
+      if (activeScope !== 'audit' && !publicSessionId) {
+        publicSessionId = crypto.randomUUID();
+        publicSessionIdsRef.current.set(turnKey, publicSessionId);
+        setSessionsForScope(activeScope, prev => prev.map(session => session.id === activeSessionId ? { ...session, serverSessionId: publicSessionId } : session));
+      }
+      const linkedAccess = userProfile.reviewId && userProfile.sessionId && userProfile.accessToken
+        ? { reviewId: userProfile.reviewId, reviewSessionId: userProfile.sessionId, accessToken: userProfile.accessToken } : {};
+      const context = activeScope === 'audit' ? { ...identity, ...reviewAccess(userProfile) } : {
+        ...identity, ...linkedAccess, sessionId: publicSessionId,
+        userName: userProfile.name || 'there', brandName: userProfile.brandName || 'your business',
+        serviceId: activeService?.id || null,
+        entryContext: currentSession?.serviceId === 'team-inquiry' ? 'team_inquiry' : null,
+        currentStep: currentSession?.currentStep,
+      };
+
+      const sessionMessages = currentSession?.messages || [];
+      const priorUserMessages = sessionMessages
+        .filter(m => m.role === 'user' && !m.isChipIntent);
+      const isFirstRealUserMessage = priorUserMessages.length === 0;
+
+      const aiMessages = sessionMessages
+        .filter(m => !m.isChipIntent)
+        .filter(m => !(isFirstRealUserMessage && m.isSeedGreeting))
+        .slice(-39)
+        .map(m => ({ role: m.role, content: (m.content || '').slice(0, 4000) }));
+
+      const allMessages = [{ role: 'user', content: content || '' }];
+      let historyChars = content?.length || 0;
+      for (let index = aiMessages.length - 1; index >= 0; index--) {
+        if (historyChars + aiMessages[index].content.length > 24000) break;
+        allMessages.unshift(aiMessages[index]);
+        historyChars += aiMessages[index].content.length;
+      }
+      const isFirstAuditMessage = activeScope === 'audit' && priorUserMessages.length === 0;
+      const screenshotToSend = image || (isFirstAuditMessage ? userProfile.screenshot : null);
+
+      const payload = retrying && pending.payload ? pending.payload : {
         context, messages: allMessages, requestId,
-        screenshot: screenshotToSend, scope: activeScope, signal: controller.signal,
-      });
+        screenshot: retrying && pending.screenshot !== undefined ? pending.screenshot : screenshotToSend, scope: activeScope,
+      };
+      pendingTurnsRef.current.set(turnKey, { requestId, content, image, payload });
+      const result = await callHavenAPI({ ...payload, signal: controller.signal });
 
       pendingTurnsRef.current.delete(turnKey);
       if (result.flagStatus) setUserProfile(prev => ({ ...prev, flag_status: result.flagStatus }));
@@ -811,7 +821,7 @@ export function HavenProvider({ children }) {
       if (result.text.includes('[[PLAYBOOK]]'))        specialChips.push('__PLAYBOOK__');
       if (result.text.includes('[[TIKTOK_CONTENT]]'))  specialChips.push('__TIKTOK_CONTENT__');
 
-      const agentExtraProps = {};
+      const agentExtraProps = { reveal: true };
       if (specialChips.length > 0) agentExtraProps.chips = specialChips;
       else if (regularChips.length > 0) agentExtraProps.chips = regularChips;
       if (navChipObjects.length > 0) agentExtraProps.navChips = navChipObjects;
@@ -828,17 +838,19 @@ export function HavenProvider({ children }) {
 
       addMessage('agent', cleanedText, null, agentExtraProps);
     } catch (err) {
-      if (err.name === 'AbortError') {
-        console.log('Haven: Response cancelled');
-      } else {
-        console.error('Haven: API error', err);
-        const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
-        addMessage('agent', /access recovery/.test(err.message) || err.status === 400 || err.status === 413 ? err.message : isOffline
-          ? "Looks like your connection dropped. Once you're back online, send that again — I've kept your spot."
-          : "I'm having trouble reaching the server right now. Give it a moment and try again — I'm still here."
-        );
-      }
+      const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      const error = err.name === 'AbortError' ? 'Response stopped. You can retry the same message.'
+        : /access recovery/.test(err.message) || [400, 403, 413].includes(err.status) ? err.message
+        : isOffline ? 'Your connection dropped. Your message is saved on this device. Retry when you are back online.'
+        : err.status === 409 ? 'Haven is still finishing this message. Wait a moment, then retry.'
+        : 'Haven could not finish this response. Retry your saved message to continue from the same point.';
+      const saved = pendingTurnsRef.current.get(turnKey);
+      if (saved) pendingTurnsRef.current.set(turnKey, { ...saved, failed: true });
+      setSessionsForScope(activeScope, prev => prev.map(s => s.id === activeSessionId
+        ? { ...s, failedTurn: { content, image, requestId, screenshot: saved?.payload?.screenshot || null, error } } : s));
     } finally {
+      options?.signal?.removeEventListener('abort', abort);
+      inFlightTurnsRef.current.delete(turnKey);
       setIsThinking(false);
       abortControllerRef.current = null;
     }

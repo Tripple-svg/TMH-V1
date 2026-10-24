@@ -1,5 +1,7 @@
+import { internalHeaders } from '../_shared/internal-auth.js';
+import { invocationFailure } from '../_shared/resend-delivery.js';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 
 const REFERENCE_PATTERN = /^UNSEEN_[A-Za-z0-9_-]{1,120}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -64,9 +66,14 @@ serve(async (req) => {
     console.log('Triggering thank you email');
     const { data, error } = await supabase.functions.invoke('send-purchase-thankyou', {
       body: { email: purchase.email, reference: purchase.reference },
+      headers: internalHeaders(serviceKey),
     });
     // Keep the saved purchase and return an error so Paystack retries delivery.
-    if (error || data?.ok !== true) return failure('purchase_email_failed', 'Purchase email unavailable', 502);
+    if (error || data?.ok !== true) {
+      const diagnostic = await invocationFailure(data, error);
+      await supabase.from('playbook_purchases').update({ thankyou_last_error: diagnostic.code }).eq('id', purchase.id).eq('thankyou_sent', false);
+      return failure('purchase_email_failed', 'Purchase email unavailable', 502);
+    }
     const { data: delivery, error: deliveryError } = await supabase.from('playbook_purchases')
       .select('thankyou_sent').eq('reference', purchase.reference).maybeSingle();
     if (deliveryError || delivery?.thankyou_sent !== true) return failure('delivery_marker_unconfirmed', 'Purchase email status unavailable', 502);

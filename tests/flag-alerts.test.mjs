@@ -31,7 +31,7 @@ function database(options = {}) {
     const run = async (single = false) => {
       calls.push({ action: values ? 'update' : 'select', id, fields, values: values && structuredClone(values), pendingOnly });
       if (!values && options.readError) return { data: null, error: { message: 'Read failed' } };
-      if (values && options.updateError) return { data: null, error: { message: 'Write failed' } };
+      if (values && (options.updateError || (values.sent_at && options.markerError))) return { data: null, error: { message: 'Write failed' } };
       if (options.throwQuery) throw new Error('Database unavailable');
       const selected = rows.filter((row) => (!id || row.id === id) && (!pendingOnly || row[pendingColumn] === null)
         && (!allPending || !row.sent_at || (row.customer_required && !row.customer_sent_at))).slice(0,cap);
@@ -101,8 +101,9 @@ test('flag alert: content comes from the database snapshot and recipients are fi
   assert.equal(mail[0].body.html, undefined);
   assert.ok(db.rows[0].sent_at);
   assert.ok(Number.isFinite(Date.parse(db.rows[0].sent_at)));
-  assert.equal(db.calls[1].pendingOnly, true);
-  assert.deepEqual(Object.keys(db.calls[1].values), ['sent_at']);
+  assert.equal(db.rows[0].team_email_id, 'message-1');
+  assert.equal(db.rows[0].team_last_error, null);
+  assert.ok(db.rows[0].team_attempted_at);
 });
 
 test('flag alert: yellow status and missing reason use snapshot values and fallback text', async () => {
@@ -142,7 +143,7 @@ test('flag alert: failed provider responses or thrown network errors leave the o
     assert.equal(result.status, 502);
     assert.equal((await result.json()).ok, false);
     assert.equal(db.rows[0].sent_at, null);
-    assert.equal(db.calls.filter((call) => call.action === 'update').length, 0);
+    assert.ok(db.rows[0].team_last_error);
     assert.equal(mail.length, 1);
   }
 });
@@ -160,16 +161,16 @@ test('flag alert: a failed delivery retry reuses the same event idempotency key'
 });
 
 test('flag alert: delivery marker failures return an error and retries retain the provider key', async () => {
-  const options = { updateError: true };
+  const options = { markerError: true };
   const db = database(options);
   const { handler, mail } = load({ db });
   const result = await handler(request());
   assert.equal(result.status, 500);
-  assert.match((await result.json()).error, /sent.*could not be recorded/i);
+  assert.match((await result.json()).error, /accepted.*status needs repair/i);
   assert.equal(db.rows[0].sent_at, null);
-  options.updateError = false;
+  options.markerError = false;
   assert.equal((await handler(request())).status, 200);
-  assert.equal(mail[0].headers['Idempotency-Key'], mail[1].headers['Idempotency-Key']);
+  assert.equal(mail.length, 1, 'Stored acceptance repairs the marker without sending again');
   assert.ok(db.rows[0].sent_at);
 });
 
@@ -201,9 +202,9 @@ test('flag alert: missing server secrets or email configuration cannot mark deli
   for (const env of [{ SUPABASE_URL: undefined }, { SUPABASE_SERVICE_ROLE_KEY: undefined }, { RESEND_API_KEY: undefined }]) {
     const { handler, db, mail } = load({ env });
     const result = await handler(request());
-    assert.equal(result.status, 500);
+    assert.equal(result.status, Object.hasOwn(env, 'RESEND_API_KEY') ? 503 : 500);
     assert.equal(db.rows[0].sent_at, null);
-    assert.equal(db.calls.filter((call) => call.action === 'update').length, 0);
+    if (Object.hasOwn(env, 'RESEND_API_KEY')) assert.equal(db.rows[0].team_last_error, 'missing_resend_key');
     assert.equal(mail.length, 0);
   }
 });

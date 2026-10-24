@@ -33,7 +33,7 @@ const ChatInput = forwardRef(function ChatInput(
   useImperativeHandle(ref, () => ({
     focus: (placeholderText) => {
       if (placeholderText) setPlaceholderOverride(placeholderText);
-      requestAnimationFrame(() => inputRef.current?.focus());
+      requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
     },
     openFilePicker: () => { if (!disabled && !isThinking) fileInputRef.current?.click(); },
     clearPlaceholderOverride: () => setPlaceholderOverride(null),
@@ -168,7 +168,7 @@ const ChatInput = forwardRef(function ChatInput(
   }, [inputValue, imagePreview, isThinking, disabled, imageLoading, onSend, handleRemoveImage, stopRecording]);
 
   const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSubmit(e);
     }

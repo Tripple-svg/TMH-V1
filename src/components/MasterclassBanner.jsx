@@ -95,9 +95,9 @@ export default function MasterclassBanner() {
                   transition={{ duration: 0.4, delay: 0.2 }}
                   className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"
                 >
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl shadow-blue-600/40 transition-transform group-hover:scale-105">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full bg-zinc-100 text-zinc-950 flex items-center justify-center shadow-2xl shadow-black/25 transition-transform group-hover:scale-105">
                     <Play
-                      className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 text-white ml-1"
+                      className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 text-zinc-950 ml-1"
                       fill="currentColor"
                     />
                   </div>

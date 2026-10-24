@@ -1,3 +1,5 @@
+import { internalHeaders } from './internal-auth.js';
+import { invocationFailure } from './resend-delivery.js';
 export class ModerationError extends Error {
   constructor(message: string, public status = 500) { super(message); }
 }
@@ -15,18 +17,26 @@ export async function drainModerationNotifications(supabase: any, target: { revi
   catch { return { deliveryPending: true, attempted: 0 }; }
   if (error) return { deliveryPending: true, attempted: 0 };
   let pending = false;
+  const deliveryErrors: string[] = [];
   for (const notification of data || []) {
     const send = async (name: string) => {
       try {
-        const result = await supabase.functions.invoke(name, { body: { notificationId: notification.id } });
-        if (result.error || result.data?.ok !== true) pending = true;
+        const result = await supabase.functions.invoke(name, { body: { notificationId: notification.id }, headers: internalHeaders(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) });
+        if (result.error || result.data?.ok !== true) {
+          pending = true;
+          const diagnostic = await invocationFailure(result.data, result.error);
+          deliveryErrors.push(diagnostic.code);
+        }
       } catch { pending = true; }
     };
-    if (!notification.sent_at) await send('send-flag-alert');
-    // A team-provider failure must never suppress the customer's own notification.
-    if (notification.customer_required && !notification.customer_sent_at) await send('send-flag-customer');
+    // Both channels start independently, so one provider timeout cannot consume
+    // the full admin request budget before the other channel is even attempted.
+    await Promise.all([
+      !notification.sent_at ? send('send-flag-alert') : Promise.resolve(),
+      notification.customer_required && !notification.customer_sent_at ? send('send-flag-customer') : Promise.resolve(),
+    ]);
   }
-  return { deliveryPending: pending || (data || []).length === 10, attempted: (data || []).length };
+  return { deliveryPending: pending || (data || []).length === 10, attempted: (data || []).length, deliveryErrors: [...new Set(deliveryErrors)] };
 }
 
 export async function applyAutomaticFlag(supabase: any, input: { reviewId?: string; visitorId?: string; sessionId?: string; eventKey: string; reason: string }) {

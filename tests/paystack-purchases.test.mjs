@@ -1,9 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac, webcrypto } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { transformSync } from 'esbuild';
+import { buildSync } from 'esbuild';
 
 const ENV = {
   PAYSTACK_SECRET_KEY: 'paystack-test-secret', SUPABASE_URL: 'https://project.supabase.co',
@@ -73,8 +72,8 @@ function database(seed = [], faults = {}) {
 
 function load(name, { db = database(), env = {}, logs = [], fetch = () => { throw new Error('Unexpected network call'); } } = {}) {
   let handler;
-  const source = readFileSync(new URL(`../supabase/functions/${name}/index.ts`, import.meta.url), 'utf8');
-  const code = transformSync(source, { loader: 'ts', format: 'cjs' }).code;
+  const code = buildSync({ entryPoints: [new URL(`../supabase/functions/${name}/index.ts`, import.meta.url).pathname.replace(/^\/(\w:)/, '$1')],
+    bundle: true, write: false, platform: 'node', format: 'cjs', external: ['https://*'], logLevel: 'silent' }).outputFiles[0].text;
   vm.runInNewContext(code, {
     require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: (url, key) => {
       assert.equal(url, ENV.SUPABASE_URL); assert.equal(key, ENV.SUPABASE_SERVICE_ROLE_KEY); return db.client;
@@ -253,7 +252,8 @@ test('sender validates its payload and leaves failed network deliveries unsent',
   for (const body of [{}, { email: 'bad', reference: 'UNSEEN_purchase-123' }, { email: 'buyer@example.com', reference: 'OTHER_123' }]) {
     assert.equal((await sender(senderRequest(body))).status, 400);
   }
-  assert.equal((await sender(senderRequest())).status, 500);
+  assert.equal((await sender(senderRequest())).status, 502);
+  assert.equal(db.rows[0].thankyou_last_error, 'resend_network_error');
   assert.equal(db.rows[0].thankyou_sent, false);
 });
 
@@ -396,4 +396,18 @@ test('admin retry skips sent purchases, rejects unknown purchases and repairs st
   assert.equal((await call('UNSEEN_accepted')).status, 200);
   assert.equal(emails.length, 0); assert.equal(db.rows[1].thankyou_sent, true);
   assert.equal(db.rows[1].thankyou_email_id, 'prior-accepted-email');
+});
+
+
+test('mail setup check: service authentication is required and a read-only check never sends or touches purchases', async () => {
+  const db = database(), requests = [];
+  const handler = load('send-purchase-thankyou', { db, fetch: async (url, options) => {
+    requests.push({ url, options });
+    return json({ data: [{ name: 'themarketinghaven.xyz', status: 'verified', capabilities: { sending: 'enabled' } }], has_more: false });
+  } });
+  assert.equal((await handler(senderRequest({ action: 'checkConfiguration' }, {}))).status, 401);
+  const response = await handler(senderRequest({ action: 'checkConfiguration' }));
+  const result = await response.json(); assert.equal(result.verification, 'verified');
+  assert.equal(db.calls.length, 0); assert.equal(requests.length, 1); assert.ok(requests[0].url.includes('/domains?'));
+  assert.ok(!JSON.stringify(result).includes(ENV.RESEND_API_KEY));
 });

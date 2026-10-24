@@ -29,6 +29,7 @@ const VALID = { ok: true, state: 'valid', summary: 'Readable website content.', 
 function harness({ scoring = VALID, profile = {}, scope = 'audit', history = [], status = 200,
   chat = { ok: true, text: 'Here is the next question.', currentStep: 'AWAITING_DIAGNOSTIC_Q2', flagStatus: 'white', chips: [] }, fetchImpl } = {}) {
   let currentProfile = { ...ACCESS, name: 'Ada', brandName: 'Ada Studio', exchangeCount: 0, ...profile };
+  let currentSessionState = { id: ACCESS.sessionId, messages: history };
   let currentPreflight = { status: 'idle', retryCount: 0 };
   const requests = [], messages = [], thinking = [];
   const context = {
@@ -50,12 +51,12 @@ function harness({ scoring = VALID, profile = {}, scope = 'audit', history = [],
     getSessionsForScope: () => [{ id: ACCESS.sessionId }],
     createSession() { throw new Error('Unexpected session creation'); }, addMessage: (...args) => messages.push(args),
     abortControllerRef: { current: null },
-    scoringRequestRef: { current: 0 }, setSessionsForScope() {},
-    publicSessionIdsRef: { current: new Map() }, pendingTurnsRef: { current: new Map() },
+    scoringRequestRef: { current: 0 }, setSessionsForScope(scope, updater) { currentSessionState = updater([currentSessionState])[0]; },
+    inFlightTurnsRef: { current: new Set() }, publicSessionIdsRef: { current: new Map() }, pendingTurnsRef: { current: new Map() },
   };
   vm.runInNewContext(code, context);
   return { ...context.callbacks, requests, messages, thinking,
-    get profile() { return currentProfile; }, get preflight() { return currentPreflight; } };
+    get session() { return currentSessionState; }, get profile() { return currentProfile; }, get preflight() { return currentPreflight; } };
 }
 
 test('website scoring: a valid low score remains visible and uses private review credentials', async () => {
@@ -209,7 +210,8 @@ test('session sync: in-memory credentials work even when localStorage is unavail
 });
 test('chat: ownership errors show recovery contact and clear thinking', async () => {
   const ui = harness({ status: 403 }); await ui.sendMessage('Help me.');
-  assert.match(ui.messages.at(-1)[1], /access recovery/); assert.deepEqual(ui.thinking, [true, false]);
+  assert.match(ui.session.failedTurn.error, /access recovery/);
+  assert.equal(ui.messages.filter(([role]) => role === 'agent').length, 0); assert.deepEqual(ui.thinking, [true, false]);
 });
 test('chat: cancellation aborts the pending request without adding a false server error', async () => {
   const external = new AbortController();
@@ -219,4 +221,35 @@ test('chat: cancellation aborts the pending request without adding a false serve
   const pending = ui.sendMessage('Help me.', null, { signal: external.signal }); external.abort(); await pending;
   assert.equal(ui.requests[0].signal.aborted, true); assert.deepEqual(ui.thinking, [true, false]);
   assert.equal(ui.messages.length, 1);
+});
+
+
+test('chat retry: rephrased retry preserves the exact screenshot and turn ID without writing an error as an assistant reply', async () => {
+  let first = true;
+  const ui = harness({ profile: { screenshot: 'data:image/png;base64,YQ==' }, fetchImpl: async () => {
+    if (first) { first = false; throw new Error('lost response'); }
+    return Response.json({ ok: true, text: 'Let us continue.', chips: [] });
+  } });
+  await ui.sendMessage('Please do'); assert.ok(ui.session.failedTurn);
+  assert.equal(ui.messages.filter(([role]) => role === 'agent').length, 0);
+  await ui.sendMessage('Please do again');
+  assert.equal(ui.requests.length, 2);
+  assert.deepEqual(ui.requests[0].payload, ui.requests[1].payload);
+  assert.equal(ui.messages.filter(([role]) => role === 'user').length, 1);
+  assert.equal(ui.session.failedTurn, null);
+});
+
+test('chat retry: rapid duplicate send is locked until the first attempt finishes', async () => {
+  let release;
+  const ui = harness({ fetchImpl: async () => new Promise(resolve => { release = resolve; }) });
+  const first = ui.sendMessage('Please help with my bread business');
+  await ui.sendMessage('Please help with my bread business'); assert.equal(ui.requests.length, 1);
+  release(Response.json({ ok: true, text: 'What have you tried?', chips: [] })); await first;
+  assert.equal(ui.messages.filter(([role]) => role === 'user').length, 1);
+});
+
+test('chat retry: a missing legacy capability releases thinking and shows recovery instead of throwing outside cleanup', async () => {
+  const ui = harness({ profile: { accessToken: null } }); await ui.sendMessage('Please help');
+  assert.equal(ui.requests.length, 0); assert.deepEqual(ui.thinking, [true, false]);
+  assert.match(ui.session.failedTurn.error, /access recovery/);
 });

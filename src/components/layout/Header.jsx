@@ -70,7 +70,7 @@ export default function Header({ onOpenReview }) {
       <header className="fixed top-4 left-0 right-0 z-40 px-3 sm:px-6 lg:px-6 flex justify-center pointer-events-none">
         <div
           style={{ transform: 'translateZ(0)', willChange: 'backdrop-filter' }}
-          className="pointer-events-auto relative w-full max-w-7xl h-16 sm:h-18 rounded-full border border-white/70 dark:border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] isolate"
+          className="pointer-events-auto relative w-full max-w-7xl h-16 sm:h-18 rounded-full border border-black/15 dark:border-black/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] isolate"
         >
           {/* Isolated backdrop layer — fixes the bottom-edge band artifact */}
           <div className="absolute inset-0 rounded-full bg-white/55 dark:bg-zinc-950/35 backdrop-blur-xl overflow-hidden" aria-hidden="true" />
@@ -182,7 +182,7 @@ export default function Header({ onOpenReview }) {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: reduceMotion ? 0 : '100%', opacity: reduceMotion ? 0 : 1 }}
               transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className="fixed top-0 right-0 bottom-0 z-50 w-[85%] sm:w-[60%] md:w-[45%] max-w-sm bg-zinc-50 dark:bg-zinc-950 border-l border-white/70 dark:border-white/10 shadow-2xl shadow-black/25 flex flex-col"
+              className="fixed top-0 right-0 bottom-0 z-50 w-[85%] sm:w-[60%] md:w-[45%] max-w-sm bg-zinc-50/90 dark:bg-zinc-950/90 backdrop-blur-xl border-l border-black/15 dark:border-white/10 shadow-2xl shadow-black/25 flex flex-col"
             >
               <div className="flex items-center justify-between p-6 border-b border-white/40 dark:border-white/[0.06]">
                 <span id="tmh-mobile-menu-title" className="font-semibold text-lg tracking-tight text-zinc-900 dark:text-white">

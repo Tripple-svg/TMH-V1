@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { applyAutomaticFlag, drainModerationNotifications, ModerationError } from '../_shared/haven-moderation.ts';
 
 const ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz', 'http://localhost:5173', 'http://localhost:5175', 'http://localhost:3000'];
@@ -36,6 +36,14 @@ serve(async (req) => {
     }
     if (!allowed) return json({ ok: false, error: 'Unauthorised' }, 401);
 
+    if (body?.action === 'retryNotifications') {
+      // Drain committed delivery work without changing anyone's access status.
+      const delivery = await drainModerationNotifications(supabase);
+      return json({ ok: !delivery.deliveryPending, ...delivery,
+        ...(delivery.deliveryPending ? { error: `Flag emails are pending (${delivery.deliveryErrors?.join(', ') || 'more queued notifications'}). Review Resend Logs, then retry.` } : {}),
+      }, delivery.deliveryPending ? 502 : 200);
+    }
+
     if (body?.source === 'ai') {
       if (!serviceCaller) return json({ ok: false, error: 'Internal service authentication required' }, 401);
       if (body.status && body.status !== 'yellow') return json({ ok: false, error: 'Automatic moderation can only issue a warning' }, 400);
@@ -65,8 +73,8 @@ serve(async (req) => {
     }
     if (!data || !STATUSES.includes(data.flagStatus)) return json({ ok: false, error: "Unable to update moderation" }, 500);
     const delivery = await drainModerationNotifications(supabase, { reviewId: data.reviewId, visitorId: data.visitorId });
-    const saved = { review: data.review, visitor: data.visitor, flagStatus: data.flagStatus, deliveryPending: delivery.deliveryPending };
-    if (delivery.deliveryPending) return json({ ok: false, ...saved, error: "Flag saved, but notifications could not all be delivered. Please retry." }, 502);
+    const saved = { review: data.review, visitor: data.visitor, flagStatus: data.flagStatus, deliveryPending: delivery.deliveryPending, deliveryErrors: delivery.deliveryErrors || [] };
+    if (delivery.deliveryPending) return json({ ok: false, ...saved, error: `Flag saved, but notifications are pending (${delivery.deliveryErrors?.join(', ') || 'delivery diagnostic unavailable'}). Review Resend Logs, then retry.` }, 502);
     return json({ ok: true, ...saved });
   } catch (error) {
     if (error instanceof ModerationError) return json({ ok: false, error: error.message }, error.status);

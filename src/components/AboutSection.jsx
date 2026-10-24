@@ -12,7 +12,7 @@ const TEAM = [
     tag: 'Leadership & Execution',
     image: '/Francis.jpeg',
     initials: 'FF',
-    bio: 'Francis leads TMH. He sets the direction, makes the calls, and drives execution. Ideas turn into shipped work because he makes sure they do.',
+    bio: 'Francis leads the direction of TMH, connecting the agency’s brand strategy with its day-to-day delivery. His focus is on what the team builds, who it serves, and the standard of work that leaves the agency.',
   },
   {
     name: 'Paschal Ikiriko',
@@ -20,7 +20,7 @@ const TEAM = [
     tag: 'Strategy & Operations',
     image: '/Paschalll.jpeg',
     initials: 'PI',
-    bio: 'Paschal is the strategist in the room. He brings a constant flow of ideas and sharpens the thinking behind every move. He runs operations and keeps the engine going.',
+    bio: 'Paschal brings strategy and operations together at TMH. He helps translate ideas into clear priorities, coordinates delivery, and keeps the team’s work aligned with the needs of the business.',
   },
   {
     name: 'Great Jordan',
@@ -28,7 +28,7 @@ const TEAM = [
     tag: 'Content & Communication',
     image: null,
     initials: 'GJ',
-    bio: 'Jordan is the voice of TMH. He leads content and communications across every platform, from the blog to X. He is also stepping in front of the camera as the face of the brand.',
+    bio: 'Jordan leads TMH’s content and communications, shaping how the agency’s thinking reaches its audience. His work connects the brand’s written voice, social content, and on-camera presence.',
   },
   {
     name: 'Obabi Babalola',
@@ -36,15 +36,15 @@ const TEAM = [
     tag: 'Brand Strategy',
     image: null,
     initials: 'OB',
-    bio: 'Obabi is our brand strategy advisor, based in Canada. He was one of the key minds behind TMH from the very start and continues to shape how we think about positioning and identity.',
+    bio: 'Obabi advises TMH on brand positioning and identity. Based in Canada and involved from the agency’s early days, he contributes an outside perspective to how TMH defines its own brand and approaches strategy.',
   },
   {
     name: 'Yakubu Dalil',
     role: 'CTO & Tech Lead',
     tag: 'Technology',
     image: '/Dalil.jpeg',
-    initials: 'OD',
-    bio: 'Dalil is our CTO and tech lead. He built the preloader on this site, brings sharp technical ideas, and handles the engineering behind everything TMH builds.',
+    initials: 'YD',
+    bio: 'Dalil leads technology and engineering at TMH. His role spans technical direction, website development, and the systems behind the agency’s digital products, with a focus on reliable, usable experiences.',
   },
 ];
 
@@ -148,7 +148,7 @@ export default function AboutSection() {
                   onClick={() => openModal(i)}
                   className="group relative flex items-center gap-4 p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 hover:border-zinc-400 dark:hover:border-zinc-600 transition-all cursor-pointer text-left w-full sm:w-[calc(50%-0.5rem)]"
                 >
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden shrink-0 border-2 border-zinc-300 dark:border-zinc-700 bg-zinc-900 flex items-center justify-center group-hover:scale-105 transition-transform">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden shrink-0 border-2 border-zinc-700 dark:border-zinc-300 bg-zinc-900 flex items-center justify-center group-hover:scale-105 transition-transform">
                     {hasPhoto ? (
                       <img
                         src={person.image}
@@ -174,7 +174,7 @@ export default function AboutSection() {
                     </p>
                   </div>
 
-                  <div className="shrink-0 w-7 h-7 rounded-full border border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400 group-hover:text-white group-hover:border-blue-500/50 group-hover:bg-blue-500/10 transition-all">
+                  <div className="shrink-0 w-7 h-7 rounded-full border border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-white group-hover:border-zinc-500 group-hover:bg-zinc-200/50 dark:group-hover:bg-white/5 transition-all">
                     <ChevronRight className="w-3.5 h-3.5" />
                   </div>
                 </motion.button>
