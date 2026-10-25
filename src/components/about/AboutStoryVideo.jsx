@@ -51,10 +51,11 @@ export default function AboutStoryVideo({ videoSrc, poster }) {
 
       {/* Play overlay */}
       {!playing && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-zinc-100 text-zinc-950 flex items-center justify-center shadow-2xl shadow-black/25">
             <Play className="w-7 h-7 sm:w-8 sm:h-8 text-zinc-950 ml-1" fill="currentColor" />
           </div>
+          {!videoSrc && <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-400">Our story film is coming soon</span>}
         </div>
       )}
 

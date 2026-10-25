@@ -80,6 +80,22 @@ function AppInner() {
     }
   };
 
+  const reviewLinkHandled = useRef(false);
+  useEffect(() => {
+    if (loading || reviewLinkHandled.current) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('review') !== 'continue') return;
+    const timer = window.setTimeout(() => {
+      reviewLinkHandled.current = true;
+      url.searchParams.delete('review');
+      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+      // Navigation never restores a capability or bypasses ownership verification.
+      if (hasExistingReview()) openDrawer('audit', { profileData: { ...getSavedReviewFormData(), isReturningUser: true }, returning: true });
+      else openDrawer('support');
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loading, hasExistingReview, getSavedReviewFormData, openDrawer]);
+
   const handleReviewSubmit = async (payload) => {
     const tracking = trackingRef.current || {};
 

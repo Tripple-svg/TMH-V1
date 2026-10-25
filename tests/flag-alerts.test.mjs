@@ -98,7 +98,7 @@ test('flag alert: content comes from the database snapshot and recipients are fi
   assert.equal(mail[0].body.subject, 'URGENT: User Flagged - red');
   assert.ok(mail[0].body.text.startsWith('User owner@example.com has been flagged as red. Reason Haven flagged them: Terms violation. Please review in the Admin Dashboard.'));
   assert.match(mail[0].body.text, /Name: Not recorded/);
-  assert.equal(mail[0].body.html, undefined);
+  assert.match(mail[0].body.html, /Review in Admin/);
   assert.ok(db.rows[0].sent_at);
   assert.ok(Number.isFinite(Date.parse(db.rows[0].sent_at)));
   assert.equal(db.rows[0].team_email_id, 'message-1');

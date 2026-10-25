@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { webcrypto, createHmac } from 'node:crypto';
-import { transformSync } from 'esbuild';
+import { buildSync } from 'esbuild';
 
 const secrets = { SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-test', PAYSTACK_SECRET_KEY: 'paystack-test', CALENDLY_WEBHOOK_SECRET: 'signing-test', RESEND_API_KEY: 'resend-test', ADMIN_PASSWORD: 'admin-test' };
 function loadHandler(name, { client = {}, fetch = () => { throw new Error('Unexpected network call'); }, env = {} } = {}) {
   let handler;
   const source = readFileSync(new URL(`../supabase/functions/${name}/index.ts`, import.meta.url), 'utf8');
-  const code = transformSync(source, { loader: 'ts', format: 'cjs' }).code;
+  const code = buildSync({ stdin: { contents: source, loader: 'ts', resolveDir: new URL(`../supabase/functions/${name}/`, import.meta.url).pathname.replace(/^\/(\w:)/, '$1') }, bundle: true, write: false, format: 'cjs', platform: 'node', external: ['https://*'] }).outputFiles[0].text;
   vm.runInNewContext(code, {
     require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: () => client },
     Deno: { env: { get: (name) => ({ ...secrets, ...env })[name] } },
@@ -50,7 +50,7 @@ test('Task 5: only verified NGN payments at either allowed price receive one-hou
       fetch: async (url, options) => {
         assert.equal(options.headers.Authorization, 'Bearer paystack-test');
         assert.match(url, /\/verify\/UNSEEN_123$/);
-        return response({ status: true, data: { reference: 'UNSEEN_123', status: 'success', amount, currency: 'NGN' } });
+        return response({ status: true, data: { reference: 'UNSEEN_123', status: 'success', amount, currency: 'NGN', customer: { email: 'buyer@example.com' } } });
       },
       client: { storage: {
         getBucket: async () => ({ data: { public: false } }),
@@ -61,7 +61,7 @@ test('Task 5: only verified NGN payments at either allowed price receive one-hou
         } }),
       } },
     });
-    const result = await handler(request({ reference: 'UNSEEN_123' }));
+    const result = await handler(request({ reference: 'UNSEEN_123', email: 'buyer@example.com' }));
     const body = await result.json();
     assert.equal(body.ok, amount !== 1);
     if (body.ok) assert.equal(body.expiresIn, 3600);
@@ -79,7 +79,7 @@ test('Task 5: invalid references, origins, methods and missing secrets cannot tr
   assert.equal((await handler(request({}, {}, 'GET'))).status, 405);
   assert.equal((await handler(request({}, {}, 'OPTIONS'))).headers.get('Access-Control-Allow-Origin'), 'http://localhost:5175');
   const missingSecret = loadHandler('verify-paystack', { env: { PAYSTACK_SECRET_KEY: undefined } });
-  assert.equal((await missingSecret(request({ reference: 'UNSEEN_123' }))).status, 500);
+  assert.equal((await missingSecret(request({ reference: 'UNSEEN_123', email: 'buyer@example.com' }))).status, 500);
 });
 
 test('Task 5: failed, wrong-reference, wrong-currency and public-bucket payments never receive a URL', async () => {
@@ -88,14 +88,14 @@ test('Task 5: failed, wrong-reference, wrong-currency and public-bucket payments
       fetch: async () => response({ status: true, data: { reference: 'UNSEEN_123', status: 'success', amount: 10000, currency: 'NGN', ...patch } }),
       client: { storage: { getBucket: async () => ({ data: { public: true } }) } },
     });
-    assert.equal((await (await handler(request({ reference: 'UNSEEN_123' }))).json()).ok, false);
+    assert.equal((await (await handler(request({ reference: 'UNSEEN_123', email: 'buyer@example.com' }))).json()).ok, false);
   }
 });
 
 function database(seed) {
   const rows = structuredClone(seed);
   const calls = [];
-  const client = { from(table) {
+  const client = { rpc: async (name, args) => { calls.push({ action: 'rpc', name, values: args.p_booking }); return { error: null }; }, from(table) {
     let filters = [], sort = null, cap = Infinity, offset = 0, action = 'select', values;
     const run = async (single = false) => {
       calls.push({ table, action, values });
@@ -127,11 +127,30 @@ function database(seed) {
   return { client, rows, calls };
 }
 
-const booking = (email = 'owner@example.com') => ({ event: 'invitee.created', payload: { email, name: 'Owner', event: { start_time: '2026-10-20T17:00:00Z' } } });
+const booking = (email = 'owner@example.com') => ({ event: 'invitee.created', payload: { email, name: 'Owner', uri: 'https://api.calendly.com/scheduled_events/event/invitees/invitee', event: { uri: 'https://api.calendly.com/scheduled_events/event', start_time: '2026-10-20T17:00:00Z' } } });
 function signedRequest(body, { timestamp = Math.floor(Date.now() / 1000), signatureBody = body, secret = 'signing-test' } = {}) {
   const signature = createHmac('sha256', secret).update(`${timestamp}.${JSON.stringify(signatureBody)}`).digest('hex');
   return request(body, { 'Calendly-Webhook-Signature': `t=${timestamp},v1=${signature}` });
 }
+
+test('purchase recovery rejects a mismatched checkout email without signing a download or guidance token', async () => {
+  let signed = 0;
+  const handler = loadHandler('verify-paystack', { fetch: async () => response({ status: true, data: { reference: 'UNSEEN_123', status: 'success', amount: 10000, currency: 'NGN', customer: { email: 'real-buyer@example.com' } } }),
+    client: { storage: { getBucket() { signed++; throw new Error('Must not reach storage'); } } } });
+  const result = await (await handler(request({ reference: 'UNSEEN_123', email: 'someone@example.com' }))).json();
+  assert.equal(result.ok, false); assert.equal(signed, 0); assert.equal(result.playbookAccessToken, undefined);
+});
+
+test('Calendly cancellation is signature checked, saved and never sends a customer confirmation', async () => {
+  const db = database({ brand_reviews: [], booking_intents: [] });
+  const handler = loadHandler('calendly-webhook', { client: db.client });
+  const body = booking(); body.event = 'invitee.canceled';
+  assert.equal((await handler(signedRequest(body))).status, 200);
+  const record = db.calls.find((call) => call.name === 'record_strategy_call_booking');
+  assert.equal(record.values.status, 'canceled');
+  assert.equal(record.values.source, 'calendly');
+  assert.equal(record.values.invitee_uri, body.payload.uri);
+});
 
 test('Task 7: capture validates service/email and logs abandoned intent without sending email', async () => {
   const db = database({ booking_intents: [] });
@@ -157,7 +176,7 @@ test('Task 7: webhook rejects forged, tampered, expired, future and missing sign
   assert.equal((await handler(signedRequest(booking(), { signatureBody: booking('other@example.com') }))).status, 401);
   assert.equal((await handler(signedRequest(booking(), { timestamp: Math.floor(Date.now() / 1000) - 181 }))).status, 401);
   assert.equal((await handler(signedRequest(booking(), { timestamp: Math.floor(Date.now() / 1000) + 181 }))).status, 401);
-  assert.equal((await handler(signedRequest({ event: 'invitee.canceled' }))).status, 200);
+  assert.equal((await handler(signedRequest({ event: 'routing_form_submission.created' }))).status, 200);
 });
 
 test('Task 7: review path creates briefing with only last five audit messages and sends once across webhook retries', async () => {
@@ -210,11 +229,11 @@ test('Task 7: services path selects the newest intent and sends correct service 
   }
 });
 
-test('Task 7: unmatched webhook returns matched:false with no inserts or sends', async () => {
+test('Task 7: unmatched webhook records a direct booking without sending a confirmation', async () => {
   const db = database({ brand_reviews: [], booking_intents: [] });
   const handler = loadHandler('calendly-webhook', { client: db.client });
   assert.deepEqual(await (await handler(signedRequest(booking()))).json(), { ok: true, matched: false });
-  assert.ok(db.calls.every((call) => call.action === 'select'));
+  assert.equal(db.calls.filter((call) => call.name === 'record_strategy_call_booking').length, 1);
 });
 
 test('Task 7: sender rejects anon callers, retries failed delivery, and deduplicates concurrent deliveries', async () => {

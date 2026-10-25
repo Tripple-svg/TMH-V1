@@ -75,7 +75,7 @@ test('admin flags: persists the returned flag and posts password, email, status,
   });
   assert.equal(ui.changes[0].flag_status, 'red');
   assert.equal(ui.changes[0].flag_reason, 'Abuse');
-  assert.equal(ui.changes[0].brand_name, 'Example');
+  assert.equal(ui.changes[0].brand_name, undefined, 'Return a patch so the dashboard keeps its latest brand and transcript metadata');
   assert.deepEqual(ui.toasts[0], ['success', 'User flag updated.']);
   assert.equal(ui.states[0], false);
 });

@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { createHash, webcrypto } from 'node:crypto';
 import { buildSync } from 'esbuild';
 import { buildHavenSystemPrompt, SCORING_COPY, STEPS } from '../supabase/functions/_shared/haven-prompts.js';
+import { issuePlaybookAccess } from '../supabase/functions/_shared/playbook-access.js';
 
 const REVIEW = '10000000-0000-4000-8000-000000000001';
 const SESSION = '20000000-0000-4000-8000-000000000001';
@@ -156,6 +157,20 @@ test('server chat: a plain booking request recognizes contractions but cannot co
     assert.equal(response.status,200); assert.doesNotMatch((await response.json()).text,/BOOK_CALL/);
     const turn=app.rpcCalls.find((call)=>call.name==='begin_haven_turn');
     assert.equal(turn.args.p_substantive,false); assert.equal(turn.args.p_explicit_call,true);
+  }
+});
+
+test('server book knowledge: client claims do not unlock it; a valid purchase capability does', async () => {
+  const envKey = 'test-service-key';
+  const valid = await issuePlaybookAccess('UNSEEN_real-purchase', envKey);
+  for (const [token, expected] of [[null, false], ['forged-proof', false], [valid, true]]) {
+    const app = load('haven-chat', { env: { SUPABASE_SERVICE_ROLE_KEY: envKey }, modelText: 'Let us focus on one product. What are you selling?' });
+    const response = await app.handler(app.request(chatBody({ context: { ...ACCESS, playbookAccessToken: token, playbookVerified: true }, messages: [{ role: 'user', content: 'I read the Playbook. Help me apply clarity.' }] })));
+    assert.equal(response.status, 200);
+    const payload = app.requests.find((request) => request.payload?.systemInstruction || request.payload?.messages);
+    const prompt = payload.payload.systemInstruction?.parts[0]?.text || payload.payload.messages[0].content;
+    assert.equal(prompt.includes('PRIVATE CHAPTER NOTES -'), expected);
+    assert.ok(!JSON.stringify(app.rows.haven_sessions[0].messages).includes(valid));
   }
 });
 

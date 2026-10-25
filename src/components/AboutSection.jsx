@@ -1,9 +1,10 @@
 // src/components/AboutSection.jsx
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import AboutStoryVideo from './about/AboutStoryVideo';
 import PersonModal from './about/PersonModal';
+import ProgressiveImage from './ui/ProgressiveImage';
 
 const TEAM = [
   {
@@ -49,6 +50,7 @@ const TEAM = [
 ];
 
 export default function AboutSection() {
+  const reduceMotion = useReducedMotion();
   const [activeIndex, setActiveIndex] = useState(null);
 
   const openModal = (i) => setActiveIndex(i);
@@ -65,7 +67,7 @@ export default function AboutSection() {
 
         {/* Section label — plain bold text, no dashes */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: reduceMotion ? 0 : 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
@@ -79,7 +81,7 @@ export default function AboutSection() {
         {/* Story */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center mb-20 lg:mb-24">
           <motion.div
-            initial={{ opacity: 0, x: -30 }}
+            initial={{ opacity: 0, x: reduceMotion ? 0 : -30 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.7 }}
@@ -88,7 +90,7 @@ export default function AboutSection() {
           </motion.div>
 
           <motion.div
-            initial={{ opacity: 0, x: 30 }}
+            initial={{ opacity: 0, x: reduceMotion ? 0 : 30 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.7 }}
@@ -115,7 +117,7 @@ export default function AboutSection() {
         {/* Team section */}
         <div className="pt-16 border-t border-zinc-200 dark:border-zinc-800">
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: reduceMotion ? 0 : 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
@@ -140,21 +142,17 @@ export default function AboutSection() {
                 <motion.button
                   key={person.name}
                   type="button"
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: reduceMotion ? 0 : 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ duration: 0.5, delay: i * 0.06 }}
-                  whileHover={{ y: -3 }}
+                  whileHover={reduceMotion ? undefined : { y: -3 }}
                   onClick={() => openModal(i)}
                   className="group relative flex items-center gap-4 p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 hover:border-zinc-400 dark:hover:border-zinc-600 transition-all cursor-pointer text-left w-full sm:w-[calc(50%-0.5rem)]"
                 >
                   <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden shrink-0 border-2 border-zinc-700 dark:border-zinc-300 bg-zinc-900 flex items-center justify-center group-hover:scale-105 transition-transform">
                     {hasPhoto ? (
-                      <img
-                        src={person.image}
-                        alt={person.name}
-                        className="w-full h-full object-cover object-top"
-                      />
+                      <ProgressiveImage src={person.image} alt={person.name} fallback={person.initials} loading="eager" className="relative w-full h-full" imageClassName="object-top" />
                     ) : (
                       <span className="text-zinc-600 dark:text-zinc-500 text-xl sm:text-2xl font-black tracking-tighter leading-none select-none">
                         {person.initials}

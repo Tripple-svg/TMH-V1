@@ -181,6 +181,8 @@ async function callHavenAPI({ context, messages, screenshot, scope, signal, requ
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseAnonKey) throw new Error('Supabase is not configured.');
 
+  let playbookAccessToken;
+  try { playbookAccessToken = JSON.parse(localStorage.getItem('tmh_playbook_purchase') || 'null')?.accessToken; } catch { /* No verified purchase on this device. */ }
   const response = await fetch(`${supabaseUrl}/functions/v1/haven-chat`, {
     method: 'POST',
     headers: {
@@ -189,7 +191,7 @@ async function callHavenAPI({ context, messages, screenshot, scope, signal, requ
       apikey: supabaseAnonKey,
     },
     signal,
-    body: JSON.stringify({ context, messages, screenshot, scope, requestId, ...(action ? { action } : {}), noticeVersion: CHAT_NOTICE_VERSION }),
+    body: JSON.stringify({ context: { ...context, playbookAccessToken }, messages, screenshot, scope, requestId, ...(action ? { action } : {}), noticeVersion: CHAT_NOTICE_VERSION }),
   });
   const data = await readHavenResponse(response);
   return { ...data, text: data.text || '', chips: data.chips || [] };

@@ -34,6 +34,7 @@ try {
   // external integrations are deliberately excluded from this offline fixture.
   for (const file of ['schema.sql', ...[
     '20261015000001_brand_reviews_email_unique.sql',
+    '20261015000002_booking_intents.sql',
     '20261019000000_user_flags.sql',
     '20261021000000_playbook_purchases.sql',
     '20261021000001_flag_alert_notifications.sql',
@@ -44,12 +45,21 @@ try {
     '20261023000005_purchase_delivery.sql',
     '20261024000000_email_delivery_diagnostics.sql',
     '20261024000001_haven_routing_state.sql',
+    '20261025000000_email_templates.sql',
+    '20261025000001_strategy_call_bookings.sql',
   ].map((name) => `migrations/${name}`)]) {
     await db.exec(await readFile(new URL(`../supabase/${file}`, import.meta.url), 'utf8'));
+    if (file === 'schema.sql') await db.exec("insert into strategy_call_bookings(full_name,email,whatsapp,booked_date,booked_time) values('Legacy Client','legacy@example.com','+2340000000000','2026-10-26','5:00 PM');");
   }
   await check('all selected migrations compile and commit', async () => {
     assert.equal(await count('brand_reviews'), 0);
     assert.equal(await count('haven_chat_turns'), 0);
+  });
+  await check('bookings migration preserves historical identities, slot fields and Lagos time', async () => {
+    const [legacy] = await query("select * from strategy_call_bookings where email='legacy@example.com'");
+    assert.equal(legacy.id, 1); assert.equal(legacy.status, 'confirmed'); assert.equal(legacy.booked_time, '5:00 PM');
+    assert.equal(legacy.source, 'legacy'); assert.equal(new Date(legacy.start_time).toISOString(), '2026-10-26T16:00:00.000Z');
+    await query('delete from strategy_call_bookings where id=1');
   });
   const review = randomUUID(), audit = randomUUID(), visitor = randomUUID(), support = randomUUID(), service = randomUUID();
   const payload = { id: review, email: 'owner@example.com', full_name: 'Test Owner', brand_name: 'Test Brand', whatsapp: '+2340000000000', platform_type: 'none', agreed_to_terms: true };
@@ -135,6 +145,35 @@ try {
     await rpc('set_haven_moderation_flag', [null, visitor, 'white', null, null]);
     assert.equal(await scalar('select flag_status from brand_reviews where id=$1', [review]), 'white');
     assert.equal(await scalar('select flag_status from haven_chat_visitors where id=$1', [visitor]), 'white');
+  });
+  await check('unrestricted audit chat persists new turns and keeps its original transcript', async () => {
+    const before = await scalar('select messages from haven_sessions where id=$1', [audit]);
+    await rpc('set_haven_moderation_flag', ['owner@example.com', null, 'red', 'Review', audit]);
+    await rpc('set_haven_moderation_flag', ['owner@example.com', null, 'white', 'Access restored', audit]);
+    await ensure(audit, 'audit', review);
+    const id = randomUUID();
+    await rpc('begin_haven_turn', [audit, id, 'I am back after access was restored', false, true, false, hash]);
+    await rpc('complete_haven_turn', [audit, id, JSON.stringify({ ok: true, text: 'Let us continue with your brand.' }), false, 'CUSTOMER_SUPPORT_OPEN']);
+    const after = await scalar('select messages from haven_sessions where id=$1', [audit]);
+    assert.deepEqual(after.slice(0,before.length), before);
+    assert.equal(after.at(-2).content, 'I am back after access was restored');
+    assert.equal(after.at(-1).content, 'Let us continue with your brand.');
+    assert.equal(await count('haven_sessions', "review_id=$1 and scope='audit'", [review]), 1);
+  });
+  await check('Calendly retries deduplicate bookings, cancellations win and reschedules remain separate', async () => {
+    const data = { invitee_uri: 'https://api.calendly.com/scheduled_events/event/invitees/person', event_uri: 'https://api.calendly.com/scheduled_events/event',
+      email: 'owner@example.com', full_name: 'Test Owner', event_name: 'Strategy call', start_time: '2026-10-30T12:00:00Z', status: 'active', source: 'lead', review_id: review };
+    const save = (patch = {}) => rpc('record_strategy_call_booking', [JSON.stringify({ ...data, ...patch })]);
+    await save(); await save(); assert.equal(await count('strategy_call_bookings'), 1);
+    await save({ status: 'canceled' }); await save();
+    assert.equal(await scalar('select status from strategy_call_bookings where invitee_uri=$1', [data.invitee_uri]), 'canceled');
+    await save({ invitee_uri: data.invitee_uri + '-rescheduled', start_time: '2026-11-01T12:00:00Z' });
+    assert.equal(await count('strategy_call_bookings'), 2);
+    await denied(() => save({ invitee_uri: data.invitee_uri + '-invalid', start_time: null }));
+    await db.exec("set role anon; select set_config('request.jwt.claim.role','anon',false);");
+    await denied(() => query('select * from strategy_call_bookings'), '42501');
+    await denied(() => save(), '42501');
+    await db.exec("reset role; select set_config('request.jwt.claim.role','service_role',false);");
   });
   await check('guest alerts identify the support session without inventing a name/email', async () => {
     const guest = randomUUID(), session = randomUUID(); await ensure(session, 'support', null, hash, guest);

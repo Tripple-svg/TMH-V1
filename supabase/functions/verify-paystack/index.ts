@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { issuePlaybookAccess } from '../_shared/playbook-access.js';
 
 const ALLOWED_ORIGINS = [
   'https://themarketinghaven.xyz',
@@ -26,9 +27,11 @@ serve(async (req) => {
   try {
     const body = await req.json().catch(() => null);
     const reference = typeof body?.reference === 'string' ? body.reference : '';
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     if (!/^UNSEEN_[A-Za-z0-9_-]{1,120}$/.test(reference)) {
       return json({ ok: false, error: 'Invalid payment reference' }, 400);
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return json({ ok: false, error: 'Enter the email used at checkout.' }, 400);
     const secret = Deno.env.get('PAYSTACK_SECRET_KEY');
     const url = Deno.env.get('SUPABASE_URL');
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -41,7 +44,8 @@ serve(async (req) => {
     const payment = await verification.json();
     if (!verification.ok || payment?.status !== true || payment?.data?.status !== 'success'
       || payment.data.reference !== reference || payment.data.currency !== 'NGN'
-      || ![963900, 10000].includes(payment.data.amount)) {
+      || ![963900, 10000].includes(payment.data.amount)
+      || typeof payment.data.customer?.email !== 'string' || payment.data.customer.email.trim().toLowerCase() !== email) {
       return json({ ok: false, error: 'Payment not verified' });
     }
     const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
@@ -52,7 +56,7 @@ serve(async (req) => {
     const { data, error } = await supabase.storage.from('playbook-private')
       .createSignedUrl('The_Unseen_Playbook.pdf', 3600, { download: 'The_Unseen_Playbook.pdf' });
     if (error || !data?.signedUrl) return json({ ok: false, error: 'Download unavailable' }, 503);
-    return json({ ok: true, url: data.signedUrl, expiresIn: 3600 });
+    return json({ ok: true, url: data.signedUrl, expiresIn: 3600, playbookAccessToken: await issuePlaybookAccess(reference, serviceKey) });
   } catch {
     console.error('verify-paystack: verification or signing failed');
     return json({ ok: false, error: 'Payment verification unavailable' }, 502);

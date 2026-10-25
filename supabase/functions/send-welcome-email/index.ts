@@ -3,13 +3,15 @@
 // Sends one welcome email via Resend. Idempotent.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
+import { isInternalRequest } from '../_shared/internal-auth.js';
+import { editorialEmail } from '../_shared/email-template.js';
+import { deliverEmail, mailConfiguration, MailDeliveryError } from '../_shared/resend-delivery.js';
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-const FROM_ADDRESS     = 'The Marketing Haven <info@themarketinghaven.xyz>';
 const REPLY_TO_ADDRESS = 'info@themarketinghaven.xyz';
 const SITE_URL         = 'https://themarketinghaven.xyz';
 
@@ -44,98 +46,18 @@ function firstNameOf(fullName: string | null | undefined): string {
   return trimmed.split(/\s+/)[0];
 }
 
-// Returns the body copy for each path. Nothing is shared across the three.
+// Names are escaped by the shared template, never interpolated as HTML.
 function buildBodies(firstName: string, brandName: string, platformType: string | null | undefined) {
-  const brand = brandName || 'your brand';
-
-  if (platformType === 'website') {
-    const text = `Hi ${firstName},
-
-Thanks for submitting ${brand} — we've got it.
-
-Haven is going through your website right now. Your score and the first read will show up in the drawer on the site.
-
-If you closed the tab, you can pick up right where you left off:
-
-  → Continue the review: ${SITE_URL}
-
-Team Haven`;
-
-    const html = `<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#0a0a0a;">
-  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#e5e5e5;max-width:560px;margin:0 auto;padding:32px 24px;line-height:1.6;font-size:15px;">
-    <p>Hi ${firstName},</p>
-    <p>Thanks for submitting <strong>${brand}</strong> — we've got it.</p>
-    <p>Haven is going through your <strong>website</strong> right now. Your score and the first read will show up in the drawer on the site.</p>
-    <p>If you closed the tab, you can pick up right where you left off:</p>
-    <p style="margin:24px 0;">
-      <a href="${SITE_URL}" style="color:#60a5fa;text-decoration:none;">→ Continue the review</a>
-    </p>
-    <p style="color:#a3a3a3;margin-top:32px;">Team Haven</p>
-  </div>
-</body></html>`;
-
-    return { text, html };
-  }
-
-  if (platformType === 'social') {
-    const text = `Hi ${firstName},
-
-Thanks for submitting ${brand} — we've got it.
-
-Haven is reading the profile screenshot you shared. Your profile score and the first read will show up in the drawer on the site.
-
-If you closed the tab, you can pick up right where you left off:
-
-  → Continue the review: ${SITE_URL}
-
-Team Haven`;
-
-    const html = `<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#0a0a0a;">
-  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#e5e5e5;max-width:560px;margin:0 auto;padding:32px 24px;line-height:1.6;font-size:15px;">
-    <p>Hi ${firstName},</p>
-    <p>Thanks for submitting <strong>${brand}</strong> — we've got it.</p>
-    <p>Haven is reading the <strong>profile screenshot</strong> you shared. Your profile score and the first read will show up in the drawer on the site.</p>
-    <p>If you closed the tab, you can pick up right where you left off:</p>
-    <p style="margin:24px 0;">
-      <a href="${SITE_URL}" style="color:#60a5fa;text-decoration:none;">→ Continue the review</a>
-    </p>
-    <p style="color:#a3a3a3;margin-top:32px;">Team Haven</p>
-  </div>
-</body></html>`;
-
-    return { text, html };
-  }
-
-  // platformType === 'none' (or unknown) — no score path.
-  const text = `Hi ${firstName},
-
-Thanks for submitting ${brand} — we've got it.
-
-You told us there's no site or social yet. That's fine — that's what Haven is for. Haven will ask you a few questions to understand what you're building and point you at the right first step.
-
-If you closed the tab:
-
-  → Pick up here: ${SITE_URL}
-
-Team Haven`;
-
-  const html = `<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#0a0a0a;">
-  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#e5e5e5;max-width:560px;margin:0 auto;padding:32px 24px;line-height:1.6;font-size:15px;">
-    <p>Hi ${firstName},</p>
-    <p>Thanks for submitting <strong>${brand}</strong> — we've got it.</p>
-    <p>You told us there's no site or social yet. That's fine — that's what Haven is for. Haven will ask you a few questions to understand what you're building and point you at the right first step.</p>
-    <p>If you closed the tab:</p>
-    <p style="margin:24px 0;">
-      <a href="${SITE_URL}" style="color:#60a5fa;text-decoration:none;">→ Pick up here</a>
-    </p>
-    <p style="color:#a3a3a3;margin-top:32px;">Team Haven</p>
-  </div>
-</body></html>`;
-
-  return { text, html };
+  const reading = platformType === 'website'
+    ? 'Open Haven to see whether your website could be read and scored, then continue the conversation about your brand.'
+    : platformType === 'social'
+      ? 'Open Haven to see whether the profile screenshot could be read and scored, then continue the conversation about your brand.'
+      : 'Haven will ask a few questions about what you are building and help you find a useful first step. You do not need a website to begin.';
+  const paragraphs = [`Hi ${firstName},`, `We have received the brand review for ${brandName || 'your brand'}.`, reading,
+    'Return on the same browser and device to continue your saved review. If the secure access key is missing, contact info@themarketinghaven.xyz so we can help verify ownership.'];
+  return { text: `${paragraphs.join('\n\n')}\n\nContinue the review: ${SITE_URL}/?review=continue\n\nTeam Haven`,
+    html: editorialEmail({ label: 'YOUR BRAND REVIEW', title: 'Your next step starts here.', paragraphs,
+      button: { label: 'Continue the review', href: `${SITE_URL}/?review=continue` } }) };
 }
 
 serve(async (req) => {
@@ -154,6 +76,7 @@ serve(async (req) => {
       return json({ ok: false, error: 'Server misconfigured' }, origin, 500);
     }
 
+    if (!isInternalRequest(req, SUPABASE_SERVICE_ROLE_KEY)) return json({ ok: false, error: 'Unauthorised' }, origin, 401);
     const payload = await req.json().catch(() => null);
     const record = payload?.record;
 
@@ -161,21 +84,12 @@ serve(async (req) => {
       return json({ ok: false, error: 'No record in payload' }, origin, 400);
     }
 
-    if (record.welcome_email_sent === true) {
-      return json({ ok: true, skipped: 'already sent' }, origin);
-    }
-
-    const to = typeof record.email === 'string' ? record.email.trim() : '';
-    if (!to) {
-      return json({ ok: false, error: 'No email on record' }, origin, 400);
-    }
-
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
     });
     const { data: existing, error: lookupError } = await supabase
       .from('brand_reviews')
-      .select('id, welcome_email_sent')
+      .select('id, email, full_name, brand_name, platform_type, welcome_email_sent, welcome_email_id')
       .eq('id', record.id)
       .maybeSingle();
 
@@ -190,45 +104,31 @@ serve(async (req) => {
       return json({ ok: true, skipped: 'already sent' }, origin);
     }
 
-    const firstName = firstNameOf(record.full_name);
-    const brandName = typeof record.brand_name === 'string' ? record.brand_name : '';
+    const firstName = firstNameOf(existing.full_name);
+    const brandName = typeof existing.brand_name === 'string' ? existing.brand_name : '';
     const subject   = `Your brand review is underway, ${firstName}`;
-    const { text, html } = buildBodies(firstName, brandName, record.platform_type);
+    const { text, html } = buildBodies(firstName, brandName, existing.platform_type);
 
-    const resendRes = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: FROM_ADDRESS,
-        to: [to],
-        reply_to: REPLY_TO_ADDRESS,
-        subject,
-        text,
-        html,
-      }),
-    });
-
-    if (!resendRes.ok) {
-      const detail = await resendRes.text().catch(() => '');
-      console.error('Resend rejected:', resendRes.status, detail);
-      return json({ ok: false, error: 'Resend rejected', status: resendRes.status, detail }, origin, 502);
+    const { data: attempt, error: attemptError } = await supabase.from('brand_reviews')
+      .update({ welcome_email_attempted_at: new Date().toISOString(), welcome_email_last_error: null }).eq('id', existing.id).select('id').maybeSingle();
+    if (attemptError || !attempt) return json({ ok: false, error: 'Welcome email tracking is unavailable. Apply the email migration.' }, origin, 503);
+    let acceptedId = existing.welcome_email_id;
+    try {
+      if (!acceptedId) acceptedId = await deliverEmail(mailConfiguration(Deno.env), {
+        to: [existing.email], reply_to: REPLY_TO_ADDRESS, subject, text, html,
+      }, `review-welcome/${existing.id}`);
+      const { data: saved, error } = await supabase.from('brand_reviews')
+        .update({ welcome_email_sent: true, welcome_email_id: acceptedId, welcome_email_last_error: null }).eq('id', existing.id).select('id').maybeSingle();
+      if (error || !saved) throw new MailDeliveryError('welcome_delivery_marker_failed', 'Email was accepted but its saved status needs repair. Retry safely.', 500);
+    } catch (error) {
+      const code = error instanceof MailDeliveryError ? error.code : 'welcome_delivery_failed';
+      await supabase.from('brand_reviews').update({ welcome_email_last_error: code, ...(acceptedId ? { welcome_email_id: acceptedId } : {}) }).eq('id', existing.id).eq('welcome_email_sent', false);
+      return json({ ok: false, code, error: 'Welcome email is pending. Review its saved delivery code before retrying.' }, origin, 502);
     }
 
-    const { error: updateError } = await supabase
-      .from('brand_reviews')
-      .update({ welcome_email_sent: true })
-      .eq('id', record.id);
-
-    if (updateError) {
-      console.error('Flag update failed (email still sent):', updateError);
-    }
-
-    return json({ ok: true, sentTo: to }, origin);
-  } catch (err) {
-    console.error('send-welcome-email error:', err);
-    return json({ ok: false, error: String(err) }, origin, 500);
+    return json({ ok: true }, origin);
+  } catch {
+    console.error('send-welcome-email: request failed');
+    return json({ ok: false, error: 'Unable to send the welcome email.' }, origin, 500);
   }
 });

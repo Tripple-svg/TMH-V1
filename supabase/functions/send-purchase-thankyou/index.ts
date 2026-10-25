@@ -1,4 +1,5 @@
 import { isInternalRequest } from '../_shared/internal-auth.js';
+import { purchaseEmail } from '../_shared/email-template.js';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 
@@ -9,6 +10,7 @@ type PurchaseRecord = {
   id: string; email: string; reference: string; thankyou_sent: boolean;
   thankyou_email_id: string | null; thankyou_last_error: string | null;
   thankyou_sent_at: string | null; thankyou_attempted_at: string | null;
+  email_template_version: string;
 };
 type PurchaseDatabase = { public: {
   Tables: { playbook_purchases: { Row: PurchaseRecord; Insert: Partial<PurchaseRecord>; Update: Partial<PurchaseRecord>; Relationships: [] } };
@@ -52,7 +54,7 @@ serve(async (req) => {
     }
     supabase = createClient<PurchaseDatabase>(url, serviceKey, { auth: { persistSession: false } });
     const { data: purchase, error: purchaseError } = await supabase.from('playbook_purchases')
-      .select('id, email, reference, thankyou_sent, thankyou_email_id').eq('reference', reference).maybeSingle();
+      .select('id, email, reference, thankyou_sent, thankyou_email_id, email_template_version').eq('reference', reference).maybeSingle();
     if (purchaseError) return failure('purchase_lookup_failed', 'Unable to load purchase', 500);
     if (!purchase || purchase.email.trim().toLowerCase() !== email) return json({ ok: false, error: 'Purchase not found' }, 404);
     if (purchase.thankyou_sent === true) return json({ ok: true, skipped: 'already sent' });
@@ -76,7 +78,7 @@ Talk soon,
 Team Haven.`;
       acceptedEmailId = await deliverEmail(configuration, {
         to: [purchase.email], reply_to: 'info@themarketinghaven.xyz',
-        subject: 'Your copy of The Unseen Playbook', text,
+        subject: 'Your copy of The Unseen Playbook', ...(purchase.email_template_version === 'legacy' ? { text } : purchaseEmail(purchase.reference)),
       }, `playbook-purchase-thankyou/${purchase.reference}`);
     }
     // The durable flag is written only after Resend accepts the email.

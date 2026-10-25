@@ -3,6 +3,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import ProgressiveImage from '../ui/ProgressiveImage';
 import { X } from 'lucide-react';
 
 export default function PersonModal({ person, onClose }) {
@@ -78,7 +79,7 @@ export default function PersonModal({ person, onClose }) {
                   {[false, true].map((back) => <div key={String(back)} aria-hidden={back || undefined}
                     className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-full border-2 border-zinc-700 dark:border-zinc-300 bg-zinc-900"
                     style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: back ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
-                    {person.image ? <img src={person.image} alt={back ? '' : person.name} className="h-full w-full object-cover object-top" />
+                    {person.image ? <ProgressiveImage src={person.image} alt={back ? '' : person.name} loading="eager" fallback={person.initials} className="relative h-full w-full" imageClassName="object-top" />
                       : <span className="text-3xl font-black text-zinc-300">{person.initials}</span>}
                   </div>)}
                 </motion.div>

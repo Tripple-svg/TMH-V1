@@ -16,22 +16,34 @@ async function api(path, options = {}) {
 }
 const { resource: user } = await api('/users/me');
 const query = new URLSearchParams({ organization: user.current_organization, user: user.uri, scope: 'user' });
+const requiredEvents = ['invitee.created', 'invitee.canceled'];
+const coveredEvents = new Set();
+let matchingSubscription = false;
 let next = `/webhook_subscriptions?${query}`;
 while (next) {
   const existing = await api(next);
-  if (existing.collection?.some((item) => item.callback_url === callbackUrl && item.events?.includes('invitee.created') && item.state === 'active')) {
-    console.log('An active invitee.created subscription already exists for this URL. Reuse its original CALENDLY_WEBHOOK_SECRET; no duplicate created.');
-    process.exit(0);
+  for (const item of existing.collection || []) {
+    if (item.callback_url !== callbackUrl || item.state !== 'active') continue;
+    matchingSubscription = true;
+    for (const event of item.events || []) coveredEvents.add(event);
   }
   const page = existing.pagination?.next_page;
   if (page && new URL(page).origin !== 'https://api.calendly.com') throw new Error('Unexpected pagination origin.');
   next = page ? `${new URL(page).pathname}${new URL(page).search}` : null;
 }
+const missingEvents = requiredEvents.filter((event) => !coveredEvents.has(event));
+if (!missingEvents.length) {
+  console.log('Active subscriptions cover bookings and cancellations. No duplicate created.');
+  process.exit(0);
+}
+if (matchingSubscription && !process.env.CALENDLY_WEBHOOK_SECRET) {
+  throw new Error('Set the original CALENDLY_WEBHOOK_SECRET before adding the missing cancellation subscription. Existing subscriptions were not changed.');
+}
 // PAT subscriptions accept a caller-supplied signing_key. Keep it outside source control.
 const signingKey = process.env.CALENDLY_WEBHOOK_SECRET || randomBytes(32).toString('base64url');
 const created = await api('/webhook_subscriptions', {
   method: 'POST',
-  body: JSON.stringify({ url: callbackUrl, events: ['invitee.created'], organization: user.current_organization, user: user.uri, scope: 'user', signing_key: signingKey }),
+  body: JSON.stringify({ url: callbackUrl, events: missingEvents, organization: user.current_organization, user: user.uri, scope: 'user', signing_key: signingKey }),
 });
 console.log(`Subscription: ${created.resource.uri}`);
 console.log(`CALENDLY_WEBHOOK_SECRET=${created.resource.signing_key || signingKey}`);

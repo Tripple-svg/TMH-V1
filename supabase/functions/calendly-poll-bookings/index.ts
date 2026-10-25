@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
+import { saveCalendlyBooking } from '../_shared/calendly-bookings.ts';
+import { internalHeaders } from '../_shared/internal-auth.js';
 
 const LOCAL_ORIGINS = ['http://localhost:5173', 'http://localhost:5175'];
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -71,7 +73,7 @@ serve(async (req) => {
       // Keep recent past meetings visible long enough to exhaust the two-hour retry window.
       min_start_time: new Date(now - 3 * HOUR_MS).toISOString(),
       max_start_time: new Date(now + 60 * 24 * 60 * 60 * 1000).toISOString(),
-      status: 'active', count: '100',
+      count: '100',
     }));
     let matched = 0;
     let hadFailure = false;
@@ -84,7 +86,6 @@ serve(async (req) => {
         const { data: processed, error: processedError } = await supabase.from('calendly_processed_events')
           .select('id').eq('event_uuid', uuid).maybeSingle();
         if (processedError) throw processedError;
-        if (processed) continue;
         if (typeof event.start_time !== 'string' || !Number.isFinite(Date.parse(event.start_time))) {
           throw new CalendlyApiError('Invalid event start time');
         }
@@ -92,7 +93,7 @@ serve(async (req) => {
         // Older Calendly responses without created_at fall back to the meeting time.
         const createdAt = typeof event.created_at === 'string' ? Date.parse(event.created_at) : NaN;
         const retryExpired = now - (Number.isFinite(createdAt) ? createdAt : Date.parse(event.start_time)) > 2 * HOUR_MS;
-        const invitees = await listCalendly(`/scheduled_events/${encodeURIComponent(uuid)}/invitees`, new URLSearchParams({ status: 'active', count: '100' }));
+        const invitees = await listCalendly(`/scheduled_events/${encodeURIComponent(uuid)}/invitees`, new URLSearchParams({ count: '100' }));
         let firstEmail: string | null = null;
         let allInviteesComplete = true;
         for (const invitee of invitees) {
@@ -105,7 +106,7 @@ serve(async (req) => {
             .select('id, haven_score, biggest_leak, assessment_summary, platform_type, main_goal, pre_call_briefing, booking_confirmation_sent')
             .ilike('email', pattern).maybeSingle();
           if (reviewError) throw reviewError;
-          if (review) {
+          if (review && event.status !== 'canceled' && invitee.status !== 'canceled') {
             const { error } = await supabase.from('brand_reviews').update({ call_booked_at: event.start_time }).eq('id', review.id);
             if (error) throw error;
             if (!review.pre_call_briefing) {
@@ -133,10 +134,15 @@ serve(async (req) => {
             .select('id, service_id, confirmation_sent').ilike('email', pattern)
             .order('created_at', { ascending: false }).limit(1).maybeSingle();
           if (intentError) throw intentError;
+          // Persist every invitee, including unmatched, processed and canceled
+          // bookings. The email retry marker is not the bookings source of truth.
+          await saveCalendlyBooking(supabase, { ...event, uri: event.uri || `https://api.calendly.com/scheduled_events/${uuid}` }, invitee, review, intent);
+          if (event.status === 'canceled' || invitee.status === 'canceled' || processed) continue;
           if (review || intent) matched++;
           if (intent && intent.confirmation_sent !== true) {
             try {
               const { data, error } = await supabase.functions.invoke('send-tmh-booking-confirmation', {
+                headers: internalHeaders(serviceKey),
                 body: { email, name, serviceId: intent.service_id ?? null, bookingIntentId: intent.id },
               });
               if (error || data?.ok !== true) throw new Error('Booking confirmation failed');
@@ -153,7 +159,7 @@ serve(async (req) => {
         }
         // No-match invitees need no email. A group event waits for every matched
         // invitee, unless the booking has exhausted its two-hour retry window.
-        if (allInviteesComplete || retryExpired) {
+        if (!processed && (allInviteesComplete || retryExpired)) {
           const { error: insertError } = await supabase.from('calendly_processed_events')
             .insert({ event_uuid: uuid, invitee_email: firstEmail });
           if (insertError && insertError.code !== '23505') throw insertError;

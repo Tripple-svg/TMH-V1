@@ -9,7 +9,7 @@ const source = readFileSync(new URL('../src/pages/AdminDashboard.jsx', import.me
   .replaceAll('import.meta.env.VITE_SUPABASE_URL', "'https://project.supabase.co'")
   .replaceAll('import.meta.env.VITE_SUPABASE_ANON_KEY', "'public-anon-key'")
   .replace('export default function AdminDashboard()', 'function AdminDashboard()');
-const code = transformSync(`${source}\nmodule.exports={AdminDashboard,LeadConversations,StandaloneSessionRow,TranscriptPanel,PurchasesPanel,SessionsPanel};`, { loader: 'jsx', format: 'cjs' }).code;
+const code = transformSync(`${source}\nmodule.exports={AdminDashboard,LeadConversations,StandaloneSessionRow,TranscriptPanel,PurchasesPanel,SessionsPanel,BookingsPanel};`, { loader: 'jsx', format: 'cjs' }).code;
 const fixture = (scope = 'support') => ({ id: `session-${scope}`, scope, review_id: null, visitor_id: 'visitor-1', updated_at: '2026-10-24T12:00:00Z', transcript_loaded: false, message_count: 8, total_exchanges: 4, flag_status: 'white' });
 const sessionResponse = (scope = 'support') => ({ ok: true, session: { ...fixture(scope), transcript_loaded: true, messages: [{ id: 'message-1', role: 'user', content: 'Actual saved conversation' }], messages_returned: 1 } });
 
@@ -68,14 +68,14 @@ function harness({ dashboard = false, send = async () => ({ status: 200, ...sess
   };
 }
 
-test('admin tabs: four counted sections switch panels without leaving other section content visible', () => {
+test('admin tabs: five counted sections switch panels without leaving other section content visible', () => {
   const ui = harness({ dashboard: true });
   let tree = ui.render('AdminDashboard');
   const tabs = tree.filter((node) => node.props.role === 'tab');
-  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Leads', 'Playbook Purchases', 'Support Chats', 'Service Chats']);
-  assert.ok(tabs.every((node) => node.props.children[1].props.children[0] === 1));
+  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Leads', 'Playbook Purchases', 'Bookings', 'Support Chats', 'Service Chats']);
+  assert.ok(tabs.every((node) => node.props.children[1].props.children[0] === (node.props.id === 'tab-bookings' ? 0 : 1)));
   assert.ok(tree.some((node) => node.type === 'table'));
-  tabs[2].props.onClick();
+  tabs[3].props.onClick();
   tree = ui.render('AdminDashboard');
   assert.ok(!tree.some((node) => node.type === 'table'));
   const support = tree.find((node) => node.type?.name === 'SessionsPanel');
@@ -139,6 +139,37 @@ test('transcript: failed lazy request provides an explicit retry and then render
   tree = ui.render('TranscriptPanel', props);
   assert.equal(ui.requests.length, 2);
   assert.ok(tree.some((node) => node.type?.name === 'TranscriptViewer'));
+});
+
+test('transcript: refresh replaces an earlier empty snapshot with newly saved messages', async () => {
+  const ui = harness({ send: async (_, attempt) => ({ ok: true, session: { ...sessionResponse().session, messages: attempt ? [{ role: 'user', content: 'Back after access was restored' }] : [] } }) });
+  const props = { session: fixture(), password: 'admin-test' };
+  ui.render('TranscriptPanel', props); await ui.effects();
+  let tree = ui.render('TranscriptPanel', props);
+  assert.equal(tree.find((node) => node.type?.name === 'TranscriptViewer').props.session.messages.length, 0);
+  tree.find((node) => node.type === 'button' && node.props.children.includes('Refresh transcript')).props.onClick();
+  ui.render('TranscriptPanel', props); await ui.effects();
+  tree = ui.render('TranscriptPanel', props);
+  assert.equal(ui.requests.length, 2);
+  assert.equal(tree.find((node) => node.type?.name === 'TranscriptViewer').props.session.messages[0].content, 'Back after access was restored');
+});
+
+test('bookings: upcoming and cancellation filters separate provider and legacy statuses', () => {
+  const ui = harness();
+  const bookings = [
+    { id: 1, full_name: 'Upcoming Buyer', email: 'buyer@example.com', status: 'active', source: 'service', start_time: '2026-10-30T12:00:00Z' },
+    { id: 2, full_name: 'Canceled Buyer', email: 'cancel@example.com', status: 'canceled', start_time: '2026-10-31T12:00:00Z' },
+    { id: 3, full_name: 'Legacy Buyer', email: 'legacy@example.com', status: 'cancelled', source: 'legacy', start_time: '2026-10-31T12:00:00Z' },
+  ];
+  const props = { bookings, now: Date.parse('2026-10-25T12:00:00Z') };
+  let tree = ui.render('BookingsPanel', props);
+  assert.equal(tree.filter((node) => node.type === 'article').length, 3);
+  tree.find((node) => node.type === 'select').props.onChange({ target: { value: 'upcoming' } });
+  tree = ui.render('BookingsPanel', props);
+  assert.equal(tree.filter((node) => node.type === 'article').length, 1);
+  tree.find((node) => node.type === 'select').props.onChange({ target: { value: 'canceled' } });
+  tree = ui.render('BookingsPanel', props);
+  assert.equal(tree.filter((node) => node.type === 'article').length, 2);
 });
 
 test('standalone sessions and purchases: search has an explicit empty state', () => {

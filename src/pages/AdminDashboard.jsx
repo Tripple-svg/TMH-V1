@@ -18,6 +18,7 @@ const transcriptRequests = new Map();
 const ADMIN_TABS = [
   { id: 'leads', label: 'Leads' },
   { id: 'purchases', label: 'Playbook Purchases' },
+  { id: 'bookings', label: 'Bookings' },
   { id: 'support', label: 'Support Chats' },
   { id: 'service', label: 'Service Chats' },
 ];
@@ -85,6 +86,7 @@ async function apiFetchLeads(password) {
   const data = await apiRequest(FETCH_URL, password);
   return data.ok ? {
     ...data,
+    bookings: Array.isArray(data.bookings) ? data.bookings : [],
     leads: Array.isArray(data.leads) ? data.leads : [],
     purchases: Array.isArray(data.playbook_purchases) ? data.playbook_purchases : Array.isArray(data.purchases) ? data.purchases : [],
     support_sessions: Array.isArray(data.support_sessions) ? data.support_sessions : [],
@@ -352,9 +354,10 @@ function TranscriptPanel({ session, password, onAuthLost }) {
     });
     return () => { active = false; };
   }, [attempt, cacheKey, onAuthLost, password, session.id, transcript]);
+  const refresh = () => { transcriptCache.delete(cacheKey); setTranscript(null); setError(''); setAttempt((value) => value + 1); };
   if (error) return <div role="alert" className="space-y-3 text-sm text-red-300"><p>{error}</p><button type="button" onClick={() => { setError(''); setAttempt((value) => value + 1); }} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-200">Retry transcript</button></div>;
   if (!transcript) return <p role="status" className="animate-pulse text-xs text-zinc-500">Loading conversation…</p>;
-  return <div className="space-y-3"><p className="text-[11px] leading-relaxed text-zinc-500">Saved conversation · up to the latest 200 stored messages. Uploaded image contents are omitted.</p><TranscriptViewer session={transcript} /></div>;
+  return <div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-[11px] leading-relaxed text-zinc-500">Saved conversation · up to the latest 200 stored messages. Uploaded image contents are omitted.</p><button type="button" onClick={refresh} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-200">Refresh transcript</button></div><TranscriptViewer session={transcript} /></div>;
 }
 
 function LeadConversations({ lead, password, onAuthLost }) {
@@ -449,6 +452,9 @@ function LeadDetails({ lead, onDelete, saving, password, onAuthLost }) {
         <p><span className="text-zinc-500">Social:</span> {lead.social_link || '—'}</p>
         <p><span className="text-zinc-500">Booking / Playbook:</span> {lead.clicked_booking_link ? 'Yes' : 'No'} / {lead.clicked_playbook_link ? 'Yes' : 'No'}</p>
         <p><span className="text-zinc-500">Deal value:</span> {currency(lead.deal_value)}</p>
+        <p><span className="text-zinc-500">Review email:</span> {lead.welcome_email_sent ? 'Accepted by email provider' : lead.welcome_email_id ? 'Provider accepted; saved status needs repair' : lead.welcome_email_attempted_at ? 'Pending' : 'Not attempted / not recorded'}</p>
+        {lead.welcome_email_attempted_at && <p><span className="text-zinc-500">Last email attempt:</span> {formatDate(lead.welcome_email_attempted_at)}</p>}
+        {lead.welcome_email_last_error && !lead.welcome_email_sent && <p className="text-red-300">Review email diagnostic: {lead.welcome_email_last_error}</p>}
         {lead.session && (
           <p>
             <span className="text-zinc-500">Session:</span>{' '}
@@ -468,7 +474,7 @@ function LeadDetails({ lead, onDelete, saving, password, onAuthLost }) {
       </div>
     </div>
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-4">
-      <p className="text-xs text-zinc-500">Deleting this lead also removes its chat sessions. Purchase records are retained.</p>
+      <p className="text-xs text-zinc-500">Deleting this lead also removes its chat sessions. Purchases and booking history are retained. Manage meeting cancellations in Calendly.</p>
       <button type="button" onClick={onDelete} disabled={saving}
         className="rounded-lg border border-red-500/30 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50">
         {saving ? 'Saving…' : 'Delete Lead'}
@@ -565,7 +571,7 @@ function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost
     if (result.ok) {
       if (updates.followupNotes !== undefined) notesRef.current = updates.followupNotes;
       onLeadChange({
-        ...lead,
+        id: lead.id,
         ...Object.fromEntries(
           Object.entries(updates).map(([k, v]) => [k.replace(/[A-Z]/g, (l) => `_${l.toLowerCase()}`), v])
         ),
@@ -580,7 +586,7 @@ function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost
 
   const onStatusChange = (e) => save({ followupStatus: e.target.value });
   const onDeleteLead = async () => {
-    if (saving || !window.confirm(`Delete the lead for ${lead.brand_name || lead.full_name || 'this brand'} (${lead.email || lead.id})?\n\nThis permanently removes the review and its chat sessions. Purchase records will be kept. This cannot be undone.`)) return;
+    if (saving || !window.confirm(`Delete the lead for ${lead.brand_name || lead.full_name || 'this brand'} (${lead.email || lead.id})?\n\nThis permanently removes the review and its chat sessions. Purchases and booking history will be kept. Manage meeting cancellations in Calendly. This cannot be undone.`)) return;
     setSaving(true);
     try {
       const result = await apiUpdateLead(password, { action: 'delete', reviewId: lead.id, confirmation: lead.id });
@@ -600,7 +606,7 @@ function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost
     setSaving(true);
     try {
       const result = await apiFlagUser(password, lead.email, status, reason.trim());
-      if (result.review) onLeadChange({ ...lead, ...result.review });
+      if (result.review) onLeadChange({ id: lead.id, ...result.review });
       if (result.ok) {
         showToast('success', 'User flag updated.');
       } else if (result.code === 'unauthorised') {
@@ -918,6 +924,29 @@ function PurchasesPanel({ purchases, error, password, onAuthLost, onPurchaseChan
   );
 }
 
+function BookingsPanel({ bookings, error, now = 0 }) {
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('all');
+  const [page, setPage] = useState(1);
+  const upcoming = bookings.filter((booking) => ['active','confirmed'].includes(booking.status) && Date.parse(booking.start_time) >= now);
+  const filtered = bookings.filter((booking) => (status === 'all' || (status === 'upcoming' ? ['active','confirmed'].includes(booking.status) && Date.parse(booking.start_time) >= now : (status === 'active' ? ['active','confirmed'].includes(booking.status) : ['canceled','cancelled'].includes(booking.status)))) &&
+    `${booking.full_name || ''} ${booking.email || ''} ${booking.service_id || ''} ${booking.source || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)), current = Math.min(page, pages);
+  return <section aria-label="Strategy call bookings" className="space-y-4">
+    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-semibold">Bookings</h2><p className="mt-2 text-xs leading-relaxed text-zinc-400">Synced Calendly records and historical onsite bookings, including cancellations. Opening a booking link alone does not create a booking.</p></div><p className="text-xs text-zinc-400">{upcoming.length} upcoming · {bookings.length} loaded / 500 maximum</p></div>
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row"><input aria-label="Search bookings" placeholder="Search name, email or service" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm outline-none focus:border-white/30" /><select aria-label="Filter bookings" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="rounded-xl border border-white/10 bg-zinc-950 p-3 text-xs"><option value="all">All bookings</option><option value="upcoming">Upcoming</option><option value="active">Active (including past)</option><option value="canceled">Canceled</option></select></div>
+    </div>
+    {error ? <p role="alert" className="rounded-xl border border-red-500/20 p-5 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">{query || status !== 'all' ? 'No bookings match these filters.' : 'No bookings have synced yet. Calendly polling imports meetings from the last 3 hours through the next 60 days; older meetings are not backfilled.'}</p> : <div className="grid gap-4 lg:grid-cols-2">{filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map((booking) => <article key={booking.id} className="min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5">
+      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="font-medium text-zinc-100">{booking.full_name || 'Name not provided'}</h3><a href={`mailto:${booking.email}`} className="mt-1 block break-all text-sm text-zinc-400 underline-offset-4 hover:underline">{booking.email}</a></div><span className={`rounded border px-2 py-1 text-[10px] uppercase tracking-wider ${['canceled','cancelled'].includes(booking.status) ? 'border-red-400/25 text-red-300' : 'border-white/15 text-zinc-300'}`}>{booking.status}</span></div>
+      <p className="mt-5 text-lg font-medium tracking-tight">{booking.start_time ? formatDate(booking.start_time) : 'Time not recorded'}</p><p className="mt-1 text-xs text-zinc-400">Displayed in your device timezone · Invitee timezone: {booking.timezone || 'Not recorded'}</p>
+      <dl className="mt-5 space-y-2 text-xs text-zinc-400"><div><dt className="inline text-zinc-400">Meeting: </dt><dd className="inline">{booking.event_name || 'Strategy call'}</dd></div><div><dt className="inline text-zinc-400">Source: </dt><dd className="inline">{booking.source === 'lead' ? 'Brand review' : booking.source === 'service' ? `Services${booking.service_id ? ` / ${booking.service_id}` : ''}` : booking.source === 'legacy' ? 'Legacy onsite booking' : 'Direct Calendly'}</dd></div><div><dt className="inline text-zinc-400">Last synced: </dt><dd className="inline">{formatDate(booking.last_synced_at)}</dd></div></dl>
+      {booking.review_id && <p className="mt-4 break-all font-mono text-[10px] text-zinc-400">Linked lead: {booking.review_id}</p>}
+    </article>)}</div>}
+    {pages > 1 && <nav aria-label="Booking pages" className="flex items-center justify-end gap-3 text-xs"><button disabled={current <= 1} onClick={() => setPage(current - 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Prev</button><span>{current} / {pages}</span><button disabled={current >= pages} onClick={() => setPage(current + 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Next</button></nav>}
+  </section>;
+}
+
 function StandaloneSessionRow({ session, password, onAuthLost, onVisitorChange, showToast }) {
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -994,6 +1023,10 @@ export default function AdminDashboard() {
   const [retryingFlagEmails, setRetryingFlagEmails] = useState(false);
   const [flagEmailError, setFlagEmailError] = useState('');
   const flagEmailLock = useRef(false);
+  const overviewLock = useRef(false);
+  const authEpoch = useRef(0);
+  const [bookings, setBookings] = useState([]);
+  const [bookingsError, setBookingsError] = useState('');
 
   const showToast = useCallback((kind, text) => {
     setToast({ kind, text, id: Date.now() });
@@ -1006,11 +1039,14 @@ export default function AdminDashboard() {
   }, [toast]);
 
   const handleAuthLost = useCallback(() => {
+    authEpoch.current += 1;
+    overviewLock.current = false;
     sessionStorage.removeItem(PASSWORD_KEY);
     setPassword('');
     setAuthorised(false);
     setLeads([]);
     setPurchases([]);
+    setBookings([]); setBookingsError('');
     setPurchasesError('');
     setSupportSessions([]);
     setServiceSessions([]);
@@ -1031,12 +1067,19 @@ export default function AdminDashboard() {
 
 
   const load = useCallback(async (pw) => {
+    if (overviewLock.current) return;
+    overviewLock.current = true;
+    const epoch = authEpoch.current;
     setLoading(true);
     setError('');
     const result = await apiFetchLeads(pw || password);
+    if (epoch !== authEpoch.current) return;
+    overviewLock.current = false;
     setLoading(false);
     if (result.ok) {
+      transcriptCache.clear();
       setLeads(result.leads);
+      setBookings(result.bookings); setBookingsError(result.bookings_error || '');
       setPurchases(result.purchases);
       setPurchasesError(result.purchases_error || '');
       setSupportSessions(result.support_sessions);
@@ -1059,6 +1102,17 @@ export default function AdminDashboard() {
       void load(cached);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!authorised) return;
+    const refreshVisible = () => {
+      // Let a focused notes/search field keep its draft until the admin leaves it.
+      if (document.visibilityState === 'visible' && !document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')) void load();
+    };
+    const timer = window.setInterval(refreshVisible, 30000);
+    window.addEventListener('focus', refreshVisible);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refreshVisible); };
+  }, [authorised, load]);
 
   const onAuth = (pw) => {
     sessionStorage.setItem(PASSWORD_KEY, pw);
@@ -1164,7 +1218,7 @@ export default function AdminDashboard() {
             <p className="text-xs sm:text-sm text-zinc-400">
               Total Reviews: {leads.length} · {processed.length} shown
             </p>
-            <p className="mt-2 text-[11px] text-zinc-500">{loading ? 'Refreshing saved records…' : lastRefreshed ? `Last refreshed ${formatDate(lastRefreshed)}` : 'Saved records'} · Counts reflect loaded records</p>
+            <p className="mt-2 text-[11px] text-zinc-500">{loading ? 'Refreshing saved records…' : lastRefreshed ? `Last refreshed ${formatDate(lastRefreshed)}` : 'Saved records'} · Counts reflect loaded records · refreshes every 30s while visible</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -1198,7 +1252,7 @@ export default function AdminDashboard() {
 
         <div role="tablist" aria-label="Admin sections" className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-white/[0.07] bg-white/[0.02] p-1.5">
           {ADMIN_TABS.map((tab, index) => {
-            const count = tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
+            const count = tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'bookings' ? bookings.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
             return <button key={tab.id} id={`tab-${tab.id}`} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1}
               onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
                 const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -1214,6 +1268,7 @@ export default function AdminDashboard() {
         </div>
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-200">{error}</p>}
         <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
+        {activeTab === 'bookings' && <BookingsPanel bookings={bookings} error={bookingsError} now={lastRefreshed || 0} />}
         {activeTab === 'purchases' && <PurchasesPanel purchases={purchases} error={purchasesError} password={password} onAuthLost={handleAuthLost} onPurchaseChange={updatePurchase} showToast={showToast} />}
         {(activeTab === 'support' || activeTab === 'service') && <SessionsPanel key={activeTab} scope={activeTab} sessions={activeTab === 'support' ? supportSessions : serviceSessions} error={chatErrors[activeTab]} password={password} onAuthLost={handleAuthLost} onVisitorChange={updateVisitor} showToast={showToast} />}
         {activeTab === 'leads' && <>

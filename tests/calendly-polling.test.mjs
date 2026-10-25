@@ -2,13 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { transformSync } from 'esbuild';
+import { buildSync } from 'esbuild';
 
 const ENV = { INTERNAL_POLL_SECRET: 'poll-test-secret', CALENDLY_API_TOKEN: 'calendly-test-token', SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-test' };
 const NOW = Date.parse('2026-10-19T12:00:00Z');
 const HOUR_MS = 3600000;
 const event = (id = 'event-1') => ({ uri: `https://api.calendly.com/scheduled_events/${id}`, start_time: '2026-10-20T17:00:00Z', created_at: new Date(NOW - 10 * 60000).toISOString() });
-const invitee = (email = 'Owner@Example.com') => ({ email, name: 'Owner' });
+const invitee = (email = 'Owner@Example.com') => ({ email, name: 'Owner', uri: `https://api.calendly.com/scheduled_events/event-1/invitees/${email.split('@')[0]}` });
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status });
 const request = (key = ENV.INTERNAL_POLL_SECRET) => new Request('https://project.supabase.co/functions/v1/calendly-poll-bookings', {
   method: 'POST', headers: { 'Content-Type': 'application/json', ...(key === null ? {} : { 'x-internal-poll-key': key }) }, body: '{}',
@@ -18,6 +18,7 @@ function database(seed = {}, { onRead = () => {}, failInsert = false } = {}) {
   const rows = structuredClone({ brand_reviews: [], booking_intents: [], haven_sessions: [], calendly_processed_events: [], ...seed });
   const calls = [], emails = [];
   const client = {
+    rpc: async (name, args) => { calls.push({ action: 'rpc', name, values: args.p_booking }); return { error: null }; },
     from(table) {
       let action = 'select', values, filters = [], sort = null, cap = Infinity;
       async function run(single = false) {
@@ -59,14 +60,20 @@ function database(seed = {}, { onRead = () => {}, failInsert = false } = {}) {
 function load({ db = database(), events = [event()], invitees = [invitee()], api, env = {}, now = NOW } = {}) {
   let handler;
   const urls = [];
-  const code = transformSync(readFileSync(new URL('../supabase/functions/calendly-poll-bookings/index.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'cjs' }).code;
+  const code = buildSync({ entryPoints: [new URL('../supabase/functions/calendly-poll-bookings/index.ts', import.meta.url).pathname.replace(/^\/(\w:)/, '$1')], bundle: true, write: false, format: 'cjs', platform: 'node', external: ['https://*'] }).outputFiles[0].text;
   vm.runInNewContext(code, {
     require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: () => db.client },
     Deno: { env: { get: (key) => ({ ...ENV, ...env })[key] } },
     fetch: async (url, options) => {
       assert.equal(options.headers.Authorization, `Bearer ${ENV.CALENDLY_API_TOKEN}`);
       const parsed = new URL(url); assert.equal(parsed.origin, 'https://api.calendly.com'); urls.push(parsed);
-      if (api) return api(parsed);
+      if (api) {
+        const result = await api(parsed);
+        if (!parsed.pathname.endsWith('/invitees') || !result.ok) return result;
+        const body = await result.json();
+        if (Array.isArray(body.collection)) body.collection = body.collection.map((person) => ({ ...person, uri: `https://api.calendly.com${parsed.pathname}/${person.email.split('@')[0]}` }));
+        return json(body);
+      }
       if (parsed.pathname === '/users/me') return json({ resource: { uri: 'https://api.calendly.com/users/owner' } });
       if (parsed.pathname === '/scheduled_events') return json({ collection: events });
       if (parsed.pathname.endsWith('/invitees')) return json({ collection: invitees });
@@ -87,11 +94,11 @@ test('rejects missing/wrong internal keys without making API or database calls',
   assert.equal((await load({ env: { INTERNAL_POLL_SECRET: undefined } }).handler(request())).status, 401);
 });
 
-test('skips processed events without fetching invitees or sending confirmation', async () => {
+test('syncs processed bookings without sending another confirmation', async () => {
   const db = database({ calendly_processed_events: [{ id: 'done', event_uuid: 'event-1' }] });
   const { handler, urls } = load({ db });
   assert.deepEqual(await (await handler(request())).json(), { ok: true, scanned: 1, matched: 0 });
-  assert.equal(urls.filter((url) => url.pathname.endsWith('/invitees')).length, 0);
+  assert.equal(urls.filter((url) => url.pathname.endsWith('/invitees')).length, 1);
   assert.equal(db.rows.calendly_processed_events.length, 1); assert.equal(db.emails.length, 0);
 });
 
@@ -108,7 +115,7 @@ test('updates matching review and builds briefing from assessment and last five 
   assert.equal(db.emails.length, 0); // A review alone must not send confirmation.
   assert.equal(db.rows.calendly_processed_events.length, 0); // A late intent must remain discoverable.
   const query = urls.find((url) => url.pathname === '/scheduled_events').searchParams;
-  assert.equal(query.get('user'), 'https://api.calendly.com/users/owner'); assert.equal(query.get('status'), 'active'); assert.equal(query.get('count'), '100');
+  assert.equal(query.get('user'), 'https://api.calendly.com/users/owner'); assert.equal(query.get('status'), null); assert.equal(query.get('count'), '100');
   assert.equal(Date.parse(query.get('min_start_time')), NOW - 3 * HOUR_MS);
   assert.equal(Date.parse(query.get('max_start_time')), NOW + 60 * 86400000);
 });
@@ -144,13 +151,13 @@ test('sends only for matching unsent newest intent; sent or absent intent sends 
   }
 });
 
-test('records unmatched events so a second poll does not re-check invitees', async () => {
+test('records unmatched events while continuing to sync their booking details', async () => {
   const { handler, db, urls } = load();
   assert.deepEqual(await (await handler(request())).json(), { ok: true, scanned: 1, matched: 0 });
   assert.equal(db.rows.calendly_processed_events[0].event_uuid, 'event-1');
   assert.deepEqual(await (await handler(request())).json(), { ok: true, scanned: 1, matched: 0 });
   assert.equal(db.rows.calendly_processed_events.length, 1);
-  assert.equal(urls.filter((url) => url.pathname.endsWith('/invitees')).length, 1);
+  assert.equal(urls.filter((url) => url.pathname.endsWith('/invitees')).length, 2);
 });
 
 test('Calendly API errors return ok:false without marking unfinished events', async () => {
@@ -301,4 +308,23 @@ test('database marker failure reports failure instead of success', async () => {
   const db = database({}, { failInsert: true });
   const result = await load({ db }).handler(request()); assert.equal(result.status, 500);
   assert.deepEqual(await result.json(), { ok: false }); assert.equal(db.rows.calendly_processed_events.length, 0);
+});
+
+
+test('booking storage failure stays retryable and cannot produce a processed marker or confirmation', async () => {
+  const db = database({ booking_intents: [{ id: 'intent', email: 'owner@example.com', confirmation_sent: false }] });
+  db.client.rpc = async () => ({ error: { code: 'XX000' } });
+  const result = await load({ db }).handler(request());
+  assert.equal(result.status, 500);
+  assert.equal(db.rows.calendly_processed_events.length, 0);
+  assert.equal(db.emails.length, 0);
+});
+
+test('canceled bookings sync even when already processed and do not send another email', async () => {
+  const db = database({ calendly_processed_events: [{ id: 'done', event_uuid: 'event-1' }], booking_intents: [{ id: 'intent', email: 'owner@example.com', confirmation_sent: false }] });
+  const result = await load({ db, events: [{ ...event(), status: 'canceled' }] }).handler(request());
+  assert.equal(result.status, 200);
+  const call = db.calls.find((item) => item.name === 'record_strategy_call_booking');
+  assert.equal(call.values.status, 'canceled');
+  assert.equal(db.emails.length, 0);
 });

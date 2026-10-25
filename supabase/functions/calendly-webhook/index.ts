@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
+import { saveCalendlyBooking } from '../_shared/calendly-bookings.ts';
+import { internalHeaders } from '../_shared/internal-auth.js';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -33,13 +35,15 @@ serve(async (req) => {
     }
     let body;
     try { body = JSON.parse(raw); } catch { return json({ ok: false, error: 'Invalid JSON' }, 400); }
-    if (body?.event !== 'invitee.created') return json({ ok: true, ignored: true });
+    if (!['invitee.created','invitee.canceled'].includes(body?.event)) return json({ ok: true, ignored: true });
     const payload = body.payload;
     const email = typeof payload?.email === 'string' ? payload.email.trim().toLowerCase() : '';
     const name = typeof payload?.name === 'string' ? payload.name.trim() : null;
     // Accept the requested nested shape and Calendly's current scheduled_event object.
-    const startTime = payload?.event?.start_time ?? payload?.scheduled_event?.start_time;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || typeof startTime !== 'string' || !Number.isFinite(Date.parse(startTime))) {
+    const scheduled = payload?.scheduled_event || (typeof payload?.event === 'object' ? payload.event : null);
+    const startTime = scheduled?.start_time;
+    const canceled = body.event === 'invitee.canceled';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || (!canceled && (typeof startTime !== 'string' || !Number.isFinite(Date.parse(startTime))))) {
       return json({ ok: false, error: 'Missing invitee email or event start time' }, 400);
     }
     const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
@@ -48,7 +52,7 @@ serve(async (req) => {
       .select('id, haven_score, biggest_leak, assessment_summary, platform_type, main_goal, booking_confirmation_sent')
       .ilike('email', pattern).maybeSingle();
     if (reviewError) throw reviewError;
-    if (review) {
+    if (review && !canceled) {
       const { data: session, error: sessionError } = await supabase.from('haven_sessions')
         .select('messages').eq('review_id', review.id).eq('scope', 'audit')
         .order('updated_at', { ascending: false }).limit(1).maybeSingle();
@@ -71,14 +75,17 @@ serve(async (req) => {
       .select('id, service_id, confirmation_sent').ilike('email', pattern)
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (intentError) throw intentError;
+    await saveCalendlyBooking(supabase, { ...scheduled, uri: scheduled?.uri || (typeof payload.event === 'string' ? payload.event : null), status: canceled ? 'canceled' : 'active' }, { ...payload, status: canceled ? 'canceled' : 'active' }, review, intent);
+    if (canceled) return json({ ok: true, canceled: true });
     if (!review && !intent) {
       console.log('calendly-webhook: no matching review or booking intent');
       return json({ ok: true, matched: false });
     }
     // Reviews without a services intent still receive one generic confirmation.
-    const sent = intent ? intent.confirmation_sent === true : review.booking_confirmation_sent === true;
+    const sent = intent ? intent.confirmation_sent === true : review?.booking_confirmation_sent === true;
     if (!sent) {
       const { data, error } = await supabase.functions.invoke('send-tmh-booking-confirmation', {
+        headers: internalHeaders(serviceKey),
         body: {
           email, name, serviceId: intent?.service_id ?? null,
           bookingIntentId: intent?.id ?? null, reviewId: review?.id ?? null,

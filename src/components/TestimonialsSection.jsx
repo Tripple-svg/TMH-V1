@@ -1,6 +1,7 @@
 // src/components/TestimonialsSection.jsx
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion, useInView } from 'framer-motion';
+import ProgressiveImage from './ui/ProgressiveImage';
 import { Star, Quote, Play, X, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 
 const TESTIMONIALS = [
@@ -25,20 +26,20 @@ const TESTIMONIALS = [
     videoSrc: null,
     wordsImage: null,
     wordsLabel: 'In Her Own Words',
-    words:
-      "Stephanie's story is being put together. Check back soon.",
+    pending: true,
+    words: "Stephanie's video and written experience are being prepared. Check back soon.",
   },
   {
     id: 'more',
     name: 'More Stories',
-    initials: '—',
+    initials: 'TMH',
     image: null,
     imagePosition: 'object-center',
     videoSrc: null,
     wordsImage: null,
-    wordsLabel: 'In Their Words',
-    words:
-      'We are collecting more testimonials from clients and Playbook readers. New stories will land here.',
+    wordsLabel: 'In Their Own Words',
+    pending: true,
+    words: 'The next story is on its way. We will add the video and written experience here when it is ready.',
   },
 ];
 
@@ -55,12 +56,22 @@ const patternStyle = {
 };
 
 const slideVariants = {
-  enter: (dir) => ({ x: dir > 0 ? 60 : -60, opacity: 0 }),
-  center: { x: 0, opacity: 1 },
-  exit: (dir) => ({ x: dir > 0 ? -60 : 60, opacity: 0 }),
+  enter: (dir) => ({ x: dir > 0 ? 32 : -32, scale: 0.97, opacity: 0 }),
+  center: { x: 0, scale: 1, opacity: 1 },
+  exit: (dir) => ({ x: dir > 0 ? -24 : 24, scale: 0.985, opacity: 0 }),
 };
 
 export default function TestimonialsSection() {
+  const reduceMotion = useReducedMotion();
+  const sectionRef = useRef(null);
+  const nearView = useInView(sectionRef, { once: true, margin: '600px' });
+  useEffect(() => {
+    if (!nearView) return;
+    // Warm only the small carousel asset set as the section approaches the viewport.
+    [REVIEW_SCREENSHOT, '/Background.jpeg', ...TESTIMONIALS.map((person) => person.image)].filter(Boolean).forEach((src) => {
+      const image = new Image(); image.decoding = 'async'; image.src = src;
+    });
+  }, [nearView]);
   const slides = useMemo(
     () =>
       TESTIMONIALS.flatMap((person) => [
@@ -168,6 +179,7 @@ export default function TestimonialsSection() {
   return (
     <section
       id="testimonials"
+      ref={sectionRef}
       className="relative w-full pt-4 sm:pt-6 pb-16 sm:pb-20 px-4 sm:px-6 lg:px-8 bg-white text-zinc-900 dark:bg-zinc-950 dark:text-white transition-colors duration-300"
     >
       <div className="max-w-5xl mx-auto relative z-10">
@@ -190,32 +202,35 @@ export default function TestimonialsSection() {
 
         <div className="relative mb-6">
           <div className="relative overflow-hidden min-h-[380px] sm:min-h-[460px]">
-            <AnimatePresence mode="wait" custom={direction}>
+            <AnimatePresence mode="sync" initial={false} custom={direction}>
               <motion.div
                 key={currentSlide.key}
                 custom={direction}
-                variants={slideVariants}
+                variants={reduceMotion ? { enter: { opacity: 0 }, center: { opacity: 1 }, exit: { opacity: 0 } } : slideVariants}
                 initial="enter"
                 animate="center"
                 exit="exit"
-                transition={{ duration: 0.35, ease: 'easeOut' }}
+                transition={{ duration: reduceMotion ? 0 : 0.45, ease: [0.22, 1, 0.36, 1] }}
+                drag={reduceMotion ? false : 'x'} dragConstraints={{ left: 0, right: 0 }} dragElastic={0.08}
+                onDragEnd={(_, info) => { if (info.offset.x < -45) goNext(); else if (info.offset.x > 45) goPrev(); }}
+                style={{ touchAction: 'pan-y' }}
                 className="absolute inset-0 flex flex-col items-center justify-center"
               >
                 {currentSlide.type === 'profile' && (
                   <div
                     onClick={openVideo}
+                    role={currentPerson.videoSrc ? 'button' : undefined}
+                    tabIndex={currentPerson.videoSrc ? 0 : undefined}
+                    aria-label={currentPerson.videoSrc ? `Watch ${currentPerson.name}'s experience` : undefined}
+                    onKeyDown={(event) => { if (currentPerson.videoSrc && ['Enter',' '].includes(event.key)) { event.preventDefault(); openVideo(); } }}
                     className={`relative w-full max-w-xs sm:max-w-sm aspect-[4/5] rounded-3xl overflow-hidden border border-zinc-200 dark:border-white/10 shadow-2xl group ${
                       currentPerson.videoSrc ? 'cursor-pointer' : 'cursor-default'
                     }`}
                     style={currentPerson.image ? undefined : patternStyle}
                   >
                     {currentPerson.image ? (
-                      <img
-                        src={currentPerson.image}
-                        alt={currentPerson.name}
-                        loading={slideIndex === 0 ? 'eager' : 'lazy'}
-                        className={`absolute inset-0 w-full h-full object-cover ${currentPerson.imagePosition || 'object-center'}`}
-                      />
+                      <ProgressiveImage src={currentPerson.image} alt={currentPerson.name} fallback={currentPerson.initials} loading="eager"
+                        className="absolute inset-0 w-full h-full" imageClassName={currentPerson.imagePosition || 'object-center'} />
                     ) : (
                       <span className="absolute inset-0 flex items-center justify-center text-white/15 text-[140px] sm:text-[160px] font-black tracking-tighter select-none leading-none">
                         {currentPerson.initials}
@@ -223,18 +238,19 @@ export default function TestimonialsSection() {
                     )}
 
                     {/* Play button — centered, smaller, rounded square */}
-                    <div className="absolute inset-0 flex items-center justify-center transition-colors group-hover:bg-black/10">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 transition-colors group-hover:bg-black/10">
                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white flex items-center justify-center shadow-2xl transition-transform group-hover:scale-105">
                         <Play
                           className="w-5 h-5 sm:w-6 sm:h-6 text-zinc-900 ml-0.5"
                           fill="currentColor"
                         />
                       </div>
+                      {!currentPerson.videoSrc && <span className="rounded border border-white/15 bg-black/60 px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] text-zinc-200">Video coming soon</span>}
                     </div>
 
                     <div className="absolute bottom-0 left-0 right-0 z-10 px-5 pb-5 pt-16 bg-gradient-to-t from-black/90 via-black/60 to-transparent text-left">
                       <h3 className="text-sm sm:text-base font-bold text-white tracking-wide uppercase font-mono leading-tight">
-                        {currentPerson.name}'s Personal Experience
+                        {currentPerson.videoSrc ? `${currentPerson.name}'s Personal Experience` : currentPerson.name}
                       </h3>
                       <p className="mt-1 text-[11px] sm:text-xs text-zinc-300 font-light">
                         With The Marketing Haven
@@ -247,13 +263,7 @@ export default function TestimonialsSection() {
                   <div className="w-full max-w-xl">
                     <div className="relative w-full rounded-3xl overflow-hidden border border-zinc-200 dark:border-white/10 shadow-xl p-8 sm:p-12">
                       {/* Background image — brightened, softer overlay */}
-                      <img
-                        src="/Background.jpeg"
-                        alt=""
-                        aria-hidden="true"
-                        loading="lazy"
-                        className="absolute inset-0 w-full h-full object-cover brightness-110 saturate-105"
-                      />
+                      <ProgressiveImage src="/Background.jpeg" alt="" aria-hidden="true" loading="eager" className="absolute inset-0 w-full h-full" imageClassName="brightness-110 saturate-105" />
                       <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/45 to-black/30" />
 
                       <div className="relative z-10">
@@ -265,7 +275,7 @@ export default function TestimonialsSection() {
                           <span className="block w-5 h-px bg-white/50" />
                         </div>
 
-                        <Quote className="w-7 h-7 text-amber-400/80 mb-4 mx-auto" />
+                        {currentPerson.pending ? <p className="mb-4 text-center text-[10px] uppercase tracking-[0.2em] text-zinc-300">Story coming soon</p> : <Quote className="w-7 h-7 text-amber-400/80 mb-4 mx-auto" />}
 
                         <p className="text-base sm:text-lg leading-relaxed text-white text-center font-light max-w-lg mx-auto drop-shadow-md">
                           {currentPerson.words}
@@ -342,16 +352,7 @@ export default function TestimonialsSection() {
             </div>
 
             <div className="relative rounded-xl overflow-hidden border border-white/10 dark:border-white/10 bg-zinc-900/60 backdrop-blur-md max-w-sm mx-auto">
-              <img
-                src={REVIEW_SCREENSHOT}
-                alt="Early Reviewee — review message"
-                loading="lazy"
-                className="w-full h-auto transition-transform duration-500 group-hover:scale-[1.02]"
-                style={{ imageRendering: '-webkit-optimize-contrast' }}
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
+              <ProgressiveImage src={REVIEW_SCREENSHOT} alt="Early reviewee: review message" fit="contain" className="relative w-full aspect-[1080/477]" imageClassName="group-hover:scale-[1.02]" />
               <div className="absolute top-3 right-3 w-9 h-9 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                 <Maximize2 className="w-4 h-4" />
               </div>
@@ -462,13 +463,7 @@ export default function TestimonialsSection() {
                     Early Reviewee
                   </span>
                 </div>
-                <img
-                  src={REVIEW_SCREENSHOT}
-                  alt="Early Reviewee — review message"
-                  loading="lazy"
-                  className="w-full h-auto rounded-2xl border border-white/10 max-w-xl mx-auto"
-                  style={{ imageRendering: '-webkit-optimize-contrast' }}
-                />
+                <ProgressiveImage src={REVIEW_SCREENSHOT} alt="Early reviewee: review message" loading="eager" fit="contain" className="relative w-full aspect-[1080/477] rounded-2xl border border-white/10 max-w-xl mx-auto" />
               </div>
             </motion.div>
           </motion.div>

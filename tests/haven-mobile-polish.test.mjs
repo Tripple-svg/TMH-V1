@@ -47,7 +47,7 @@ test('mobile viewport: coalesces keyboard movement, sizes only the shell, restor
   const viewport = { height: 700, offsetTop: 0, addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name) => listeners.delete(name) };
   const body = { style: { position: '', top: '', width: '', overflow: 'clip' } }, root = { style: { overscrollBehavior: '' } };
   const win = { scrollY: 420, innerHeight: 800, visualViewport: viewport, addEventListener() {}, removeEventListener() {}, scrollTo: (value) => calls.push(value) };
-  const hook = loadHook('useDrawerViewport', { window: win, document: { body, documentElement: root }, requestAnimationFrame(fn) { const id = ++counter; frames.set(id, fn); return id; }, cancelAnimationFrame: (id) => frames.delete(id) });
+  const hook = loadHook('useDrawerViewport', { window: win, document: { body, documentElement: root, getElementById: () => null, addEventListener() {}, removeEventListener() {} }, requestAnimationFrame(fn) { const id = ++counter; frames.set(id, fn); return id; }, cancelAnimationFrame: (id) => frames.delete(id) });
   const follow = { current: () => calls.push('follow') };
   hook.render(true, follow); const shell = { style: {} }; hook.refs[0].current = shell;
   const cleanup = hook.effects.shift()();
@@ -58,4 +58,32 @@ test('mobile viewport: coalesces keyboard movement, sizes only the shell, restor
   assert.ok(calls.includes('follow'));
   cleanup(); assert.equal(listeners.size, 0); assert.equal(body.style.overflow, 'clip'); assert.equal(body.style.position, '');
   assert.equal(calls.at(-1).top, 420); assert.equal(calls.at(-1).behavior, 'instant');
+});
+
+test('mobile keyboard: background and boundary gestures are contained, while inner scrolling and pinch zoom remain usable', () => {
+  const handlers = new Map();
+  const app = { inert: false }, body = { style: {} }, root = { style: {} };
+  class Element {
+    constructor(parent = null, scrollable = false) { this.parentElement = parent; this.scrollable = scrollable; this.scrollTop = 0; this.scrollHeight = scrollable ? 500 : 100; this.clientHeight = 100; }
+    closest() { let node = this; while (node) { if (node.overlay) return node; node = node.parentElement; } return null; }
+  }
+  const overlay = new Element(); overlay.overlay = true;
+  const scroll = new Element(overlay, true), message = new Element(scroll), background = new Element();
+  const hook = loadHook('useDrawerViewport', {
+    Element, getComputedStyle: (node) => ({ overflowY: node.scrollable ? 'auto' : 'visible' }),
+    document: { body, documentElement: root, getElementById: () => app, addEventListener(name, fn, options) { handlers.set(name, { fn, options }); }, removeEventListener(name) { handlers.delete(name); } },
+    window: { scrollY: 100, innerHeight: 800, addEventListener() {}, removeEventListener() {}, scrollTo() {} },
+    requestAnimationFrame: () => 1, cancelAnimationFrame() {},
+  });
+  hook.render(true, { current: null }); const cleanup = hook.effects.shift()();
+  assert.equal(app.inert, true); assert.equal(root.style.overflow, 'hidden'); assert.equal(handlers.get('touchmove').options.passive, false);
+  let blocked = 0;
+  const move = (target, y, touches = 1) => handlers.get('touchmove').fn({ target, cancelable: true, touches: Array.from({ length: touches }, () => ({ clientY: y })), preventDefault() { blocked++; } });
+  const start = () => handlers.get('touchstart').fn({ touches: [{ clientY: 100 }] });
+  start(); move(background, 120); assert.equal(blocked, 1);
+  scroll.scrollTop = 100; start(); move(message, 80); assert.equal(blocked, 1);
+  scroll.scrollTop = 0; start(); move(message, 120); assert.equal(blocked, 2);
+  scroll.scrollTop = 400; start(); move(message, 80); assert.equal(blocked, 3);
+  start(); move(background, 80, 2); assert.equal(blocked, 3);
+  cleanup(); assert.equal(app.inert, false); assert.equal(handlers.size, 0);
 });

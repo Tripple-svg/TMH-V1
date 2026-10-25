@@ -2,6 +2,7 @@
 // Viewport sizing and slide animation are isolated for mobile keyboards.
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
@@ -566,15 +567,15 @@ export default function HavenDrawer() {
     };
   }, [autoFollow]);
 
-  return (
-    <>
+  return createPortal(
+    <div data-haven-overlay>
       <AnimatePresence>
         {isOpen && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               transition={{ duration: 0.25 }}
               onClick={() => { setShowHistorySidebar(false); setShowOptionsMenu(false); closeDrawer(); }}
-              className="fixed inset-0 z-40 bg-black/60" />
+              className="fixed inset-0 z-40 bg-zinc-950 sm:bg-black/60 touch-none" />
 
             <div ref={viewportRef} className="fixed right-0 top-0 z-50 h-dvh w-full max-w-md">
             <motion.div
@@ -869,6 +870,6 @@ export default function HavenDrawer() {
         isOpen={showBookingModal || bookingNoticeOpen}
         onClose={() => { setShowBookingModal(false); setBookingNoticeOpen(false); }}
       />
-    </>
+    </div>, document.body
   );
 }

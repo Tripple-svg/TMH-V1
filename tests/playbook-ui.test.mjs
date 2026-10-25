@@ -8,6 +8,7 @@ function shop(saved, invoke) {
   const state = [], effects = [], events = new Map(), storage = new Map(saved ? [['tmh_playbook_purchase', saved]] : []), downloads = [];
   let cursor = 0;
   const react = {
+    useCallback: (fn) => fn,
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     useState(initial) { const i = cursor++; if (!(i in state)) state[i] = initial; return [state[i], (value) => { state[i] = typeof value === 'function' ? value(state[i]) : value; }]; },
     useRef(initial) { const i = cursor++; return state[i] ||= { current: initial }; },
@@ -25,7 +26,7 @@ function shop(saved, invoke) {
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     window: { addEventListener: (name, fn) => events.set(name, fn), removeEventListener() {} },
     document: { body: { style: {}, appendChild() {}, removeChild() {} }, createElement: () => ({ click() { downloads.push(this.href); } }) },
-    setTimeout, clearTimeout,
+    setTimeout, clearTimeout, AbortSignal,
   };
   const source = readFileSync(new URL('../src/components/ShopSection.jsx', import.meta.url), 'utf8');
   vm.runInNewContext(transformSync(source, { loader: 'jsx', format: 'cjs' }).code, context);
@@ -85,10 +86,35 @@ test('Task 5 UI: re-download verifies again and uses the newly issued URL', asyn
   assert.ok(!ui.storage.get('tmh_playbook_purchase').includes('https://'));
 });
 
-test('Task 5 UI: failed return verification hides downloads and gives the stored reference for recovery', async () => {
+test('purchase recovery: another device verifies email/reference and retains the signed guidance token after download', async () => {
+  const calls = [];
+  const ui = shop(null, async (name, { body }) => {
+    calls.push({ name, body });
+    return { data: { ok: true, url: 'https://private.example/recovered', playbookAccessToken: 'signed-purchase-capability' } };
+  });
+  let tree = ui.mount();
+  tree.find((node) => node.type === 'button' && node.props.children.includes('Already purchased?')).props.onClick();
+  tree = ui.render();
+  const form = tree.find((node) => node.type === 'form' && !node.props.id);
+  const inputs = [];
+  const walk = (node) => { if (Array.isArray(node)) return node.forEach(walk); if (!node || typeof node !== 'object') return; if (node.type === 'input') inputs.push(node); walk(node.props.children); };
+  walk(form);
+  inputs[0].props.onChange({ target: { value: 'buyer@example.com' } });
+  inputs[1].props.onChange({ target: { value: 'UNSEEN_recovered' } });
+  tree = ui.render();
+  await tree.find((node) => node.type === 'form' && !node.props.id).props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [{ name: 'verify-paystack', body: { reference: 'UNSEEN_recovered', email: 'buyer@example.com' } }]);
+  tree = ui.render();
+  tree.find((node) => node.type === 'a' && node.props.download).props.onClick({ preventDefault() {} });
+  assert.equal(JSON.parse(ui.storage.get('tmh_playbook_purchase')).accessToken, 'signed-purchase-capability');
+  assert.deepEqual(ui.downloads, ['https://private.example/recovered']);
+});
+
+test('Task 5 UI: failed return verification hides downloads and gives recovery options without another charge', async () => {
   const ui = shop(JSON.stringify({ reference: 'UNSEEN_recover', downloadedAt: '2026-10-01' }), async () => ({ error: new Error('offline') }));
   ui.mount(); await flush();
   const view = ui.render(); assert.equal(view.filter((node) => node.type === 'a').length, 0);
   const alert = view.find((node) => node.props.role === 'alert');
-  assert.ok(alert.props.children.join('').includes('info@themarketinghaven.xyz with your reference: UNSEEN_recover'));
+  assert.ok(alert.props.children.join('').includes('Please do not pay again'));
+  assert.ok(ui.render().some((node) => node.type === 'button' && node.props.children.includes('Already purchased?')));
 });

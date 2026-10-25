@@ -7,6 +7,7 @@ import { prepareConversation, substantiveAnswer, explicitCallRequest, RESTRICTED
 import { resolveHavenRouting, supportHelpReply } from '../_shared/haven-routing.js';
 import { geminiProcessingEnabled } from '../_shared/haven-model.ts';
 import { applyAutomaticFlag, ModerationError } from '../_shared/haven-moderation.ts';
+import { verifyPlaybookAccess } from '../_shared/playbook-access.js';
 import {
   HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson, screenshotPart,
   textValue, validateChatBody, savedStep,
@@ -305,7 +306,8 @@ Deno.serve(async (request) => {
         auditData: { ...qualification, routingState: session.routing_state || null, currentStep: allowedPublicSteps.includes(session.current_step as string) ? session.current_step : defaultStep },
       };
     }
-    const systemPrompt = buildHavenSystemPrompt(promptContext);
+    const playbookVerified = await verifyPlaybookAccess(context.playbookAccessToken, key);
+    const systemPrompt = buildHavenSystemPrompt({ ...promptContext, playbookVerified });
     // Client history is only validated input; provider context comes from saved turns.
     const history: HavenMessage[] = [];
     let chars = 0;
@@ -332,7 +334,7 @@ Deno.serve(async (request) => {
       flagStatus = moderation.flagStatus;
       warned = moderation.changed && flagStatus === 'yellow';
     }
-    const routed = resolveHavenRouting(rawText, { scope, ...qualification, routingState: session.routing_state, serviceId: session.service_id, latestUserText: latest });
+    const routed = resolveHavenRouting(rawText, { scope, ...qualification, playbookVerified, routingState: session.routing_state, serviceId: session.service_id, latestUserText: latest });
     rawText = routed.text;
     const askedQuestion = rawText.includes('[[DIAGNOSTIC_QUESTION]]') && rawText.includes('?');
     rawText = rawText.replace(/\[\[(?:FLAG:[A-Z_]+|NEED:[A-Z_]+|DIAGNOSTIC_QUESTION)\]\]/g,'').trim();

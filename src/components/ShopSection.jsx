@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   BookOpen, CheckCircle2, ArrowRight, X, ShieldCheck,
@@ -15,17 +15,17 @@ const PURCHASE_STORAGE_KEY   = 'tmh_playbook_purchase';
 const PAYMENT_TIMEOUT_MS     = 90 * 1000; // 90s — reset if Paystack goes silent
 
 const features = [
-  'Stop guessing with marketing and build deep audience clarity',
-  'Master the strategy filter: learn what to say no to',
-  'Uncover the hidden drivers of influence and real consumer decisions',
-  'Shift from knowing to doing with the TMH execution framework',
+  'Understand why people ask your price, then disappear',
+  'Explain what your product changes for the person buying it',
+  'Build trust with proof, not louder promises or more posts',
+  'Leave with one product and a practical 24-hour action plan',
 ];
 
 const playbookModules = [
-  { title: "Chapter 1-3: The Setup & Strategy", desc: "Expose marketing's biggest lies, navigate the illusion of more, and use strategy as a ruthless filter." },
-  { title: "Chapter 4-6: The Execution Engine", desc: "Discover the hidden drivers of influence, shift from knowing to doing, and realize why the brand is you." },
-  { title: "Chapter 7-8: The Final Plays", desc: "Overcome everyday brand roadblocks and execute your unseen playbook step-by-step." },
-  { title: "Chapter 9: The Wrap Up & Action Plan", desc: "Execute your immediate 24-hour action plan to turn attention into real conversions." },
+  { title: 'Chapters 1–3 · Find your direction', desc: 'The Unseen Path, The Illusion of More, and Strategy Is a Filter. Understand why attention is not a sale and choose what deserves your effort.' },
+  { title: 'Chapters 4–6 · Give people a reason to choose you', desc: 'The Hidden Drivers of Influence, The Shift From Knowing to Doing, and The Brand Is You. Connect your offer to a real need, show proof, and make buying easier.' },
+  { title: 'Chapters 7–8 · Work through the sticking points', desc: 'Making It Real and Your Unseen Playbook. Tackle posts that get likes without orders, connect helpful content to your offer, and adjust what is already there.' },
+  { title: 'Chapter 9 · Make your next move', desc: 'The Wrap Up & 24-Hour Action Plan. Start with one product, one buyer problem, and a focused post you can put into practice.' },
 ];
 
 export default function ShopSection() {
@@ -40,12 +40,16 @@ export default function ShopSection() {
   const [downloadUrl, setDownloadUrl] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verificationError, setVerificationError] = useState('');
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryReference, setRecoveryReference] = useState('');
 
   const [alertState, setAlertState]             = useState(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   const paystackHandlerRef = useRef(null);
   const paymentTimeoutRef  = useRef(null);
+  const dialogRef = useRef(null);
 
   const clearPaymentTimeout = () => {
     if (paymentTimeoutRef.current) {
@@ -62,9 +66,9 @@ export default function ShopSection() {
       if (data?.reference) {
         setPaymentReference(data.reference);
         setDeliveryContact(data.email || '');
-        setPaymentSuccess(true);
+        setPaymentSuccess(false);
         setAlreadyDownloaded(Boolean(data.downloadedAt));
-        void verifyPurchase(data.reference);
+        void verifyPurchase(data.reference, data.email);
       }
     } catch {}
   }, []);
@@ -105,9 +109,11 @@ export default function ShopSection() {
 
   const persistPurchase = (ref, mail, downloadedAt = null) => {
     try {
+      const saved = JSON.parse(localStorage.getItem(PURCHASE_STORAGE_KEY) || 'null');
       localStorage.setItem(
         PURCHASE_STORAGE_KEY,
         JSON.stringify({
+          ...(saved?.reference === ref ? { accessToken: saved.accessToken } : {}),
           reference: ref,
           email: mail,
           paidAt: new Date().toISOString(),
@@ -117,17 +123,24 @@ export default function ShopSection() {
     } catch {}
   };
 
-  async function verifyPurchase(reference) {
+  async function verifyPurchase(reference, purchaseEmail) {
     setVerifying(true);
     setDownloadUrl('');
     setVerificationError('');
     try {
-      const { data, error } = await supabase.functions.invoke('verify-paystack', { body: { reference } });
+      const { data, error } = await supabase.functions.invoke('verify-paystack', { body: { reference, email: purchaseEmail }, signal: AbortSignal.timeout(25000) });
       if (error || !data?.ok || !data.url) throw new Error('Verification failed');
       setDownloadUrl(data.url);
+      setPaymentReference(reference); setDeliveryContact(purchaseEmail); setPaymentSuccess(true);
+      try {
+        const saved = JSON.parse(localStorage.getItem(PURCHASE_STORAGE_KEY) || 'null');
+        setAlreadyDownloaded(saved?.reference === reference && Boolean(saved.downloadedAt));
+        localStorage.setItem(PURCHASE_STORAGE_KEY, JSON.stringify({ ...(saved?.reference === reference ? saved : {}), reference, email: purchaseEmail, accessToken: data.playbookAccessToken }));
+      } catch { /* Verified access works for this visit even if storage is unavailable. */ }
       return data.url;
     } catch {
-      setVerificationError(`Please email info@themarketinghaven.xyz with your reference: ${reference}`);
+      setPaymentSuccess(false);
+      setVerificationError('We could not verify this purchase. Check the checkout email and Paystack reference, or contact info@themarketinghaven.xyz. Please do not pay again to recover a purchase.');
       return null;
     } finally {
       setVerifying(false);
@@ -136,6 +149,7 @@ export default function ShopSection() {
 
   const handlePaystackCheckout = async (e) => {
     if (e) e.preventDefault();
+    if (verifying || loading || recoveryOpen) return;
 
     const trimmed = email.trim();
 
@@ -181,7 +195,7 @@ export default function ShopSection() {
       email: trimmed,
       amount: PAYSTACK_AMOUNT_KOBO,
       currency: 'NGN',
-      ref: 'UNSEEN_' + Math.floor(Math.random() * 1000000000 + 1),
+      ref: `UNSEEN_${crypto.randomUUID()}`,
       metadata: {
         custom_fields: [
           {
@@ -197,10 +211,10 @@ export default function ShopSection() {
         setLoading(false);
         setPaymentReference(ref);
         setDeliveryContact(trimmed);
-        setPaymentSuccess(true);
+        setPaymentSuccess(false);
         setAlreadyDownloaded(false);
         persistPurchase(ref, trimmed, null);
-        void verifyPurchase(ref);
+        void verifyPurchase(ref, trimmed);
         setEmail('');
         paystackHandlerRef.current = null;
       },
@@ -262,11 +276,11 @@ export default function ShopSection() {
   const handleRedownloadPlaybook = async (event) => {
     event.preventDefault();
     if (verifying) return;
-    const url = await verifyPurchase(paymentReference);
+    const url = await verifyPurchase(paymentReference, deliveryContact);
     if (url) handleDownloadPlaybook(url);
   };
 
-  const handleCloseModal = () => {
+  const handleCloseModal = useCallback(() => {
     setIsPreviewOpen(false);
     setTimeout(() => {
       const hasPurchase = (() => {
@@ -284,7 +298,24 @@ export default function ShopSection() {
         setAlreadyDownloaded(false);
       }
     }, 300);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!isPreviewOpen || loading || alertState || showCancelConfirm) return;
+    const panel = dialogRef.current, previous = document.activeElement;
+    panel?.focus({ preventScroll: true });
+    const handleKey = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); handleCloseModal(); return; }
+      if (event.key !== 'Tab' || !panel) return;
+      const controls = [...panel.querySelectorAll('button:not([disabled]),a[href],input:not([disabled])')].filter((element) => element.getClientRects().length);
+      const first = controls[0], last = controls.at(-1);
+      if (!first) { event.preventDefault(); return; }
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === panel)) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => { document.removeEventListener('keydown', handleKey); previous?.focus?.({ preventScroll: true }); };
+  }, [isPreviewOpen, loading, alertState, showCancelConfirm, handleCloseModal]);
 
   return (
     <section
@@ -305,7 +336,7 @@ export default function ShopSection() {
             Digital Products
           </h2>
           <p className="max-w-2xl mx-auto text-sm sm:text-base text-zinc-600 dark:text-zinc-400">
-            Tools and templates built by strategists, for strategists.
+            For the moments when you are posting, showing up, and still wondering why people are not buying.
           </p>
         </motion.div>
 
@@ -358,6 +389,7 @@ export default function ShopSection() {
               >
                 Get The Unseen Playbook <ArrowRight className="w-4 h-4" />
               </button>
+              <button type="button" onClick={() => { setRecoveryOpen(true); setIsPreviewOpen(true); }} className="mt-4 self-start text-xs text-zinc-500 underline underline-offset-4 hover:text-zinc-800 dark:hover:text-zinc-200">Already purchased? Recover your copy</button>
             </div>
           </div>
         </motion.div>
@@ -377,6 +409,7 @@ export default function ShopSection() {
             />
 
             <motion.div
+              ref={dialogRef} tabIndex={-1}
               className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-white/10 bg-zinc-900 text-white shadow-[0_32px_96px_rgba(0,0,0,0.5)] overflow-hidden my-auto z-10"
               role="dialog"
               aria-modal="true"
@@ -404,7 +437,7 @@ export default function ShopSection() {
                     </h3>
                     <p className="text-xs text-zinc-400">
                       {paymentSuccess
-                        ? (alreadyDownloaded ? 'Download Delivered' : 'Payment Confirmed')
+                        ? (alreadyDownloaded ? 'Download opened on this device' : 'Purchase verified')
                         : 'Digital Blueprint & Strategy Guide'}
                     </p>
                   </div>
@@ -431,7 +464,7 @@ export default function ShopSection() {
 
                   <div className="space-y-2">
                     <h4 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">
-                      Payment Successful
+                      Your copy is ready.
                     </h4>
                     <p className="text-sm text-zinc-400 max-w-md mx-auto leading-relaxed">
                       Thank you for grabbing The Unseen Playbook. Your copy is ready. Click below to download it straight to your device.
@@ -448,7 +481,7 @@ export default function ShopSection() {
                     </div>
                     {deliveryContact && (
                       <div className="text-[11px] text-zinc-400 break-all">
-                        Receipt sent to <span className="text-zinc-300">{deliveryContact}</span>
+                        Checkout email: <span className="text-zinc-300">{deliveryContact}</span>
                       </div>
                     )}
                   </div>
@@ -456,7 +489,7 @@ export default function ShopSection() {
                   {alreadyDownloaded ? (
                     <div className="w-full inline-flex items-center justify-center gap-3 px-8 py-4 rounded-lg bg-white/5 text-zinc-400 font-medium text-base cursor-not-allowed select-none">
                       <Download className="w-5 h-5" />
-                      Download Completed
+                      Download opened
                     </div>
                   ) : downloadUrl && !verifying ? (
                     <a
@@ -506,7 +539,7 @@ export default function ShopSection() {
                         What's Inside The Playbook?
                       </h4>
                       <p className="text-sm leading-relaxed text-zinc-400">
-                        Removes the confusion and noise. This playbook gives founders, creators, and marketers the exact lenses needed to stop guessing and build systems with absolute clarity.
+                        People like the post. They ask the price. Then the conversation stops. These nine chapters help you understand the gap and give your next marketing move a clear purpose.
                       </p>
                     </div>
 
@@ -527,7 +560,19 @@ export default function ShopSection() {
                       ))}
                     </div>
 
-                    <form id="paystack-form" onSubmit={handlePaystackCheckout} className="space-y-3 pt-2">
+                    <div className="rounded-xl border border-white/10 p-4">
+                      <button type="button" aria-expanded={recoveryOpen} onClick={() => setRecoveryOpen((value) => !value)} className="text-sm text-zinc-200 underline underline-offset-4">Already purchased?</button>
+                      {recoveryOpen && <form onSubmit={async (event) => { event.preventDefault(); await verifyPurchase(recoveryReference.trim(), recoveryEmail.trim()); }} className="mt-4 space-y-3">
+                        <p className="text-xs leading-relaxed text-zinc-400">Recover your download on this device using the email and reference from your Paystack receipt. No extra payment is needed.</p>
+                        <label className="block text-xs text-zinc-400">Checkout email<input required type="email" value={recoveryEmail} onChange={(event) => setRecoveryEmail(event.target.value)} className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-3 text-base text-white" autoComplete="email" /></label>
+                        <label className="block text-xs text-zinc-400">Paystack reference<input required value={recoveryReference} onChange={(event) => setRecoveryReference(event.target.value)} placeholder="UNSEEN_…" className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-3 text-base text-white" autoCapitalize="none" spellCheck={false} /></label>
+                        <button disabled={verifying} className="rounded-lg bg-zinc-100 px-4 py-3 text-xs font-semibold text-zinc-950 disabled:opacity-50">{verifying ? 'Verifying purchase…' : 'Verify & access your copy'}</button>
+                      </form>}
+                      {verificationError && <p role="alert" className="mt-3 text-xs leading-relaxed text-red-300">{verificationError}</p>}
+                      {verifying && !recoveryOpen && <p role="status" className="mt-3 text-xs text-zinc-400">Checking your saved purchase…</p>}
+                    </div>
+
+                    {!recoveryOpen && <form id="paystack-form" onSubmit={handlePaystackCheckout} className="space-y-3 pt-2">
                       <label htmlFor="playbook-receipt-email" className="block text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-300">
                         Email for your receipt
                       </label>
@@ -541,9 +586,9 @@ export default function ShopSection() {
                         className="w-full px-4 py-3 rounded-lg border border-white/15 bg-zinc-950/40 text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-400 transition-colors"
                       />
                       <p className="text-xs text-zinc-400">
-                        Your receipt will be sent here. Your download starts the moment payment confirms.
+                        Use an email you can access. Your download is available after payment verification.
                       </p>
-                    </form>
+                    </form>}
 
                     <div className="flex items-center gap-2 text-zinc-400 text-xs">
                       <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
@@ -563,14 +608,14 @@ export default function ShopSection() {
                       {PAYSTACK_AMOUNT_KOBO === 10000 && <p className="mt-2 text-xs text-zinc-300">Current live checkout charge: ₦100 (testing).</p>}
                     </div>
 
-                    <button
+                    {recoveryOpen ? <button type="button" onClick={() => setRecoveryOpen(false)} className="rounded-lg border border-white/15 px-5 py-3 text-sm text-zinc-200">Back to checkout</button> : <button
                       type="button"
                       onClick={handlePaystackCheckout}
-                      disabled={loading}
+                      disabled={loading || verifying}
                       className="w-full sm:w-auto px-8 py-3.5 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-sm transition-colors active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Opening Checkout...' : 'Confirm & Pay via Paystack'}
-                    </button>
+                    </button>}
                   </div>
                 </>
               )}

@@ -1,0 +1,810 @@
+TMH LAUNCH POLISH VALIDATION — 25 October 2026
+
+Branch: codex/bookings-playbook-and-drawer-polish
+Local only. No commit, push, deployment or production SQL.
+
+
+COMMAND: node --test tests/backend-tasks.test.mjs tests/booking-ui.test.mjs tests/playbook-ui.test.mjs
+EXIT: 0
+✔ Task 6: email lookup trims input, matches case-insensitively and escapes SQL wildcards (1153.2142ms)
+✔ Task 5: only verified NGN payments at either allowed price receive one-hour download URLs (872.0946ms)
+✔ Task 5: invalid references, origins, methods and missing secrets cannot trigger delivery (290.7905ms)
+✔ Task 5: failed, wrong-reference, wrong-currency and public-bucket payments never receive a URL (1098.9878ms)
+✔ purchase recovery rejects a mismatched checkout email without signing a download or guidance token (221.2853ms)
+✔ Calendly cancellation is signature checked, saved and never sends a customer confirmation (573.1674ms)
+✔ Task 7: capture validates service/email and logs abandoned intent without sending email (34.1433ms)
+✔ Task 7: webhook rejects forged, tampered, expired, future and missing signatures before DB access (436.4628ms)
+✔ Task 7: review path creates briefing with only last five audit messages and sends once across webhook retries (605.4483ms)
+✔ Task 7: services path selects the newest intent and sends correct service copy once (1772.1149ms)
+✔ Task 7: unmatched webhook records a direct booking without sending a confirmation (196.2115ms)
+✔ Task 7: sender rejects anon callers, retries failed delivery, and deduplicates concurrent deliveries (190.8258ms)
+✔ Task 7: admin indexes independent support sessions and loads their saved transcript on demand (33.412ms)
+✔ Task 7 UI: review path has no email input/capture/prefill and preserves click timestamp (1014.6106ms)
+✔ Task 7 UI: invalid services email blocks Calendly and shows inline error (92.3229ms)
+✔ Task 7 UI: service capture completes before navigation; encoded email and service survive (31.8389ms)
+✔ Task 7 UI: failed capture keeps modal open and closes the blank popup (97.8485ms)
+✔ Playbook card shows the launch price before opening, and checkout discloses the real test charge (976.274ms)
+✔ Task 5 UI: remount verifies stored reference and withholds download until a fresh URL arrives (374.6381ms)
+✔ Task 5 UI: re-download verifies again and uses the newly issued URL (68.0752ms)
+✔ purchase recovery: another device verifies email/reference and retains the signed guidance token after download (180.6732ms)
+✔ Task 5 UI: failed return verification hides downloads and gives recovery options without another charge (84.9516ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8163.9873
+
+
+COMMAND: node --test tests/*.test.mjs
+EXIT: 0
+✔ admin flags: persists the returned flag and posts password, email, status, and trimmed reason (55.226ms)
+✔ admin flags: warning email failure keeps the saved yellow flag and shows the server error (4.63ms)
+✔ admin flags: cancelling the reason prompt sends no request or update (3.3779ms)
+✔ admin flags: invalid admin password ends the admin session without changing the lead (4.9455ms)
+✔ admin flags: network failure restores the controls and reports an error (3.9215ms)
+✔ admin dashboard: total uses loaded leads and Clear Data clears both browser stores before reload (15.5948ms)
+✔ admin data: password gate prevents reads and authorized payload includes purchases without private tokens (255.5731ms)
+✔ admin data: linked audit/support/service stay under the lead while guest scopes stay in their own tabs (130.6943ms)
+✔ admin data: transcript is authenticated on demand, bounded to200, and strips image/private fields (40.7724ms)
+✔ admin data: missing purchase migration is visible without hiding usable lead records (33.6517ms)
+✔ admin delete: wrong credentials and missing confirmation cannot reach database or storage (57.7871ms)
+✔ admin delete: confirmed request runs one transaction and removes only its saved screenshot (48.0842ms)
+✔ admin delete: failed transaction returns500 without deleting screenshot; missing lead returns404 (100.9273ms)
+✔ admin delete: committed deletion reports screenshot cleanup warning without pretending the row remains (35.4768ms)
+✔ admin delete: a malformed saved path cannot delete another lead screenshot (63.0353ms)
+✔ admin UI: cancelling concrete lead confirmation sends no delete; confirmed delete removes only acknowledged row (14.6049ms)
+✔ admin UI: failed/unauthorized deletion leaves lead visible and releases controls (11.2442ms)
+✔ admin UI: failed notes remain retryable and network failures normalize into visible errors (18.9271ms)
+✔ admin UI: purchase response reaches dashboard helper and kobo displays as NGN naira (92.5616ms)
+✔ admin tabs: five counted sections switch panels without leaving other section content visible (32.3773ms)
+✔ lead conversations: scope switcher keeps all linked scopes under one lead (8.6075ms)
+✔ guest chat: transcript mounts only after expansion and visitor moderation keeps saved502 status (142.6493ms)
+✔ transcript: authenticated lazy request is cached and never fetches while the closed row is rendered (15.3514ms)
+✔ transcript: failed lazy request provides an explicit retry and then renders saved content (7.4167ms)
+✔ transcript: refresh replaces an earlier empty snapshot with newly saved messages (8.5607ms)
+✔ bookings: upcoming and cancellation filters separate provider and legacy statuses (22.092ms)
+✔ standalone sessions and purchases: search has an explicit empty state (67.1984ms)
+✔ purchase email: pending retry sends only the saved reference and patches the returned delivery status (14.988ms)
+✔ purchase email: failed retry retains saved diagnostics and exposes a retryable error (18.1387ms)
+✔ Task 6: email lookup trims input, matches case-insensitively and escapes SQL wildcards (1113.3275ms)
+✔ Task 5: only verified NGN payments at either allowed price receive one-hour download URLs (663.6069ms)
+✔ Task 5: invalid references, origins, methods and missing secrets cannot trigger delivery (109.3914ms)
+✔ Task 5: failed, wrong-reference, wrong-currency and public-bucket payments never receive a URL (422.7391ms)
+✔ purchase recovery rejects a mismatched checkout email without signing a download or guidance token (155.0485ms)
+✔ Calendly cancellation is signature checked, saved and never sends a customer confirmation (538.6006ms)
+✔ Task 7: capture validates service/email and logs abandoned intent without sending email (48.0697ms)
+✔ Task 7: webhook rejects forged, tampered, expired, future and missing signatures before DB access (154.0489ms)
+✔ Task 7: review path creates briefing with only last five audit messages and sends once across webhook retries (881.1497ms)
+✔ Task 7: services path selects the newest intent and sends correct service copy once (1933.7147ms)
+✔ Task 7: unmatched webhook records a direct booking without sending a confirmation (72.5221ms)
+✔ Task 7: sender rejects anon callers, retries failed delivery, and deduplicates concurrent deliveries (100.5357ms)
+✔ Task 7: admin indexes independent support sessions and loads their saved transcript on demand (73.6353ms)
+✔ Task 7 UI: review path has no email input/capture/prefill and preserves click timestamp (947.8807ms)
+✔ Task 7 UI: invalid services email blocks Calendly and shows inline error (22.8816ms)
+✔ Task 7 UI: service capture completes before navigation; encoded email and service survive (50.9938ms)
+✔ Task 7 UI: failed capture keeps modal open and closes the blank popup (127.2674ms)
+✔ rejects missing/wrong internal keys without making API or database calls (1642.1655ms)
+✔ syncs processed bookings without sending another confirmation (398.4501ms)
+✔ updates matching review and builds briefing from assessment and last five audit messages (322.4685ms)
+✔ preserves existing briefing while updating booked time and skips session query (194.0785ms)
+✔ does not overwrite a briefing added concurrently after initial lookup (45.1481ms)
+✔ sends only for matching unsent newest intent; sent or absent intent sends nothing (972.3158ms)
+✔ records unmatched events while continuing to sync their booking details (438.5029ms)
+✔ Calendly API errors return ok:false without marking unfinished events (1101.5932ms)
+✔ failed confirmation remains retryable and succeeds on the next poll (573.7809ms)
+✔ review match waits for a late booking intent, then sends confirmation once (161.4632ms)
+✔ already-sent confirmations can complete events without another email (274.1922ms)
+✔ failed confirmations age out after two hours from booking creation, including future meetings (124.1159ms)
+✔ review-only bookings age out and missing/invalid creation times fall back to meeting time (708.6053ms)
+✔ a recent booking stays retryable even when the meeting started over two hours ago (82.2527ms)
+✔ a failed event does not block confirmations and markers for later events (241.4013ms)
+✔ group event waits for every invitee and retries only confirmations still unsent (439.7907ms)
+✔ follows event and invitee pagination and marks group event after all invitees (103.51ms)
+✔ database marker failure reports failure instead of success (184.1425ms)
+✔ booking storage failure stays retryable and cannot produce a processed marker or confirmation (280.6827ms)
+✔ canceled bookings sync even when already processed and do not send another email (87.0551ms)
+✔ mail configuration: reads and trims only the server secret, supports a verified subdomain sender, rejects header injection (9.2173ms)
+✔ mail diagnostics: distinguish sender verification, key, test recipient, limits and retry conflicts without exposing provider text (1.9362ms)
+✔ internal sender failures: preserves safe codes from non-2xx invocation responses and identifies gateway/boot failures (172.9704ms)
+✔ sender check: verifies the exact account domain, never a different verified subdomain, without sending an email (9.4388ms)
+✔ sender check: sending-only keys require a dashboard check and cannot be falsely labelled verified (2.7335ms)
+✔ flag lookup: legacy email-check response remains exactly { exists } without moderation data (568.4104ms)
+✔ flag lookup: includeFlag returns current red or white without exposing reason, email or review ID (29.152ms)
+✔ flag lookup: includeFlag errors are non-200 while legacy database failures retain their response shape (79.2492ms)
+✔ flag lookup: invalid email or missing secrets cannot silently return a white flag (31.0149ms)
+✔ flag alert: only the exact service-role bearer can read notifications or send email (3278.6593ms)
+✔ flag alert: content comes from the database snapshot and recipients are fixed (382.3936ms)
+✔ flag alert: yellow status and missing reason use snapshot values and fallback text (346.0193ms)
+✔ flag alert: a durable sent marker skips delivery even long after provider idempotency expires (217.2805ms)
+✔ flag alert: repeated calls after success send once and then skip (379.4958ms)
+✔ flag alert: failed provider responses or thrown network errors leave the outbox pending (310.8035ms)
+✔ flag alert: a failed delivery retry reuses the same event idempotency key (450.2437ms)
+✔ flag alert: delivery marker failures return an error and retries retain the provider key (82.3744ms)
+✔ flag alert: missing notification or database errors cannot send email (875.1875ms)
+✔ flag alert: invalid IDs and malformed JSON are rejected without database or provider calls (348.7393ms)
+✔ flag alert: missing server secrets or email configuration cannot mark delivery (488.4231ms)
+✔ flag alert: unsupported methods and preflight do not touch notifications (66.4251ms)
+✔ flag customer: red sends a restriction email to saved recipient, ignoring caller recipient (124.1437ms)
+✔ flag customer: yellow warning and red restriction have separate durable event keys (256.8157ms)
+✔ flag customer: anonymous callers, guests and already sent events cannot send mail (287.2324ms)
+✔ flag customer: provider failure and failed sent marker leave the durable event retryable (188.9329ms)
+✔ flag worker: service-only retry drains both channels independently from durable pending snapshots (270.9992ms)
+✔ flag alert: known names and each chat source/session come from saved context (177.7102ms)
+✔ flag alert: guest session remains traceable and malformed provider acceptance stays pending (118.6829ms)
+✔ flag customer: a 2xx without a provider email ID cannot mark the warning as sent (46.7642ms)
+✔ website scoring: a valid low score remains visible and uses private review credentials (108.6439ms)
+✔ website scoring: bad extraction never reuses a stale score or becomes a network error (6.3949ms)
+✔ website scoring: upstream failure clears stale scores and shows retry/proceed copy (5.4263ms)
+✔ website scoring: a response without an explicit trusted scoring state cannot supply a score (5.8431ms)
+✔ website scoring: new form credentials are used immediately before React state rerenders (6.3976ms)
+✔ website scoring: a late result from the previous review cannot replace the newer review result (11.6784ms)
+✔ website scoring: legacy missing-token access is actionable instead of an endless retry instruction (6.7288ms)
+✔ social scoring: valid and unreadable screenshot states remain distinct (10.6712ms)
+✔ chat: audit sends credentials and bounded history, never a browser-generated system prompt or flag lookup (20.121ms)
+✔ chat: browser-cached red status does not replace the server decision (7.0746ms)
+✔ chat: server restriction text is rendered and authoritative red status is retained (4.4239ms)
+✔ chat: linked support and service carry ownership proof and separate public session IDs without score claims (9.8265ms)
+✔ chat: unlinked public scopes send visitor ownership without pretending to own a review (14.1195ms)
+✔ chat: response-loss retry reuses its request and public session IDs without adding a duplicate user turn (7.9589ms)
+✔ chat: authoritative flag responses update the shared profile in every scope (27.0744ms)
+✔ chat: old history is bounded before sending without dropping the latest question (6.7534ms)
+✔ chat: total history characters are bounded while retaining the latest question (10.1913ms)
+✔ review resume: credential-matching history wins over a longer conversation from another brand (10.0377ms)
+✔ session sync: in-memory credentials work even when localStorage is unavailable and exclude browser AI results (8.3996ms)
+✔ chat: ownership errors show recovery contact and clear thinking (7.9408ms)
+✔ chat: cancellation aborts the pending request without adding a false server error (8.9662ms)
+✔ chat retry: rephrased retry preserves the exact screenshot and turn ID without writing an error as an assistant reply (8.5269ms)
+✔ chat retry: rapid duplicate send is locked until the first attempt finishes (5.4867ms)
+✔ chat retry: a missing legacy capability releases thinking and shows recovery instead of throwing outside cleanup (2.9724ms)
+✔ typing: starts with a pause, reveals progressively, completes in bounded time, and cleans up its timer (529.0371ms)
+✔ typing: previously revealed greetings, old history and reduced motion render without replay (108.0223ms)
+✔ mobile viewport: coalesces keyboard movement, sizes only the shell, restores scroll and removes listeners (14.0029ms)
+✔ mobile keyboard: background and boundary gestures are contained, while inner scrolling and pinch zoom remain usable (34.9713ms)
+✔ routing: all entry points require two asked questions AND two substantive answers before either offer (23.8173ms)
+✔ routing: explicit first-message booking requests still need service-specific qualification (1.8909ms)
+✔ routing: qualified support never offers a call without an explicit request (4.0896ms)
+✔ routing: a foundational diagnosis selects the Playbook even if the model tries to send an established business to a call (2.0304ms)
+✔ routing: a technical operational defect cannot be sold the Playbook (1.6601ms)
+✔ routing: unknown need and raw booking/shop links cannot bypass qualification (0.7219ms)
+✔ routing: factual product information can be answered without treating every mention as an offer (0.8695ms)
+✔ routing: ordinary sales phrasing and step-only routes cannot skip diagnosis (0.6611ms)
+✔ routing: declining or hesitating cannot be overridden by an earlier booking request (3.4179ms)
+✔ routing: income, follower bands, a website or a low score alone no longer select a call (1.1999ms)
+✔ routing prompt: both audiences, server qualification counts and current Playbook scope are explicit (3.1798ms)
+✔ routing: bread-business diagnosis asks permission without naming the book; Please do then reveals it from saved state (11.9146ms)
+✔ routing: known foundational call request is acknowledged without resetting or selling a book without permission (1.6806ms)
+✔ routing: premature named-product curiosity cannot bypass qualification or permission (1.6463ms)
+✔ support help: website navigation and purchase/review recovery questions get concrete help without sales diagnosis (4.0539ms)
+✔ support help: asking how to book a call never sends someone to the Playbook shop (2.4909ms)
+✔ routing: a plain booking request cannot overwrite a saved foundational diagnosis through a new model marker (0.5898ms)
+✔ routing: negative booking language cannot create permission, and a changed diagnosis requires fresh permission (0.8841ms)
+✔ scorecard: unreadable content has a clear explanation and continue action with no numeric score (44.9633ms)
+✔ scorecard: network failure offers retry and continue separately from bad data (10.1783ms)
+✔ scorecard: genuine low and zero scores are rendered rather than treated as unavailable (44.1325ms)
+✔ scorecard: social bad data uses screenshot-specific copy rather than inventing a website failure (3.9624ms)
+✔ access refresh reads current restrictions without model calls or a new chat turn (1602.9956ms)
+✔ server chat: a plain booking request recognizes contractions but cannot count as a diagnostic answer (88.78ms)
+✔ server book knowledge: client claims do not unlock it; a valid purchase capability does (89.4288ms)
+✔ server chat: browser system prompts and system-role history are rejected before database/provider access (44.5343ms)
+✔ server chat: ownership denies missing, wrong, and cross-review credentials before any AI request (26.6004ms)
+✔ server chat: authoritative red restriction returns exact text without a model call despite forged white context (17.4834ms)
+✔ server chat: prompt uses saved brand, step, and valid low score; request facts cannot replace them (33.67ms)
+✔ server chat: public support and service construct their own prompts without audit authority (37.7919ms)
+✔ server chat: bad data and extraction failure never inject a numeric score into the diagnosis (48.2843ms)
+✔ server chat: message counts, lengths, roles, screenshots, and scope are bounded (46.1764ms)
+✔ server chat: DB step failures and provider failures cannot report success or expose upstream details (43.0092ms)
+✔ website scoring: coherent weak content produces and saves a valid 20 score (429.6669ms)
+✔ website scoring: short, nonsense, and legal-only extraction become bad_data without paying for model scoring (28.9715ms)
+✔ website scoring: model-detected bad data cannot preserve its proposed numerical score (11.451ms)
+✔ website scoring: reader failure is failed, not bad data, and clears prior score (10.4098ms)
+✔ website scoring: unavailable scorer cannot turn meaningful content into a bogus low score (1525.5992ms)
+✔ website scoring: ownership and saved target restrict scraping before external requests (119.3735ms)
+✔ website scoring: an owned fresh saved result can be reused but force retry reaches the reader (15.7863ms)
+✔ social scoring: only owned profiles accept screenshots; valid low and unreadable states persist separately (658.8668ms)
+✔ prompt strategy: empathy, hesitation, transformation, and no-income-guarantees remain in server instructions (2.9934ms)
+✔ server identity: wrong guest tokens and cross-visitor sessions cannot reach the provider (15.9722ms)
+✔ server identity: guest and linked-review red restrictions apply in every Haven scope without token spending (24.9212ms)
+✔ server history: supplied assistant history is ignored in favour of saved messages (12.23ms)
+✔ server replay: completed turn replay returns saved response with one provider request and one stored user message (30.9141ms)
+✔ server routing: model call and Playbook tags cannot bypass two substantive diagnostic answers (37.1647ms)
+✔ server automatic moderation: first AI event saves yellow, attempts both messages, strips metadata and never auto-red (17.2271ms)
+✔ provider privacy: unpaid Gemini is skipped while text chat and website scoring use Groq (26.489ms)
+✔ provider privacy: unpaid Gemini never receives a social screenshot and failure remains a clear continue path (8.2747ms)
+✔ session sync client: one session serializes writes and sends the newest snapshot after the in-flight write (24.3152ms)
+✔ session sync client: long Unicode histories fit the server byte limit while retaining the newest message (18.8165ms)
+✔ session sync client: different sessions can save independently while one request is pending (4.5143ms)
+✔ session sync client: transient failures retry at most twice, emit failure, and never log private capabilities (20.7578ms)
+✔ session sync client: HTTP403 is terminal rather than repeatedly replaying invalid credentials (6.1104ms)
+✔ session sync client: HTTP200 without ok:true is not acknowledged as saved (12.2479ms)
+✔ session sync client: a newer pending snapshot survives an older request failure (5.6598ms)
+✔ session sync client: debounce coalesces snapshots, requires all ownership credentials and strips image payloads (5.1522ms)
+✔ internal auth: only an exact server credential works, with legacy Bearer compatibility (119.2857ms)
+✔ real SDK: modern secret-key internal invocation authenticates the actual sender without putting a non-JWT key in Bearer (1020.4201ms)
+✔ privacy: saved review/support/service conversations and authorized team access are disclosed (482.8746ms)
+✔ privacy and terms: warning automation, human restriction review, and privacy rights remain explicit (54.7676ms)
+✔ privacy: provider processing reflects paid Gemini guard without promising universal no-training (26.5302ms)
+✔ deletion disclosures: policies and request/confirmation pages describe the actual limited flow (97.7266ms)
+✔ deletion emails: request and completion messages avoid promising every record is erased (197.9599ms)
+✔ mobile navigation traps Tab, closes on Escape and restores focus and the prior scroll lock (552.3143ms)
+✔ reduced motion removes the drawer travel and anchor smooth scrolling (38.338ms)
+✔ mobile review action closes navigation and calls the existing review flow once (26.846ms)
+✔ rejects missing, malformed, forged and byte-tampered signatures before JSON or database work (763.2296ms)
+✔ accepts raw UTF-8 and whitespace signatures, records each supported NGN price in kobo, and sends the requested email (716.1776ms)
+✔ editorial purchase email: new purchases get the CTA; legacy pending sends keep their exact original payload (1177.0205ms)
+✔ ignores unrelated signed events, references, statuses, currencies, and amounts without writes or sends (536.0263ms)
+✔ rejects authenticated malformed JSON, invalid UTF-8 and recognized purchases lacking a valid customer email (466.4534ms)
+✔ requires POST and the webhook signing secret (160.9768ms)
+✔ duplicate webhooks preserve the original buyer and amount and do not repeat delivered mail (245.1711ms)
+✔ saved unsent duplicates retry delivery to the original buyer, ignoring replay payload changes (219.1007ms)
+✔ Resend failures keep the purchase and unsent flag so the next Paystack delivery retries (132.8307ms)
+✔ concurrent duplicate webhooks retain one purchase and use one provider idempotency key (211.0561ms)
+✔ database insert or lookup failures return non-200 without sending email (270.6921ms)
+✔ a failed durable flag update remains retryable with the same provider key (124.0376ms)
+✔ sender accepts only the service-role key and cannot send to an address unrelated to the saved purchase (93.5581ms)
+✔ sender validates its payload and leaves failed network deliveries unsent (144.6579ms)
+✔ durable sent flags skip provider calls across new function instances (150.8005ms)
+✔ webhook stage logs and failure diagnostics contain no buyer data, references, secrets or provider bodies (142.6656ms)
+✔ a configured live environment accepts the intentional NGN 100 live purchase and logs key mode safely (110.4626ms)
+✔ optional environment guard rejects mismatched keys, signed payment domains and invalid configuration before writes (721.4479ms)
+✔ Resend 2xx responses without a valid JSON acceptance ID remain pending with actionable diagnostics (383.876ms)
+✔ delivery timestamps and provider ID are saved only after valid provider acceptance and an acknowledged row update (214.2932ms)
+✔ sender fails safely before email when the delivery-tracking write is unavailable (131.2951ms)
+✔ webhook refuses success when a sender claims success without the durable sent marker (78.6728ms)
+✔ admin email retry requires the existing admin password, a valid reference and allowed method/origin (155.5018ms)
+✔ admin retry recovers an existing pending purchase using only its saved recipient and returns fresh delivery status (226.9627ms)
+✔ admin retry returns saved sanitized failure diagnostics and can subsequently recover (224.915ms)
+✔ admin retry skips sent purchases, rejects unknown purchases and repairs stored acceptance without another email (190.4462ms)
+✔ mail setup check: service authentication is required and a read-only check never sends or touches purchases (61.857ms)
+✔ book access: cryptographic proof is required; tampering, expiry and secret rotation fail closed (124.4066ms)
+✔ book prompt: unverified visitors cannot supply private chapter knowledge through a claim or client profile (5.0241ms)
+✔ book prompt: verified readers get the actual nine chapters and focused help, without whole-book export permission (2.2095ms)
+✔ book routing: verified application help stays conversational; calls still require qualification (9.0212ms)
+✔ editorial mail: purchase button has the requested destination, plain-text fallback and honest recovery wording (2.1292ms)
+✔ editorial mail: stored names/reasons are escaped and unsafe button URLs are suppressed (2.1313ms)
+✔ Playbook card shows the launch price before opening, and checkout discloses the real test charge (465.3772ms)
+✔ Task 5 UI: remount verifies stored reference and withholds download until a fresh URL arrives (88.9868ms)
+✔ Task 5 UI: re-download verifies again and uses the newly issued URL (32.1957ms)
+✔ purchase recovery: another device verifies email/reference and retains the signed guidance token after download (49.7258ms)
+✔ Task 5 UI: failed return verification hides downloads and gives recovery options without another charge (41.9957ms)
+✔ progressive image: reserves the frame while loading, reveals loaded images, and hides stale images on a source change (464.6329ms)
+✔ progressive image: cached images skip the skeleton and failed images retain an accessible fallback (24.5203ms)
+✔ progressive image: review screenshots use contain without a competing cover utility (42.5928ms)
+✔ creation sends CAPTCHA and screenshot only to server, with a bounded request and private stable credentials (720.3454ms)
+✔ lost-response and reload retry reuse the same review/session/token rather than creating a second record (45.3358ms)
+✔ screenshot quota failure still preserves small credentials for a reload retry with the original image (43.7131ms)
+✔ retry keeps every original submission detail while accepting a fresh single-use CAPTCHA (19.4542ms)
+✔ HTTP errors, malformed replies, mismatched IDs and timeout never become a saved review (84.7964ms)
+✔ modal awaits deferred save, blocks close and double submit, and retains screenshot/form until success (59.4972ms)
+✔ failed save preserves the form/image, shows the exact alert, resets CAPTCHA and retries the same submission ID (82.2629ms)
+✔ a rejected submit promise keeps the draft and reports failure instead of resetting (61.6948ms)
+✔ a reloaded pending modal restores the original screenshot and reuses its submission ID (30.2371ms)
+✔ quota-limited reload asks for the original screenshot and blocks submission until it is selected (37.6494ms)
+✔ App keeps the form open and never opens a ghost drawer after a failed save (46.1531ms)
+✔ App waits for a saved review, forwards CAPTCHA and opens the drawer only with the returned capability (17.7842ms)
+✔ App rejects incomplete success responses instead of opening a drawer without ownership (111.5465ms)
+✔ App opens the saved original profile after retry, including its original email and screenshot filename (55.4003ms)
+✔ invalid screenshots cannot poison creation retries; a valid replacement for the same ID succeeds (61.7419ms)
+✔ the modal rejects unsupported and oversized files visibly before reading them, then permits a valid replacement (41.7911ms)
+✔ sync verifies both row relationship and private token before making any write (1203.1643ms)
+✔ sync rejects missing review or session instead of claiming a zero-row success (341.4278ms)
+✔ sync returns500 for any ownership lookup or atomic update database failure (322.3407ms)
+✔ sync writes bounded transcript and clicks only; browser cannot overwrite score, flags or trusted steps (64.4261ms)
+✔ sync rejects invalid timestamp, oversized payloads and methods (45.5211ms)
+✔ creation validates CAPTCHA on the server and atomically creates review, session and hashed capability (55.9073ms)
+✔ failed or missing CAPTCHA and invalid required fields never create a review (253.609ms)
+✔ failed creation transaction returns failure; no screenshot is uploaded and no success IDs escape (79.9977ms)
+✔ response-lost creation retry uses the same capability and never consumes CAPTCHA or inserts twice (76.5053ms)
+✔ screenshot upload failure is recoverable with same saved credentials and path (53.8606ms)
+✔ creation cannot acknowledge or orphan a screenshot when its review is deleted during upload (61.2329ms)
+✔ tracking: optional counters and attribution stay off before consent or after declining (23.0118ms)
+✔ tracking: accepted visit counters increment while disabled storage never breaks startup (8.0663ms)
+✔ moderation admin: service bearer and existing password authorize the atomic RPC (239.0071ms)
+✔ moderation admin: only server-verified app_metadata administrator claims authorize (18.2588ms)
+✔ moderation admin: missing, forged, wrong-password and absent-password credentials cannot write (19.3985ms)
+✔ moderation admin: visitor restrictions target the verified stored identity rather than an invented email (11.6887ms)
+✔ moderation admin: yellow and red queue both team and customer delivery; white queues neither (21.8793ms)
+✔ moderation admin: saved red restriction survives email failure and both recipients are attempted independently (26.1086ms)
+✔ moderation admin: same-status retry drains pending delivery without sending already-delivered channels (6.1401ms)
+✔ moderation admin: invalid targets, status, reason and origins are rejected without writes (36.4487ms)
+✔ moderation admin: missing migrations and missing users report actionable errors without delivery (23.1991ms)
+✔ automatic moderation: only internal service credentials may create AI events (4.7777ms)
+✔ automatic moderation: first event becomes yellow; repeated events cannot become red or spam notifications (7.4492ms)
+✔ automatic moderation: a new AI event cannot clear or escalate an existing administrator restriction (5.8632ms)
+✔ automatic moderation: guests receive a durable yellow flag and team alert without pretending to know an email (6.7019ms)
+✔ automatic moderation: email transport failure is pending durable work rather than a lost flag or failed chat (8.3784ms)
+✔ automatic moderation: pending read failure preserves saved status for later drain (4.4212ms)
+✔ automatic moderation: malformed event keys, IDs and reasons cannot reach the RPC (11.1883ms)
+✔ notification retry: admin can drain pending mail without changing flags, reasons or creating new events (7.0314ms)
+✔ welcome mail: anonymous callers are rejected before database or provider work (648.4508ms)
+✔ welcome mail: uses the saved recipient, escaped names, verified default sender and a working resume button (169.8865ms)
+✔ welcome mail: an accepted email survives a marker failure and is repaired without sending again (123.0321ms)
+✔ retired onsite sender cannot be used to mail an arbitrary recipient (33.7584ms)
+ℹ tests 282
+ℹ suites 0
+ℹ pass 282
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 14633.101
+
+
+COMMAND: node scripts/check-final-migrations.mjs C:\Users\HP\AppData\Local\Temp\tmh-final-sql-runtime\node_modules\@electric-sql\pglite\dist\index.js
+EXIT: 0
+Isolated PostgreSQL; no production connection.
+PASS all selected migrations compile and commit
+PASS bookings migration preserves historical identities, slot fields and Lagos time
+PASS review creation is atomic and its retries are idempotent
+PASS guest sessions reject wrong tokens and cannot be claimed by a second visitor
+PASS verified linking groups prior support and future service chats under the lead
+PASS turns save answers once, serialize active requests and replay completed replies
+PASS failed completion rolls back cached response and transcript together
+PASS diagnosis and permission commit atomically and survive the next turn
+PASS legacy browser snapshots cannot overwrite server-owned transcripts
+PASS AI warning is yellow only, once per transition, with saved name, scope and session
+PASS admin restriction propagates across linked chats, and explicit clearing works
+PASS unrestricted audit chat persists new turns and keeps its original transcript
+PASS Calendly retries deduplicate bookings, cancellations win and reschedules remain separate
+PASS guest alerts identify the support session without inventing a name/email
+PASS public roles cannot mutate leads, read private proofs, or invoke privileged RPCs
+PASS lead deletion removes linked sessions, turns and proofs while retaining purchases
+PostgreSQL checks: 16 passed, 0 failed
+
+
+COMMAND: npm.cmd exec --yes --package=deno -- deno check --no-config [the 11 entrypoints below]
+EXIT: 0
+Check supabase/functions/admin-fetch-leads/index.ts
+Check supabase/functions/calendly-poll-bookings/index.ts
+Check supabase/functions/calendly-webhook/index.ts
+Check supabase/functions/haven-chat/index.ts
+Check supabase/functions/verify-paystack/index.ts
+Check supabase/functions/send-purchase-thankyou/index.ts
+Check supabase/functions/send-welcome-email/index.ts
+Check supabase/functions/send-flag-alert/index.ts
+Check supabase/functions/send-flag-customer/index.ts
+Check supabase/functions/send-tmh-booking-confirmation/index.ts
+Check supabase/functions/send-booking-confirmation/index.ts
+
+
+COMMAND: npm.cmd run build
+EXIT: 0
+
+> tmh-platform@0.0.0 build
+> vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 2322 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                      0.47 kB │ gzip:   0.30 kB
+dist/assets/Logo_loading_animation-B8Rh-l3w.mp4  1,076.33 kB
+dist/assets/index-rLfhyAHW.css                     148.44 kB │ gzip:  19.17 kB
+dist/assets/arrow-up-mLUeEudo.js                     0.62 kB │ gzip:   0.32 kB
+dist/assets/DataDeletionConfirmPage-SUkNbam1.js      3.33 kB │ gzip:   1.39 kB
+dist/assets/TermsPage-DEkuTnHw.js                   21.95 kB │ gzip:   6.34 kB
+dist/assets/PrivacyPage-FLTWLzrG.js                 25.88 kB │ gzip:   7.39 kB
+dist/assets/AdminRoute-BEy9ohoO.js                  54.92 kB │ gzip:  14.76 kB
+dist/assets/index-BNLGzxPL.js                      829.52 kB │ gzip: 244.04 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 26.31s
+
+
+Built JS check: 0 matches for private knowledge markers 'PRIVATE CHAPTER NOTES -' and 'TMH Execution Framework connects'.
+
+COMMAND: npm.cmd run lint -- --format json --output-file node_modules/.cache/tmh-oct25/final-lint.json
+EXIT: 1
+52 errors, 2 warnings. Existing baseline: 52 errors, 2 warnings.
+All current diagnostics:
+
+C:\Projects\tmh-platform\src\components\AboutSection.jsx
+  2:8 ERROR no-unused-vars: 'React' is defined but never used.
+
+C:\Projects\tmh-platform\src\components\MasterclassBanner.jsx
+  1:8 ERROR no-unused-vars: 'React' is defined but never used.
+
+C:\Projects\tmh-platform\src\components\Navbar.jsx
+  1:8 ERROR no-unused-vars: 'React' is defined but never used.
+
+C:\Projects\tmh-platform\src\components\Preloader.jsx
+  1:8 ERROR no-unused-vars: 'React' is defined but never used.
+
+C:\Projects\tmh-platform\src\components\ShopSection.jsx
+  1:8 ERROR no-unused-vars: 'React' is defined but never used.
+  67:9 ERROR react-hooks/set-state-in-effect: Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  65 |       const data = JSON.parse(raw);
+  66 |       if (data?.reference) {
+> 67 |         setPaymentReference(data.reference);
+     |         ^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  68 |         setDeliveryContact(data.email || '');
+  69 |         setPaymentSuccess(false);
+  70 |         setAlreadyDownloaded(Boolean(data.downloadedAt));
+  73:13 ERROR no-empty: Empty block statement.
+  123:13 ERROR no-empty: Empty block statement.
+
+C:\Projects\tmh-platform\src\components\TestimonialsSection.jsx
+  2:8 ERROR no-unused-vars: 'React' is defined but never used.
+  5:10 ERROR no-unused-vars: 'Star' is defined but never used.
+  138:47 ERROR no-empty: Empty block statement.
+
+C:\Projects\tmh-platform\src\components\about\AboutStoryVideo.jsx
+  4:8 ERROR no-unused-vars: 'React' is defined but never used.
+
+C:\Projects\tmh-platform\src\components\about\PersonModal.jsx
+  4:8 ERROR no-unused-vars: 'React' is defined but never used.
+
+C:\Projects\tmh-platform\src\components\about\TeamSlideshow.jsx
+  4:8 ERROR no-unused-vars: 'React' is defined but never used.
+
+C:\Projects\tmh-platform\src\components\haven\components\ActionModals.jsx
+  1:8 ERROR no-unused-vars: 'React' is defined but never used.
+  1:17 ERROR no-unused-vars: 'useEffect' is defined but never used.
+  1:28 ERROR no-unused-vars: 'useRef' is defined but never used.
+  13:3 ERROR no-unused-vars: 'Sparkles' is defined but never used.
+
+C:\Projects\tmh-platform\src\components\haven\components\HavenDrawer.jsx
+  187:9 ERROR react-hooks/set-state-in-effect: Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  185 |         else label = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  186 |
+> 187 |         setHasOpenedBefore(true);
+      |         ^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  188 |         setLastOpenedLabel(label);
+  189 |       } else {
+  190 |         setHasOpenedBefore(false);
+  231:13 ERROR no-empty: Empty block statement.
+  399:6 WARNING react-hooks/exhaustive-deps: React Hook useEffect has a missing dependency: 'messages'. Either include it or remove the dependency array.
+  451:5 ERROR react-hooks/set-state-in-effect: Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  449 |     forceScrollOnNextAgentMsg.current = false;
+  450 |     if (autoFollow) return;
+> 451 |     setAutoFollow(true);
+      |     ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  452 |     setShowScrollBtn(false);
+  453 |     requestAnimationFrame(() => {
+  454 |       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'instant' });
+
+C:\Projects\tmh-platform\src\components\haven\components\HavenScoreCard.jsx
+  4:8 ERROR no-unused-vars: 'React' is defined but never used.
+  100:69 ERROR no-unused-vars: 'userName' is defined but never used.
+  100:79 ERROR no-unused-vars: 'brandName' is defined but never used.
+
+C:\Projects\tmh-platform\src\components\haven\context\HavenContext.jsx
+  6:8 ERROR no-unused-vars: 'React' is defined but never used.
+  11:14 ERROR react-refresh/only-export-components: Fast refresh only works when a file only exports components. Move your React context(s) to a separate file.
+  140:13 ERROR no-unused-vars: 'screenshot' is assigned a value but never used.
+  292:13 ERROR no-empty: Empty block statement.
+  574:11 ERROR no-useless-assignment: The value assigned to 'greetingContent' is not used in subsequent statements.
+  618:17 ERROR no-empty: Empty block statement.
+  937:17 ERROR react-refresh/only-export-components: Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+
+C:\Projects\tmh-platform\src\components\haven\utils\reviewPersistence.js
+  46:11 ERROR no-empty: Empty block statement.
+  61:11 ERROR no-empty: Empty block statement.
+
+C:\Projects\tmh-platform\src\components\layout\Footer.jsx
+  4:8 ERROR no-unused-vars: 'React' is defined but never used.
+
+C:\Projects\tmh-platform\src\components\modals\BrandReviewModal.jsx
+  148:7 ERROR react-hooks/set-state-in-effect: Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  146 |     if (isOpen) {
+  147 |       const savedForm = loadReviewFormData();
+> 148 |       setStep(loadReviewFormStep());
+      |       ^^^^^^^ Avoid calling setState() directly within an effect
+  149 |       setErrors({});
+  150 |       try {
+  151 |         const pendingId = sessionStorage.getItem(SUBMISSION_ID_KEY);
+
+C:\Projects\tmh-platform\src\components\review\HavenChat.jsx
+  2:8 ERROR no-unused-vars: 'React' is defined but never used.
+  4:25 ERROR no-unused-vars: 'CheckCircle2' is defined but never used.
+  85:7 ERROR react-hooks/immutability: Error: Cannot access variable before it is declared
+
+`pushMessage` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+  83 |         ? `Hi ${name}! Haven Customer Support here. How can our team assist you with your order, playbooks, or access today?`
+  84 |         : `Hi there! Welcome to Customer Support. What can I help you clarify or troubleshoot right now?`;
+> 85 |       pushMessage(msg, 'agent');
+     |       ^^^^^^^^^^^ `pushMessage` accessed before it is declared
+  86 |       setTimeout(() => setShowQuickReplies(true), 1000);
+  87 |       return;
+  88 |     }
+
+  148 |   }, [messages, typing]);
+  149 |
+> 150 |   const pushMessage = (text, from) => {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 151 |     setTyping(true);
+      | ^^^^^^^^^^^^^^^^^^^^
+> 152 |     setTimeout(() => {
+      | ^^^^^^^^^^^^^^^^^^^^
+> 153 |       setMessages(prev => [...prev, { id: makeId(), from, text }]);
+      | ^^^^^^^^^^^^^^^^^^^^
+> 154 |       setTyping(false);
+      | ^^^^^^^^^^^^^^^^^^^^
+> 155 |     }, 800);
+      | ^^^^^^^^^^^^^^^^^^^^
+> 156 |   };
+      | ^^^^^ `pushMessage` is declared here
+  157 |
+  158 |   const handleQuickReply = (reply) => {
+  159 |     setShowQuickReplies(false);
+  144:6 WARNING react-hooks/exhaustive-deps: React Hook useEffect has a missing dependency: 'pushMessage'. Either include it or remove the dependency array.
+
+C:\Projects\tmh-platform\src\components\review\ReviewForm.jsx
+  1:8 ERROR no-unused-vars: 'React' is defined but never used.
+  64:5 ERROR react-hooks/set-state-in-effect: Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  62 |   useEffect(() => {
+  63 |     const newPreviews = files.map(file => URL.createObjectURL(file));
+> 64 |     setFilePreviews(newPreviews);
+     |     ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  65 |
+  66 |     return () => {
+  67 |       newPreviews.forEach(url => URL.revokeObjectURL(url));
+
+C:\Projects\tmh-platform\src\components\ui\ConfirmModal.jsx
+  6:8 ERROR no-unused-vars: 'React' is defined but never used.
+
+C:\Projects\tmh-platform\src\context\ThemeContext.jsx
+  1:8 ERROR no-unused-vars: 'React' is defined but never used.
+  41:14 ERROR react-refresh/only-export-components: Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+
+C:\Projects\tmh-platform\src\context\UserContext.jsx
+  1:8 ERROR no-unused-vars: 'React' is defined but never used.
+  1:54 ERROR no-unused-vars: 'useEffect' is defined but never used.
+  44:14 ERROR react-refresh/only-export-components: Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+
+C:\Projects\tmh-platform\src\pages\AdminDashboard.jsx
+  563:5 ERROR react-hooks/set-state-in-effect: Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  561 |
+  562 |   useEffect(() => {
+> 563 |     setNotes(lead.followup_notes || '');
+      |     ^^^^^^^^ Avoid calling setState() directly within an effect
+  564 |     notesRef.current = lead.followup_notes || '';
+  565 |   }, [lead.id, lead.followup_notes]);
+  566 |
+  1101:7 ERROR react-hooks/set-state-in-effect: Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  1099 |     const cached = sessionStorage.getItem(PASSWORD_KEY);
+  1100 |     if (cached) {
+> 1101 |       setPassword(cached);
+       |       ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  1102 |       void load(cached);
+  1103 |     }
+  1104 |   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  1136:17 ERROR react-hooks/purity: Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+  1134 |
+  1135 |   const processed = useMemo(() => {
+> 1136 |     const now = Date.now();
+       |                 ^^^^^^^^^^ Cannot call impure function
+  1137 |     const rangeDays = DATE_RANGES.find((r) => r.id === filters.dateRange)?.days ?? null;
+  1138 |
+  1139 |     const filtered = leads.filter((lead) => {
+  1174:21 ERROR react-hooks/set-state-in-effect: Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  1172 |   }, [leads, filters, sortId]);
+  1173 |
+> 1174 |   useEffect(() => { setPage(1); }, [filters, sortId]);
+       |                     ^^^^^^^ Avoid calling setState() directly within an effect
+  1175 |
+  1176 |   const totalPages = Math.max(1, Math.ceil(processed.length / PAGE_SIZE));
+  1177 |   const safePage = Math.min(page, totalPages);
+
+C:\Projects\tmh-platform\src\pages\PrivacyPage.jsx
+  1:8 ERROR no-unused-vars: 'React' is defined but never used.
+
+C:\Projects\tmh-platform\src\pages\TermsPage.jsx
+  1:8 ERROR no-unused-vars: 'React' is defined but never used.
+
+COMMAND: git diff --check
+EXIT: 0
+
+STDERR:
+warning: in the working copy of 'scripts/check-final-migrations.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/setup-calendly-webhook.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/App.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/AboutSection.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/ShopSection.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/TestimonialsSection.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/about/PersonModal.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/AdminDashboard.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/_shared/haven-prompts.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/_shared/haven-routing.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/calendly-poll-bookings/index.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/haven-chat/index.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/send-booking-confirmation/index.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/send-welcome-email/index.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/admin-tabs.test.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/backend-tasks.test.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/calendly-polling.test.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/flag-alerts.test.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/haven-mobile-polish.test.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/playbook-ui.test.mjs', LF will be replaced by CRLF the next time Git touches it
+
+
+COMMAND: git diff --stat
+EXIT: 0
+ scripts/check-final-migrations.mjs                 |  39 +++++
+ scripts/setup-calendly-webhook.mjs                 |  20 ++-
+ src/App.jsx                                        |  16 ++
+ src/components/AboutSection.jsx                    |  22 ++-
+ src/components/ShopSection.jsx                     | 109 +++++++++----
+ src/components/TestimonialsSection.jsx             |  89 +++++-----
+ src/components/about/AboutStoryVideo.jsx           |   5 +-
+ src/components/about/PersonModal.jsx               |   3 +-
+ src/components/haven/components/HavenDrawer.jsx    |   9 +-
+ src/components/haven/context/HavenContext.jsx      |   4 +-
+ src/components/haven/hooks/useDrawerViewport.js    |  33 +++-
+ src/pages/AdminDashboard.jsx                       |  69 +++++++-
+ supabase/config.toml                               |   3 +
+ supabase/functions/_shared/haven-prompts.js        |  97 ++++++++++-
+ supabase/functions/_shared/haven-routing.js        |   9 +-
+ supabase/functions/admin-fetch-leads/index.ts      |  13 +-
+ supabase/functions/calendly-poll-bookings/index.ts |  18 ++-
+ supabase/functions/calendly-webhook/index.ts       |  19 ++-
+ supabase/functions/haven-chat/index.ts             |   6 +-
+ .../functions/send-booking-confirmation/index.ts   |  33 +---
+ supabase/functions/send-flag-alert/index.ts        |   6 +-
+ supabase/functions/send-flag-customer/index.ts     |   7 +-
+ supabase/functions/send-purchase-thankyou/index.ts |   6 +-
+ .../send-tmh-booking-confirmation/index.ts         |  10 +-
+ supabase/functions/send-welcome-email/index.ts     | 180 +++++----------------
+ supabase/functions/verify-paystack/index.ts        |   8 +-
+ tests/admin-flags-ui.test.mjs                      |   2 +-
+ tests/admin-tabs.test.mjs                          |  41 ++++-
+ tests/backend-tasks.test.mjs                       |  41 +++--
+ tests/calendly-polling.test.mjs                    |  44 +++--
+ tests/flag-alerts.test.mjs                         |   2 +-
+ tests/haven-mobile-polish.test.mjs                 |  30 +++-
+ tests/haven-server.test.mjs                        |  15 ++
+ tests/paystack-purchases.test.mjs                  |  15 ++
+ tests/playbook-ui.test.mjs                         |  32 +++-
+ 35 files changed, 713 insertions(+), 342 deletions(-)
+
+STDERR:
+warning: in the working copy of 'scripts/check-final-migrations.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/setup-calendly-webhook.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/App.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/AboutSection.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/ShopSection.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/TestimonialsSection.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/about/PersonModal.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/AdminDashboard.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/_shared/haven-prompts.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/_shared/haven-routing.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/calendly-poll-bookings/index.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/haven-chat/index.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/send-booking-confirmation/index.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'supabase/functions/send-welcome-email/index.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/admin-tabs.test.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/backend-tasks.test.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/calendly-polling.test.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/flag-alerts.test.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/haven-mobile-polish.test.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/playbook-ui.test.mjs', LF will be replaced by CRLF the next time Git touches it
+
+
+COMMAND: git status
+EXIT: 0
+On branch codex/bookings-playbook-and-drawer-polish
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   scripts/check-final-migrations.mjs
+	modified:   scripts/setup-calendly-webhook.mjs
+	modified:   src/App.jsx
+	modified:   src/components/AboutSection.jsx
+	modified:   src/components/ShopSection.jsx
+	modified:   src/components/TestimonialsSection.jsx
+	modified:   src/components/about/AboutStoryVideo.jsx
+	modified:   src/components/about/PersonModal.jsx
+	modified:   src/components/haven/components/HavenDrawer.jsx
+	modified:   src/components/haven/context/HavenContext.jsx
+	modified:   src/components/haven/hooks/useDrawerViewport.js
+	modified:   src/pages/AdminDashboard.jsx
+	modified:   supabase/config.toml
+	modified:   supabase/functions/_shared/haven-prompts.js
+	modified:   supabase/functions/_shared/haven-routing.js
+	modified:   supabase/functions/admin-fetch-leads/index.ts
+	modified:   supabase/functions/calendly-poll-bookings/index.ts
+	modified:   supabase/functions/calendly-webhook/index.ts
+	modified:   supabase/functions/haven-chat/index.ts
+	modified:   supabase/functions/send-booking-confirmation/index.ts
+	modified:   supabase/functions/send-flag-alert/index.ts
+	modified:   supabase/functions/send-flag-customer/index.ts
+	modified:   supabase/functions/send-purchase-thankyou/index.ts
+	modified:   supabase/functions/send-tmh-booking-confirmation/index.ts
+	modified:   supabase/functions/send-welcome-email/index.ts
+	modified:   supabase/functions/verify-paystack/index.ts
+	modified:   tests/admin-flags-ui.test.mjs
+	modified:   tests/admin-tabs.test.mjs
+	modified:   tests/backend-tasks.test.mjs
+	modified:   tests/calendly-polling.test.mjs
+	modified:   tests/flag-alerts.test.mjs
+	modified:   tests/haven-mobile-polish.test.mjs
+	modified:   tests/haven-server.test.mjs
+	modified:   tests/paystack-purchases.test.mjs
+	modified:   tests/playbook-ui.test.mjs
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	LAUNCH_POLISH_20261025_REPORT.md
+	LAUNCH_POLISH_20261025_VALIDATION.txt
+	src/components/ui/ProgressiveImage.jsx
+	supabase/functions/_shared/calendly-bookings.ts
+	supabase/functions/_shared/email-template.js
+	supabase/functions/_shared/playbook-access.js
+	supabase/migrations/20261025000000_email_templates.sql
+	supabase/migrations/20261025000001_strategy_call_bookings.sql
+	tests/playbook-guidance.test.mjs
+	tests/progressive-image.test.mjs
+	tests/welcome-editorial.test.mjs
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+
+Note: git diff --stat omits untracked files. git status and the report list them. No files were staged.
+
+Browser QA: local mock-network React fixtures; 390px mobile, 390x420 compact height, 1366x900 laptop. Recovery, Bookings, transcript refresh, pending testimonial slides, image fallback and HTML email preview checked. Not physical iOS or live provider testing. Temporary fixtures/tabs/server cleaned up.

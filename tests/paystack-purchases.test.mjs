@@ -134,6 +134,21 @@ test('accepts raw UTF-8 and whitespace signatures, records each supported NGN pr
   }
 });
 
+test('editorial purchase email: new purchases get the CTA; legacy pending sends keep their exact original payload', async () => {
+  for (const version of ['legacy', 'editorial-v1']) {
+    const { sender, emails } = pipeline({ seed: [{ id: 'p1', email: 'buyer@example.com', reference: 'UNSEEN_purchase-123', thankyou_sent: false, email_template_version: version }] });
+    assert.equal((await sender(senderRequest())).status, 200);
+    assert.equal(emails[0].headers['Idempotency-Key'], 'playbook-purchase-thankyou/UNSEEN_purchase-123');
+    if (version === 'legacy') {
+      assert.equal(emails[0].payload.html, undefined);
+      assert.match(emails[0].payload.text, /further stuff/);
+    } else {
+      assert.match(emails[0].payload.html, /Access Your Playbook/);
+      assert.doesNotMatch(emails[0].payload.text, /further stuff/);
+    }
+  }
+});
+
 test('ignores unrelated signed events, references, statuses, currencies, and amounts without writes or sends', async () => {
   const { webhook, db, invocations } = pipeline();
   const unrelated = [

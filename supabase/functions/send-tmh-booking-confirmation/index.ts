@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
+import { isInternalRequest } from '../_shared/internal-auth.js';
 
 const SERVICES: Record<string, string> = {
   web: 'Brand & Web Engineering',
@@ -24,7 +25,7 @@ serve(async (req) => {
   const resendKey = Deno.env.get('RESEND_API_KEY');
   if (!url || !serviceKey || !resendKey) return json({ ok: false, error: 'Server misconfigured' }, 500);
   // This endpoint is called by the webhook only; browser anon keys cannot send mail.
-  if (req.headers.get('Authorization') !== `Bearer ${serviceKey}`) return json({ ok: false, error: 'Unauthorised' }, 401);
+  if (!isInternalRequest(req, serviceKey)) return json({ ok: false, error: 'Unauthorised' }, 401);
   try {
     const body = await req.json().catch(() => null);
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
@@ -39,7 +40,7 @@ serve(async (req) => {
     const { data: intent, error: intentError } = await intentQuery.order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (intentError) throw intentError;
     let table = 'booking_intents';
-    let record = intent;
+    let record: { id: string; confirmation_sent?: boolean; booking_confirmation_sent?: boolean } | null = intent;
     let flag = 'confirmation_sent';
     if (!intent) {
       let reviewQuery = supabase.from('brand_reviews').select('id, booking_confirmation_sent, call_booked_at').ilike('email', pattern);
@@ -49,7 +50,8 @@ serve(async (req) => {
       if (!review?.call_booked_at) return json({ ok: false, error: 'No matched booking' }, 404);
       table = 'brand_reviews'; record = review; flag = 'booking_confirmation_sent';
     }
-    if (record[flag] === true) return json({ ok: true, skipped: 'already sent' });
+    if (!record) return json({ ok: false, error: 'No matched booking' }, 404);
+    if ((flag === 'confirmation_sent' ? record.confirmation_sent : record.booking_confirmation_sent) === true) return json({ ok: true, skipped: 'already sent' });
     // Use the stored intent as the source of truth for the email's service copy.
     const friendly = intent?.service_id ? SERVICES[intent.service_id] : null;
     const text = `Hi there,

@@ -5,7 +5,7 @@
 // 1-hour signed screenshot URLs. Transcripts load on demand after admin auth.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -28,6 +28,7 @@ const REVIEW_FIELDS = [
   'clicked_playbook_link', 'converted_to_call', 'converted_to_purchase', 'deal_value',
   'followup_status', 'followup_notes', 'call_booked_at', 'flag_status', 'flag_reason',
   'agreed_to_terms', 'agreed_at', 'created_at', 'updated_at',
+  'welcome_email_sent', 'welcome_email_id', 'welcome_email_attempted_at', 'welcome_email_last_error',
 ];
 
 const ALLOWED_ORIGINS = [
@@ -132,7 +133,9 @@ serve(async (req) => {
       return json({ ok: false, error: reviewsError.message }, origin, 500);
     }
 
-    const rows = reviews || [];
+    // The SDK cannot infer a computed select string; the explicit field allowlist
+    // above still controls the actual database projection.
+    const rows = (reviews || []) as unknown as Array<Record<string, any> & { id: string; screenshot_url?: string }>;
     const reviewIds = rows.map((r) => r.id).filter(Boolean);
 
     const sessionsByReviewId: Record<string, any[]> = {};
@@ -160,7 +163,7 @@ serve(async (req) => {
 
     const screenshotPaths = rows
       .map((r) => r.screenshot_url)
-      .filter((p) => typeof p === 'string' && p.length > 0);
+      .filter((p): p is string => typeof p === 'string' && p.length > 0);
 
     const signedByPath: Record<string, string> = {};
     if (screenshotPaths.length > 0) {
@@ -216,6 +219,9 @@ serve(async (req) => {
       .limit(MAX_RECORDS);
 
     if (purchaseError) console.error('admin-fetch-leads: purchases query failed', purchaseError);
+    const { data: bookings, error: bookingsError } = await supabase.from('strategy_call_bookings')
+      .select('id,email,full_name,event_name,start_time,end_time,timezone,status,source,review_id,service_id,provider_created_at,last_synced_at,created_at')
+      .order('start_time', { ascending: false, nullsFirst: false }).limit(MAX_RECORDS);
     const purchases = (purchaseRows || []).map((purchase) => ({
       id: purchase.id, email: purchase.email, reference: purchase.reference,
       amount: purchase.amount, created_at: purchase.created_at, thankyou_sent: purchase.thankyou_sent,
@@ -226,6 +232,7 @@ serve(async (req) => {
     return json({
       ok: true, leads, count: leads.length, support_sessions: support.sessions, service_sessions: service.sessions,
       purchases, playbook_purchases: purchases, records_limit: MAX_RECORDS, transcript_limit: MAX_TRANSCRIPT_MESSAGES,
+      bookings: bookings || [], bookings_error: bookingsError ? 'Could not load bookings. Apply the strategy call bookings migration and refresh.' : null,
       support_sessions_error: support.error, service_sessions_error: service.error,
       linked_sessions_error: linkedSessionsError, linked_sessions_truncated: linkedSessionsTruncated,
       purchases_error: purchaseError ? 'Could not load purchases. Check the purchase migrations and server logs, then refresh.' : null,
