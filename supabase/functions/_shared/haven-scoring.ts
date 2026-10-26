@@ -2,7 +2,7 @@ import { HavenRequestError } from './haven-request.ts';
 
 export const MAX_SUMMARY_CHARS = 6000;
 export type ScoringResult = {
-  state: 'valid' | 'bad_data'; score: number | null;
+  state: 'valid' | 'bad_data'; reason?: string | null; score: number | null;
   breakdown: Record<string, number> | null; biggestIssue: string | null;
 };
 
@@ -46,7 +46,7 @@ export function parseScoringResult(raw: string, kind: 'website' | 'social'): Sco
   try {
     const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
     const value = JSON.parse(cleaned);
-    if (value.state === 'bad_data') return { state: 'bad_data', score: null, breakdown: null, biggestIssue: null };
+    if (value.state === 'bad_data') return { state: 'bad_data', reason: kind === 'social' ? 'unreadable_profile' : 'unreadable_content', score: null, breakdown: null, biggestIssue: null };
     if (value.state !== 'valid' || !Number.isInteger(value.score) || value.score < 0 || value.score > 100) return null;
     const keys = kind === 'website' ? ['clarity', 'trust', 'conversion', 'technical', 'content']
       : ['profile', 'consistency', 'engagement', 'readiness'];
@@ -59,10 +59,10 @@ export function parseScoringResult(raw: string, kind: 'website' | 'social'): Sco
   } catch { return null; }
 }
 
-export async function persistScoring(supabase: any, reviewId: string, result: ScoringResult | { state: 'failed' }, summary: string | null) {
+export async function persistScoring(supabase: any, reviewId: string, result: ScoringResult | { state: 'failed'; reason?: string }, summary: string | null) {
   const valid = result.state === 'valid' ? result as ScoringResult : null;
   const { error } = await supabase.from('brand_reviews').update({
-    scrape_state: result.state, scraped_summary: summary,
+    scrape_state: result.state, score_reason: result.state === 'valid' ? null : result.reason || 'provider_unavailable', scraped_summary: summary,
     haven_score: valid?.score ?? null, score_breakdown: valid?.breakdown ?? null,
     biggest_leak: valid?.biggestIssue ?? null, score_observed_at: new Date().toISOString(),
   }).eq('id', reviewId).select('id').single();
@@ -72,7 +72,13 @@ export async function persistScoring(supabase: any, reviewId: string, result: Sc
 export function cachedScoring(review: Record<string, any>, kind: 'website' | 'social') {
   const observed = new Date(review.score_observed_at).getTime();
   if (!Number.isFinite(observed) || Date.now() - observed >= 24 * 60 * 60 * 1000) return null;
-  if (review.scrape_state === 'bad_data') return { state: 'bad_data' as const, score: null, breakdown: null, biggestIssue: null };
+  if (review.scrape_state === 'bad_data') return { state: 'bad_data' as const, reason: review.score_reason || 'unreadable_content', score: null, breakdown: null, biggestIssue: null };
   return parseScoringResult(JSON.stringify({ state: review.scrape_state, score: review.haven_score,
     breakdown: review.score_breakdown, biggestIssue: review.biggest_leak }), kind);
+}
+
+export function websiteContentReason(summary: string) {
+  if (summary.length < 300 || (summary.match(/[\p{L}][\p{L}'’-]*/gu) || []).length < 45) return 'insufficient_text';
+  if (/privacy|cookie|terms|all rights reserved/i.test(summary) && !hasMeaningfulBusinessText(summary)) return 'boilerplate_only';
+  return 'unreadable_content';
 }

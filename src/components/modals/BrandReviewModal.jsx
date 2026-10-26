@@ -364,10 +364,14 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
         screenshotBase64,
         screenshotFileName,
       });
-      if (result?.success !== true) throw new Error('Review save failed');
+      if (result?.success !== true) {
+        const error = new Error(result?.error || SAVE_ERROR);
+        error.code = result?.code;
+        throw error;
+      }
       hardReset();
-    } catch {
-      setErrors({ submit: SAVE_ERROR });
+    } catch (error) {
+      setErrors({ submit: error.code === 'pending_submission_changed' ? error.message : SAVE_ERROR, pendingChanged: error.code === 'pending_submission_changed' });
       setCaptchaToken(null);
       setCaptchaExpired(false);
       captchaRef.current?.resetCaptcha();
@@ -764,6 +768,11 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                   )}
                 </div>
 
+                {errors.pendingChanged && <button type="button" onClick={() => {
+                  submissionIdRef.current = null;
+                  try { sessionStorage.removeItem(SUBMISSION_ID_KEY); } catch { /* Optional storage. */ }
+                  setErrors({});
+                }} className="w-full rounded-xl border border-zinc-400 px-4 py-3 text-sm text-zinc-800 dark:text-zinc-200">Start a new submission with these details</button>}
                 <div className="flex gap-2 pt-2">
                   <button
                     type="button"

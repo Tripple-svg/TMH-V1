@@ -57,8 +57,24 @@ export async function applyAutomaticFlag(supabase: any, input: { reviewId?: stri
     // A slow mail provider must not hold the user's chat response open. The
     // committed outbox remains available if the background task is interrupted.
     runtime.waitUntil(drainModerationNotifications(supabase, target));
-    return { flagStatus: data.flagStatus as 'white' | 'yellow' | 'red', changed: data.changed === true, deliveryPending: true };
+    return { flagStatus: data.flagStatus as 'white' | 'yellow' | 'red', changed: data.changed === true, deliveryPending: true, strikes: Number(data.strikes || 0) };
   }
   const delivery = await drainModerationNotifications(supabase, target);
-  return { flagStatus: data.flagStatus as 'white' | 'yellow' | 'red', changed: data.changed === true, deliveryPending: delivery.deliveryPending };
+  return { flagStatus: data.flagStatus as 'white' | 'yellow' | 'red', changed: data.changed === true, deliveryPending: delivery.deliveryPending, strikes: Number(data.strikes || 0) };
+}
+
+// Obvious direct abuse is handled even if every model is unavailable. Specific
+// product criticism, legal complaints and quoting an insult are not violations.
+export function detectHavenAbuse(text: string) {
+  const value = text.trim().toLowerCase().replaceAll('’', "'");
+  if (/^(?:you(?:'re| are)|haven(?: is)?|tmh(?: is)?|the marketing haven(?: is)?)\s+(?:(?:so|an?|absolutely|really)\s+)*(?:stupid|idiot|useless|moron|dumb|fuck\w*|bitch)\b/.test(value)
+    && !/\b(?:because|when|download|payment|broken|error|response|review|booking|website)\b/.test(value)) return 'ABUSE';
+  if (/^(?:i(?:'ll| will| am going to)|we(?:'ll| will))\s+(?:kill|hurt|attack)\s+(?:you|your team|haven|tmh)\b/.test(value)) return 'HARASSMENT';
+  if (/\b(?:your|francis|paschal|cto|team member(?:'s)?)\b.{0,30}\b(?:home address|private phone|personal phone number)\b/.test(value)) return 'PERSONAL_INFO';
+  return null;
+}
+export function moderationReply(category: string) {
+  return category === 'PERSONAL_INFO'
+    ? 'I cannot share private contact details. You can reach the team at info@themarketinghaven.xyz. What do you need help with?'
+    : 'Let us keep this respectful. What happened that you want the team to address: the review, a response, or something else?';
 }

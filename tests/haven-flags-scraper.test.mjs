@@ -1,3 +1,4 @@
+import { scoreFailureCopy } from '../supabase/functions/_shared/scoring-copy.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -33,7 +34,7 @@ function harness({ scoring = VALID, profile = {}, scope = 'audit', history = [],
   let currentPreflight = { status: 'idle', retryCount: 0 };
   const requests = [], messages = [], thinking = [];
   const context = {
-    AbortController, Response, Error, SCORING_COPY, CHAT_NOTICE_VERSION, crypto: webcrypto,
+    setTimeout, clearTimeout, scoreFailureCopy, AbortController, Response, Error, SCORING_COPY, CHAT_NOTICE_VERSION, crypto: webcrypto,
     getHavenIdentity: () => ({ ...IDENTITY }),
     console: { log() {}, warn() {}, error() {} }, navigator: { onLine: true },
     STEPS: { AWAITING_DIAGNOSTIC_Q2: 'AWAITING_DIAGNOSTIC_Q2' }, LEADS: { WARM: 'WARM' }, NAV_ACTION_RULES: [],
@@ -75,7 +76,7 @@ test('website scoring: bad extraction never reuses a stale score or becomes a ne
 test('website scoring: upstream failure clears stale scores and shows retry/proceed copy', async () => {
   const ui = harness({ status: 502, scoring: { ok: false, state: 'failed' }, profile: { auditScore: 99 } });
   await ui.runScraper('https://example.com');
-  assert.equal(ui.preflight.status, 'failed'); assert.equal(ui.preflight.error, SCORING_COPY.failed);
+  assert.equal(ui.preflight.status, 'failed'); assert.equal(ui.preflight.error, scoreFailureCopy('provider_unavailable'));
   assert.equal(ui.profile.auditScore, null); assert.equal(ui.profile.scrapeState, 'failed');
 });
 test('website scoring: a response without an explicit trusted scoring state cannot supply a score', async () => {

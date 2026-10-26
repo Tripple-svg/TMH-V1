@@ -1,3 +1,4 @@
+import * as workspace from '../src/lib/adminWorkspace.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -9,7 +10,7 @@ const source = readFileSync(new URL('../src/pages/AdminDashboard.jsx', import.me
   .replaceAll('import.meta.env.VITE_SUPABASE_URL', "'https://project.supabase.co'")
   .replaceAll('import.meta.env.VITE_SUPABASE_ANON_KEY', "'public-anon-key'")
   .replace('export default function AdminDashboard()', 'function AdminDashboard()');
-const code = transformSync(`${source}\nmodule.exports = { useLeadActions, AdminDashboard };`, {
+const code = transformSync(`${source}\nmodule.exports = { useLeadActions, AdminDashboard, FlagSelect };`, {
   loader: 'jsx', format: 'cjs',
 }).code;
 
@@ -21,6 +22,7 @@ function harness({ response = { ok: true, review: { id: 'review-1', flag_status:
   const lead = { id: 'review-1', email: 'user@example.com', brand_name: 'Example', flag_status: 'white' };
   const context = {
     module: { exports: {} },
+    require(name) { return name.includes('adminWorkspace') ? workspace : { __esModule:true, default:function InquiryWorkflow(){} }; },
     React: { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) },
     useState(initial) {
       const slot = cursor++;
@@ -61,7 +63,7 @@ function harness({ response = { ok: true, review: { id: 'review-1', flag_status:
     walk(context.module.exports.AdminDashboard());
     return nodes;
   };
-  return { actions, renderDashboard, requests, changes, toasts, cleared, states,
+  return { actions, renderDashboard, FlagSelect:context.module.exports.FlagSelect, requests, changes, toasts, cleared, states,
     get authLost() { return authLost; }, get reloads() { return reloads; } };
 }
 
@@ -125,4 +127,10 @@ test('admin dashboard: total uses loaded leads and Clear Data clears both browse
   assert.deepEqual(ui.cleared, ['local', 'session']);
   assert.equal(ui.reloads, 1);
   assert.equal(ui.requests.length, 0);
+});
+
+
+test('admin can clear a recorded first strike without issuing a yellow warning',()=>{
+  const ui=harness();const changes=[];const tree=ui.FlagSelect({lead:{email:'owner@example.com',flag_status:'white',moderation_strikes:1},onChange:event=>changes.push(event.target.value)});
+  const button=tree.props.children.find(node=>node?.type==='button');assert.ok(button);button.props.onClick();assert.deepEqual(changes,['white']);
 });

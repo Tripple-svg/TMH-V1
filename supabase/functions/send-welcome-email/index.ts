@@ -47,7 +47,7 @@ function firstNameOf(fullName: string | null | undefined): string {
 }
 
 // Names are escaped by the shared template, never interpolated as HTML.
-function buildBodies(firstName: string, brandName: string, platformType: string | null | undefined) {
+function buildBodiesV1(firstName: string, brandName: string, platformType: string | null | undefined) {
   const reading = platformType === 'website'
     ? 'Open Haven to see whether your website could be read and scored, then continue the conversation about your brand.'
     : platformType === 'social'
@@ -58,6 +58,23 @@ function buildBodies(firstName: string, brandName: string, platformType: string 
   return { text: `${paragraphs.join('\n\n')}\n\nContinue the review: ${SITE_URL}/?review=continue\n\nTeam Haven`,
     html: editorialEmail({ label: 'YOUR BRAND REVIEW', title: 'Your next step starts here.', paragraphs,
       button: { label: 'Continue the review', href: `${SITE_URL}/?review=continue` } }) };
+}
+
+function buildBodies(firstName: string, brandName: string, platformType: string, version: string) {
+  if (version !== 'editorial-v2') return buildBodiesV1(firstName, brandName, platformType);
+  const subject = brandName || 'your brand';
+  const focus = platformType === 'website'
+    ? 'Your website review starts with three questions: is the offer clear, is there a reason to trust it, and is the next step easy to find? If the reader cannot access enough of the page, Haven will explain the limit and continue from what you share in chat.'
+    : platformType === 'social'
+      ? 'Your profile screenshot gives Haven a starting point: what people understand from your bio, what your content communicates, and how they can take the next step. The conversation helps put those observations in the context of your business.'
+      : 'You do not need a website or social profile to begin. Haven will help you work through what you offer, who it is for, and the first practical step toward reaching them.';
+  const paragraphs = ['Hi ' + firstName + ',', 'Your brand review for ' + subject + ' is saved.', focus,
+    'If you are already chatting with Haven, keep going there. You do not need to start again from this email.',
+    'When you return, bring one question you want to resolve. The useful outcome is a clearer next move for your brand.',
+    'The button reopens the review on the browser you used to submit it. Need help on another device? Reply to this email and we will help verify ownership.'];
+  return { text: paragraphs.join('\n\n') + '\n\nContinue your review: ' + SITE_URL + '/?review=continue\n\nTeam Haven',
+    html: editorialEmail({ label: 'YOUR BRAND REVIEW', title: 'Make the next move clearer.', paragraphs,
+      button: { label: 'Continue your review', href: SITE_URL + '/?review=continue' } }) };
 }
 
 serve(async (req) => {
@@ -89,7 +106,7 @@ serve(async (req) => {
     });
     const { data: existing, error: lookupError } = await supabase
       .from('brand_reviews')
-      .select('id, email, full_name, brand_name, platform_type, welcome_email_sent, welcome_email_id')
+      .select('id, email, full_name, brand_name, platform_type, welcome_email_sent, welcome_email_id, welcome_template_version')
       .eq('id', record.id)
       .maybeSingle();
 
@@ -107,7 +124,7 @@ serve(async (req) => {
     const firstName = firstNameOf(existing.full_name);
     const brandName = typeof existing.brand_name === 'string' ? existing.brand_name : '';
     const subject   = `Your brand review is underway, ${firstName}`;
-    const { text, html } = buildBodies(firstName, brandName, existing.platform_type);
+    const { text, html } = buildBodies(firstName, brandName, existing.platform_type, existing.welcome_template_version);
 
     const { data: attempt, error: attemptError } = await supabase.from('brand_reviews')
       .update({ welcome_email_attempted_at: new Date().toISOString(), welcome_email_last_error: null }).eq('id', existing.id).select('id').maybeSingle();

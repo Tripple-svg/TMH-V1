@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
 import { transformSync } from 'esbuild';
 
 function shop(saved, invoke) {
@@ -26,7 +27,7 @@ function shop(saved, invoke) {
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     window: { addEventListener: (name, fn) => events.set(name, fn), removeEventListener() {} },
     document: { body: { style: {}, appendChild() {}, removeChild() {} }, createElement: () => ({ click() { downloads.push(this.href); } }) },
-    setTimeout, clearTimeout, AbortSignal,
+    setTimeout, clearTimeout, AbortSignal, Response, crypto: webcrypto,
   };
   const source = readFileSync(new URL('../src/components/ShopSection.jsx', import.meta.url), 'utf8');
   vm.runInNewContext(transformSync(source, { loader: 'jsx', format: 'cjs' }).code, context);
@@ -39,82 +40,125 @@ function shop(saved, invoke) {
     return nodes;
   }
   const mount = () => { render(); effects.splice(0).forEach((effect) => effect()); events.get('open-playbook-modal')(); return render(); };
-  return { render, mount, storage, downloads };
+  return { render, mount, storage, downloads, window: context.window };
 }
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-test('Playbook card shows the launch price before opening, and checkout discloses the real test charge', () => {
-  const ui = shop(null, async () => ({ data: {} }));
-  const text = (node) => Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props.children) : typeof node === 'string' ? node : '';
-  const card = ui.render();
-  assert.ok(!card.some((node) => node.props['aria-label'] === 'Playbook checkout'));
-  assert.ok(card.some((node) => node.type === 'p' && text(node).includes('₦9,639')));
-  assert.ok(ui.mount().some((node) => node.type === 'p' && text(node).includes('Current live checkout charge: ₦100 (testing).')));
-});
 
-test('Task 5 UI: remount verifies stored reference and withholds download until a fresh URL arrives', async () => {
-  const saved = JSON.stringify({ reference: 'UNSEEN_paid', email: 'buyer@example.com', downloadedAt: null });
-  let resolve, calls = 0;
-  const invoke = async (name, { body }) => {
-    calls++; assert.equal(name, 'verify-paystack'); assert.equal(body.reference, 'UNSEEN_paid');
-    return new Promise((done) => { resolve = done; });
-  };
-  const first = shop(saved, invoke);
-  assert.equal(first.mount().filter((node) => node.type === 'a').length, 0);
-  resolve({ data: { ok: true, url: 'https://private.example/fresh-1' } }); await flush();
-  const download = first.render().find((node) => node.type === 'a');
-  assert.equal(download.props.href, 'https://private.example/fresh-1');
-  download.props.onClick({ preventDefault() {} });
-  assert.deepEqual(first.downloads, ['https://private.example/fresh-1']);
-  const persisted = first.storage.get('tmh_playbook_purchase');
-  assert.ok(JSON.parse(persisted).downloadedAt); assert.ok(!persisted.includes('https://'));
-  const reopened = shop(persisted, invoke);
-  assert.equal(reopened.mount().filter((node) => node.type === 'a').length, 0);
-  resolve({ data: { ok: true, url: 'https://private.example/fresh-2' } }); await flush();
-  assert.equal(reopened.render().find((node) => node.type === 'a').props.href, 'https://private.example/fresh-2');
-  assert.equal(calls, 2);
+const text = node => Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props.children) : typeof node === 'string' ? node : '';
+const token='a'.repeat(64);
+const saved=()=>JSON.stringify({reference:'UNSEEN_paid',email:'buyer@example.com',downloadToken:token});
+const recoveryForm=tree=>tree.find(node=>node.type==='form'&&!node.props.id);
+const input= (tree,type) => tree.find(node=>node.type==='input'&&node.props.type===type);
+test('Playbook card and checkout show the actual NGN 9,639 price without a test-mode label',()=>{
+  const ui=shop(null,async()=>({data:{}})); const tree=ui.mount();
+  assert.ok(ui.render().some(node=>node.type==='p'&&text(node).includes('₦9,639')));
+  assert.doesNotMatch(text(tree),/₦100|testing|test mode/);
+  assert.ok(!tree.some(node=>node.type==='button'&&text(node)==='Already purchased? Recover your copy'));
+  const source=readFileSync(new URL('../src/components/ShopSection.jsx',import.meta.url),'utf8');
+  assert.match(source,/PAYSTACK_AMOUNT_KOBO = 963900/);
 });
-
-test('Task 5 UI: re-download verifies again and uses the newly issued URL', async () => {
-  let calls = 0;
-  const ui = shop(JSON.stringify({ reference: 'UNSEEN_paid', downloadedAt: '2026-10-01' }), async () => ({ data: { ok: true, url: `https://private.example/fresh-${++calls}` } }));
-  ui.mount(); await flush();
-  const link = ui.render().find((node) => node.type === 'a');
-  assert.ok(link.props.children.flat().includes('Re-download Playbook'));
-  await link.props.onClick({ preventDefault() {} });
-  assert.deepEqual(ui.downloads, ['https://private.example/fresh-2']); assert.equal(calls, 2);
-  assert.ok(!ui.storage.get('tmh_playbook_purchase').includes('https://'));
+test('saved device grant: no download is rendered before fresh server verification',async()=>{
+  let resolve,body,attempt=0;
+  const ui=shop(saved(),async(name,args)=>{body=args.body;return ++attempt===1?new Promise(done=>{resolve=done;}):{data:{ok:true,url:'https://private.example/fresh',playbookAccessToken:'reader'}};});
+  assert.equal(ui.mount().filter(node=>node.type==='a').length,0);
+  assert.equal(body.downloadToken,token);
+  resolve({data:{ok:true,url:'https://private.example/fresh',playbookAccessToken:'reader'}});await flush();
+  const link=ui.render().find(node=>node.type==='a');assert.equal(link.props.href,'https://private.example/fresh');
+  await link.props.onClick({preventDefault(){}});
+  const stored=JSON.parse(ui.storage.get('tmh_playbook_purchase'));
+  assert.equal(stored.downloadToken,token);assert.equal(stored.accessToken,'reader');assert.ok(stored.downloadedAt);
+  assert.deepEqual(ui.downloads,['https://private.example/fresh']);assert.ok(!JSON.stringify(stored).includes('https://'));
 });
-
-test('purchase recovery: another device verifies email/reference and retains the signed guidance token after download', async () => {
-  const calls = [];
-  const ui = shop(null, async (name, { body }) => {
-    calls.push({ name, body });
-    return { data: { ok: true, url: 'https://private.example/recovered', playbookAccessToken: 'signed-purchase-capability' } };
+test('a legacy email/reference snapshot does not authorize a download or trigger an unsolicited OTP',async()=>{
+  let calls=0;
+  const ui=shop(JSON.stringify({reference:'UNSEEN_old',email:'buyer@example.com',accessToken:'legacy'}),async()=>{calls++;return {data:{ok:true,url:'https://must-not-open'}};});
+  ui.mount();await flush();assert.equal(calls,0);assert.equal(ui.render().filter(node=>node.type==='a').length,0);
+});
+test('purchase recovery requires email code before exposing a URL or reader token',async()=>{
+  const calls=[];
+  const ui=shop(null,async(name,{body})=>{
+    calls.push({name,body});
+    return name==='request-playbook-recovery'
+      ? {data:{ok:true,challengeId:'challenge',message:'Check the checkout inbox.'}}
+      : {data:{ok:true,reference:'UNSEEN_paid',email:'buyer@example.com',url:'https://private.example/recovered',downloadToken:token,playbookAccessToken:'reader'}};
   });
-  let tree = ui.mount();
-  tree.find((node) => node.type === 'button' && node.props.children.includes('Already purchased?')).props.onClick();
-  tree = ui.render();
-  const form = tree.find((node) => node.type === 'form' && !node.props.id);
-  const inputs = [];
-  const walk = (node) => { if (Array.isArray(node)) return node.forEach(walk); if (!node || typeof node !== 'object') return; if (node.type === 'input') inputs.push(node); walk(node.props.children); };
-  walk(form);
-  inputs[0].props.onChange({ target: { value: 'buyer@example.com' } });
-  inputs[1].props.onChange({ target: { value: 'UNSEEN_recovered' } });
-  tree = ui.render();
-  await tree.find((node) => node.type === 'form' && !node.props.id).props.onSubmit({ preventDefault() {} });
-  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [{ name: 'verify-paystack', body: { reference: 'UNSEEN_recovered', email: 'buyer@example.com' } }]);
-  tree = ui.render();
-  tree.find((node) => node.type === 'a' && node.props.download).props.onClick({ preventDefault() {} });
-  assert.equal(JSON.parse(ui.storage.get('tmh_playbook_purchase')).accessToken, 'signed-purchase-capability');
-  assert.deepEqual(ui.downloads, ['https://private.example/recovered']);
+  let tree=ui.mount();
+  tree.find(node=>node.type==='button'&&text(node)==='Already purchased').props.onClick();
+  tree=ui.render();
+  const fields=tree.filter(node=>node.type==='input');
+  fields[0].props.onChange({target:{value:'buyer@example.com'}});fields[1].props.onChange({target:{value:'UNSEEN_paid'}});
+  await recoveryForm(ui.render()).props.onSubmit({preventDefault(){}});
+  tree=ui.render();assert.equal(tree.filter(node=>node.type==='a').length,0);
+  assert.equal(JSON.parse(ui.storage.get('tmh_playbook_purchase')||'null'),null);
+  const otp=tree.find(node=>node.type==='input'&&node.props.autoComplete==='one-time-code');
+  otp.props.onChange({target:{value:'123456'}});
+  await recoveryForm(ui.render()).props.onSubmit({preventDefault(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)),[
+    {name:'request-playbook-recovery',body:{reference:'UNSEEN_paid',email:'buyer@example.com'}},
+    {name:'verify-playbook-recovery',body:{challengeId:'challenge',code:'123456'}},
+  ]);
+  assert.equal(ui.render().find(node=>node.type==='a').props.href,'https://private.example/recovered');
+  assert.equal(JSON.parse(ui.storage.get('tmh_playbook_purchase')).downloadToken,token);
+});
+test('downloads refresh expiring URLs and allow one action per visit with future access',async()=>{
+  let calls=0;const invoke=async(name,{body})=>{assert.equal(body.downloadToken,token);return {data:{ok:true,url:'https://private.example/fresh-'+(++calls)}};};
+  const ui=shop(saved(),invoke);ui.mount();await flush();
+  const first=ui.render().find(node=>node.type==='a');await Promise.all([first.props.onClick({preventDefault(){}}),first.props.onClick({preventDefault(){}})]);
+  assert.deepEqual(ui.downloads,['https://private.example/fresh-2']);assert.equal(ui.render().filter(node=>node.type==='a').length,0);
+  const nextVisit=shop(ui.storage.get('tmh_playbook_purchase'),invoke);nextVisit.mount();await flush();
+  await nextVisit.render().find(node=>node.type==='a').props.onClick({preventDefault(){}});
+  assert.deepEqual(nextVisit.downloads,['https://private.example/fresh-4']);assert.equal(calls,4);
 });
 
-test('Task 5 UI: failed return verification hides downloads and gives recovery options without another charge', async () => {
-  const ui = shop(JSON.stringify({ reference: 'UNSEEN_recover', downloadedAt: '2026-10-01' }), async () => ({ error: new Error('offline') }));
-  ui.mount(); await flush();
-  const view = ui.render(); assert.equal(view.filter((node) => node.type === 'a').length, 0);
-  const alert = view.find((node) => node.props.role === 'alert');
-  assert.ok(alert.props.children.join('').includes('Please do not pay again'));
-  assert.ok(ui.render().some((node) => node.type === 'button' && node.props.children.includes('Already purchased?')));
+test('failed verification hides downloads and offers recovery without another charge',async()=>{
+  const ui=shop(saved(),async()=>({data:{ok:false,code:'recovery_required'}}));
+  ui.mount();await flush();
+  const tree=ui.render();assert.equal(tree.filter(node=>node.type==='a').length,0);
+  assert.match(text(tree),/one-time code|do not need to pay again/);
+  assert.ok(recoveryForm(tree));assert.ok(!tree.some(node=>node.type==='form'&&node.props.id==='paystack-form'));
+});
+
+
+test('checkout separates buying and recovery into labelled tabs with a single modal close control',()=>{
+  const ui=shop(null,async()=>({data:{}}));let tree=ui.mount();
+  const tabs=tree.filter(node=>node.props.role==='tab');assert.deepEqual(tabs.map(text),['Buy a copy','Already purchased']);
+  assert.equal(tree.filter(node=>node.props['aria-label']==='Close Playbook checkout').length,1);
+  tabs[1].props.onClick();tree=ui.render();
+  assert.equal(tree.find(node=>node.props.role==='tabpanel').props.id,'playbook-recover-panel');
+  assert.doesNotMatch(text(tree),/Back to checkout|What\'s Inside The Playbook/);
+});
+
+test('fresh checkout verifies its private proof and exposes the download without an OTP',async()=>{
+  const calls=[];let payment;
+  const ui=shop(null,async(name,{body})=>{
+    calls.push({name,body});
+    return {data:body.action==='prepare-checkout'
+      ?{ok:true,reference:'UNSEEN_new',email:'buyer@example.com',downloadToken:token,amount:963900}
+      :{ok:true,url:'https://private.example/new',playbookAccessToken:'reader'}};
+  });
+  ui.window.PaystackPop={setup(options){payment=options;return {openIframe(){}};}};
+  let tree=ui.mount();input(tree,'email').props.onChange({target:{value:'buyer@example.com'}});
+  await ui.render().find(node=>node.props.id==='paystack-form').props.onSubmit({preventDefault(){}});
+  assert.equal(payment.amount,963900);assert.equal(payment.ref,'UNSEEN_new');
+  payment.callback({reference:'UNSEEN_new'});await flush();
+  tree=ui.render();assert.equal(tree.find(node=>node.type==='a').props.href,'https://private.example/new');
+  assert.deepEqual(calls.map(call=>call.name),['verify-paystack','verify-paystack']);
+  assert.equal(calls[1].body.downloadToken,token);assert.equal(JSON.parse(ui.storage.get('tmh_playbook_purchase')).downloadToken,token);
+  assert.ok(!tree.some(node=>node.props.autoComplete==='one-time-code'));
+});
+
+test('a payment verification outage retains checkout proof and offers a retry without asking for OTP or payment',async()=>{
+  let payment,attempt=0;
+  const ui=shop(null,async(name,{body})=>({data:body.action==='prepare-checkout'
+    ?{ok:true,reference:'UNSEEN_new',email:'buyer@example.com',downloadToken:token,amount:963900}
+    :++attempt===1?{ok:false,error:'Payment verification is temporarily unavailable.'}:{ok:true,url:'https://private.example/retried'}}));
+  ui.window.PaystackPop={setup(options){payment=options;return {openIframe(){}};}};
+  let tree=ui.mount();input(tree,'email').props.onChange({target:{value:'buyer@example.com'}});
+  await ui.render().find(node=>node.props.id==='paystack-form').props.onSubmit({preventDefault(){}});
+  payment.callback({reference:'UNSEEN_new'});await flush();
+  tree=ui.render();assert.match(text(tree),/Confirming your payment/);assert.equal(tree.filter(node=>node.type==='a').length,0);
+  assert.ok(!recoveryForm(tree));assert.ok(!tree.some(node=>node.props.id==='paystack-form'));
+  await tree.find(node=>node.type==='button'&&text(node)==='Retry opening my copy').props.onClick({preventDefault(){}});
+  assert.deepEqual(ui.downloads,['https://private.example/retried']);
 });

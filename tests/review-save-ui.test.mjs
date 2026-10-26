@@ -186,7 +186,7 @@ test('screenshot quota failure still preserves small credentials for a reload re
   assert.equal(bodies[1].screenshotBase64, payload.screenshotBase64);
 });
 
-test('retry keeps every original submission detail while accepting a fresh single-use CAPTCHA', async () => {
+test('retry refuses changed details and still accepts a fresh CAPTCHA for the unchanged submission', async () => {
   const saved = new Map(), bodies = [];
   const create = service(async (_url, options) => {
     const body = JSON.parse(options.body); bodies.push(body);
@@ -196,13 +196,15 @@ test('retry keeps every original submission detail while accepting a fresh singl
   const original = { id: REVIEW_ID, ...fixture, screenshotBase64: ORIGINAL_IMAGE, screenshotFileName: 'original.png', hcaptchaToken: 'first' };
   await create(original);
   const result = await create({ ...original, fullName: 'Edited Name', email: 'edited@example.com', screenshotBase64: EDITED_IMAGE, hcaptchaToken: 'fresh' });
-  assert.equal(result.success, true);
+  assert.equal(result.success, false); assert.equal(result.code,'pending_submission_changed'); assert.equal(bodies.length,1);
+  const retryResult = await create({ ...original, hcaptchaToken:'fresh' });
+  assert.equal(retryResult.success,true);
   for (const field of ['fullName', 'email', 'screenshotBase64', 'screenshotFileName']) {
     assert.equal(bodies[1][field], original[field]);
-    assert.equal(result.submission[field], original[field]);
+    assert.equal(retryResult.submission[field], original[field]);
   }
   assert.equal(bodies[1].hcaptchaToken, 'fresh');
-  assert.equal(result.submission.hcaptchaToken, undefined);
+  assert.equal(retryResult.submission.hcaptchaToken, undefined);
 });
 
 test('HTTP errors, malformed replies, mismatched IDs and timeout never become a saved review', async () => {
@@ -346,7 +348,9 @@ test('App opens the saved original profile after retry, including its original e
   const ui = app(create);
   const payload = { id: REVIEW_ID, ...fixture, screenshotBase64: ORIGINAL_IMAGE, screenshotFileName: 'original.png', hcaptchaToken: 'first' };
   assert.equal((await ui.getModal().props.onSubmit(payload)).success, false);
-  assert.equal((await ui.getModal().props.onSubmit({ ...payload, fullName: 'Edited', email: 'edited@example.com', hcaptchaToken: 'fresh' })).success, true);
+  assert.equal((await ui.getModal().props.onSubmit({ ...payload, fullName: 'Edited', email: 'edited@example.com', hcaptchaToken: 'fresh' })).success, false);
+  assert.equal(ui.opened.length,0);
+  assert.equal((await ui.getModal().props.onSubmit({ ...payload, hcaptchaToken:'fresh' })).success,true);
   ui.timers.forEach((callback) => callback());
   const profile = ui.opened[0][1].profileData;
   assert.equal(profile.name, fixture.fullName); assert.equal(profile.email, fixture.email);

@@ -1,3 +1,5 @@
+import InquiryWorkflow from '../components/admin/InquiryWorkflow';
+import { INQUIRY_STATUSES, lagosDate, inquiryDue, csvCell, splitSupportSessions, workspaceMetrics } from '../lib/adminWorkspace';
 // src/pages/AdminDashboard.jsx
 // Admin workspace. Password-gated. Data flows through
 // admin-fetch-leads / admin-update-lead edge functions.
@@ -19,6 +21,7 @@ const ADMIN_TABS = [
   { id: 'leads', label: 'Leads' },
   { id: 'purchases', label: 'Playbook Purchases' },
   { id: 'bookings', label: 'Bookings' },
+  { id: 'team', label: 'Team Inquiries' },
   { id: 'support', label: 'Support Chats' },
   { id: 'service', label: 'Service Chats' },
 ];
@@ -75,7 +78,7 @@ async function apiRequest(url, password, payload = {}) {
     });
     if (res.status === 401) return { ok: false, code: 'unauthorised' };
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) return { ok: false, code: 'error', error: data.error || `Error ${res.status}`, review: data.review, visitor: data.visitor, purchase: data.purchase };
+    if (!res.ok || !data.ok) return { ok: false, code: data.code === 'conflict' ? 'conflict' : 'error', session: data.session, error: data.error || `Error ${res.status}`, review: data.review, visitor: data.visitor, purchase: data.purchase };
     return data;
   } catch {
     return { ok: false, code: 'error', error: 'Could not reach the server. Please try again.' };
@@ -89,7 +92,8 @@ async function apiFetchLeads(password) {
     bookings: Array.isArray(data.bookings) ? data.bookings : [],
     leads: Array.isArray(data.leads) ? data.leads : [],
     purchases: Array.isArray(data.playbook_purchases) ? data.playbook_purchases : Array.isArray(data.purchases) ? data.purchases : [],
-    support_sessions: Array.isArray(data.support_sessions) ? data.support_sessions : [],
+    support_sessions: splitSupportSessions(data.support_sessions, data.team_inquiries).support,
+    team_inquiries: splitSupportSessions(data.support_sessions, data.team_inquiries).team,
     service_sessions: Array.isArray(data.service_sessions) ? data.service_sessions : [],
   } : data;
 }
@@ -107,7 +111,7 @@ async function apiFlagUser(password, email, status, reason) {
   if (res.status === 401) return { ok: false, code: 'unauthorised' };
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) {
-    return { ok: false, code: 'error', error: data.error || `Error ${res.status}`, review: data.review };
+    return { ok: false, code: data.code === 'conflict' ? 'conflict' : 'error', session: data.session, error: data.error || `Error ${res.status}`, review: data.review };
   }
   return { ok: true, review: data.review };
 }
@@ -528,18 +532,18 @@ function FlagSelect({ lead, onChange, disabled }) {
       : 'border-zinc-700 bg-zinc-950 text-zinc-400';
 
   return (
-    <select
+    <span className="inline-flex flex-wrap items-center gap-2"><select
       value={status}
       onChange={onChange}
       disabled={disabled || (!lead.email && !lead.visitor_id)}
       aria-label={`User flag for ${lead.email || lead.visitor_id || lead.full_name || 'lead'}`}
-      title={lead.flag_reason || 'Change user access flag'}
+      title={(lead.flag_reason || 'Change user access flag') + (lead.moderation_strikes ? ' · Recorded strikes: ' + lead.moderation_strikes : '')}
       className={`rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-white/30 disabled:opacity-60 cursor-pointer ${colour}`}
     >
-      <option value="white">White · Normal</option>
+      <option value="white">{lead.moderation_strikes === 1 ? "White · 1 recorded strike" : "White · Normal"}</option>
       <option value="yellow">Yellow · Warning</option>
       <option value="red">Red · Restricted</option>
-    </select>
+    </select>{status==='white' && Number(lead.moderation_strikes)>0 && <button type="button" disabled={disabled || (!lead.email && !lead.visitor_id)} onClick={()=>onChange({target:{value:'white'}})} className="text-[10px] text-zinc-400 underline underline-offset-4 disabled:opacity-40">Clear recorded strike</button>}</span>
   );
 }
 
@@ -947,7 +951,7 @@ function BookingsPanel({ bookings, error, now = 0 }) {
   </section>;
 }
 
-function StandaloneSessionRow({ session, password, onAuthLost, onVisitorChange, showToast }) {
+function StandaloneSessionRow({ session, password, onAuthLost, onVisitorChange, showToast, onSessionChange }) {
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const changeFlag = async (event) => {
@@ -957,7 +961,7 @@ function StandaloneSessionRow({ session, password, onAuthLost, onVisitorChange, 
     setSaving(true);
     try {
       const result = await apiRequest(FLAG_URL, password, { visitorId: session.visitor_id, sessionId: session.id, status, reason: reason.trim() });
-      if (result.visitor) onVisitorChange(result.visitor);
+      if (result.visitor) onVisitorChange(result.visitor,result.review);
       if (result.ok) showToast('success', 'Visitor flag updated.');
       else if (result.code === 'unauthorised') onAuthLost();
       else showToast('error', result.error || 'Could not update the visitor flag.');
@@ -968,31 +972,46 @@ function StandaloneSessionRow({ session, password, onAuthLost, onVisitorChange, 
       <button type="button" aria-expanded={expanded} aria-controls={`transcript-${session.id}`} onClick={() => setExpanded((value) => !value)} className="flex min-w-0 flex-1 items-start gap-3 text-left">
         <span className="mt-1 text-zinc-500"><ChevronRightIcon expanded={expanded} /></span>
         <span className="min-w-0 space-y-2">
-          <span className="block text-sm font-medium text-zinc-200">{session.service_id ? `${session.service_id} · service conversation` : session.scope === 'service' ? 'Service conversation' : 'Support conversation'}</span>
-          <span className="block break-all font-mono text-[11px] text-zinc-500">{session.id}</span>
+          <span className="block text-sm font-medium text-zinc-200">{session.service_id === 'team-inquiry' ? 'Team inquiry' : session.service_id ? `${session.service_id} · service conversation` : session.scope === 'service' ? 'Service conversation' : 'Support conversation'}</span>
+          <span className="block text-xs text-zinc-400">{session.review_id ? (session.linked_name || session.linked_brand || "Linked brand review") : "Guest conversation"}</span><span className="block break-all font-mono text-[11px] text-zinc-500">{session.id}</span>
           <span className="block text-xs text-zinc-500">{formatDate(session.updated_at || session.created_at)} · {session.message_count ?? '—'} stored messages · {session.total_exchanges || 0} exchanges</span>
         </span>
       </button>
       <div className="space-y-2 text-right"><FlagSelect lead={session} onChange={changeFlag} disabled={saving || Boolean(session.flag_error)} />{session.flag_error && <p className="max-w-xs text-xs text-amber-300">{session.flag_error}</p>}</div>
     </div>
-    {expanded && <div id={`transcript-${session.id}`} className="border-t border-white/[0.06] p-4 sm:p-5"><TranscriptPanel key={`${session.id}:${session.updated_at || ''}`} session={session} password={password} onAuthLost={onAuthLost} /></div>}
+    {session.service_id === 'team-inquiry' && <div className="flex flex-wrap gap-3 border-t border-white/[0.04] px-5 py-3 text-[11px] text-zinc-400"><span className="capitalize">{session.inquiry_status || 'new'}</span><span>{session.inquiry_owner || 'Unassigned'}</span>{session.inquiry_next_followup_on && <span className={inquiryDue(session,lagosDate()) ? 'text-amber-200' : ''}>Follow up {session.inquiry_next_followup_on}{inquiryDue(session,lagosDate()) ? ' · due' : ''}</span>}</div>}
+    {expanded && <div id={`transcript-${session.id}`} className="border-t border-white/[0.06] p-4 sm:p-5">{session.service_id === 'team-inquiry' && <InquiryWorkflow session={session} onSessionChange={onSessionChange} onSave={async payload => { const result=await apiRequest(UPDATE_URL,password,payload); if(result.code==='unauthorised')onAuthLost(); if(result.ok)showToast('success','Inquiry follow-up saved.'); return result; }} />}<TranscriptPanel key={`${session.id}:${session.updated_at || ''}`} session={session} password={password} onAuthLost={onAuthLost} /></div>}
   </article>;
 }
 
-function SessionsPanel({ scope, sessions, error, password, onAuthLost, onVisitorChange, showToast }) {
+function QueueCard({title,value,detail,onClick}) {
+  return <button type="button" onClick={onClick} className="min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5 text-left transition-colors hover:bg-white/[0.05] focus-visible:outline-2 focus-visible:outline-zinc-400"><span className="block text-xs text-zinc-400">{title}</span><strong className="my-3 block text-3xl font-medium tracking-tight tabular-nums text-zinc-100">{value}</strong><span className="block text-[11px] leading-relaxed text-zinc-500">{detail}</span></button>;
+}
+function exportInquiryCsv(sessions) {
+  const fields=['id','linked_name','linked_brand','review_id','inquiry_status','inquiry_owner','inquiry_next_followup_on','inquiry_notes','flag_status','created_at','updated_at'];
+  const content=[fields.join(','),...sessions.map(session=>fields.map(field=>csvCell(session[field])).join(','))].join('\n');
+  const url=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8;'}));
+  const link=document.createElement('a');link.href=url;link.download='tmh-team-inquiries-'+lagosDate()+'.csv';link.click();URL.revokeObjectURL(url);
+}
+
+function SessionsPanel({ scope, sessions, error, password, onAuthLost, onVisitorChange, showToast, onSessionChange }) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
-  const filtered = sessions.filter((session) => `${session.id || ''} ${session.service_id || ''} ${session.visitor_id || ''} ${session.flag_status || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const [stage,setStage]=useState('all');
+  const [dueOnly,setDueOnly]=useState(false);
+  const [flag,setFlag]=useState('all');
+  const filtered = sessions.filter((session) => (stage==='all'||(session.inquiry_status||'new')===stage) && (!dueOnly||inquiryDue(session,lagosDate())) && (flag==='all'||session.flag_status===flag) && `${session.id || ''} ${session.service_id || ''} ${session.linked_name || ''} ${session.linked_brand || ''} ${session.visitor_id || ''} ${session.flag_status || ''} ${session.inquiry_owner || ''} ${session.inquiry_notes || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pages);
-  const label = scope === 'support' ? 'Support' : 'Service';
-  return <section aria-label={`${label} chats`} className="space-y-4">
+  const label = scope === 'team' ? 'Team Inquiries' : scope === 'support' ? 'Support Chats' : 'Service Chats';
+  return <section aria-label={label} className="space-y-4">
     <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4 sm:p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">{label} Chats</h2><p className="text-xs text-zinc-500">{filtered.length} shown / {sessions.length} loaded · newest 500 maximum</p></div>
-      <p className="mb-4 text-xs leading-relaxed text-zinc-500">Guest conversations only. Conversations linked to a saved brand review appear under that lead.</p>
-      <input aria-label={`Search ${scope} chats`} value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search session, visitor, service or flag" className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm outline-none focus:border-white/30" />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">{label}</h2><p className="text-xs text-zinc-500">{filtered.length} shown / {sessions.length} loaded · newest 500 maximum</p></div>
+      <p className="mb-4 text-xs leading-relaxed text-zinc-500">{scope==='team' ? 'Conversations started through Talk to Our Team. Assign an owner, set the next action and keep the original transcript together.' : 'Support and service conversations retain their linked lead where available. Talk to Our Team has its own Team Inquiries tab.'}</p>
+      <div className="mb-4 flex flex-wrap items-center gap-3">{scope==='team' && <><select aria-label="Filter inquiry status" value={stage} onChange={event=>{setStage(event.target.value);setPage(1);}} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs"><option value="all">All inquiry statuses</option>{INQUIRY_STATUSES.map(status=><option key={status} value={status}>{status}</option>)}</select><label className="flex items-center gap-2 text-xs text-zinc-400"><input type="checkbox" checked={dueOnly} onChange={event=>{setDueOnly(event.target.checked);setPage(1);}} />Follow-up due</label><button type="button" onClick={()=>exportInquiryCsv(filtered)} className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-300">Export inquiries CSV</button></>}<select aria-label="Filter access flag" value={flag} onChange={event=>{setFlag(event.target.value);setPage(1);}} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs"><option value="all">All access flags</option><option value="white">White</option><option value="yellow">Yellow</option><option value="red">Red</option></select></div>
+      <input aria-label={`Search ${scope} chats`} value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search name, session, owner or notes" className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm outline-none focus:border-white/30" />
     </div>
-    {error ? <p role="alert" className="rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/[0.06] p-6 text-center text-sm text-zinc-500">{query ? 'No conversations match this search.' : `No guest ${scope} chats have been recorded yet.`}</p> : filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map((session) => <StandaloneSessionRow key={session.id} session={session} password={password} onAuthLost={onAuthLost} onVisitorChange={onVisitorChange} showToast={showToast} />)}
+    {error ? <p role="alert" className="rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/[0.06] p-6 text-center text-sm text-zinc-500">{query ? 'No conversations match this search.' : `No ${scope==='team'?'team inquiries':scope+' chats'} have been recorded yet.`}</p> : filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map((session) => <StandaloneSessionRow key={session.id} session={session} password={password} onAuthLost={onAuthLost} onVisitorChange={onVisitorChange} showToast={showToast} onSessionChange={onSessionChange} />)}
     {pages > 1 && <nav aria-label={`${label} chat pages`} className="flex items-center justify-end gap-3 text-xs"><button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Prev</button><span>{currentPage} / {pages}</span><button type="button" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Next</button></nav>}
   </section>;
 }
@@ -1017,6 +1036,9 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('leads');
   const [supportSessions, setSupportSessions] = useState([]);
   const [serviceSessions, setServiceSessions] = useState([]);
+  const [teamInquiries,setTeamInquiries]=useState([]);
+  const [operations,setOperations]=useState(null);
+  const [operationsError,setOperationsError]=useState('');
   const [chatErrors, setChatErrors] = useState({});
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [linkedSessionsTruncated, setLinkedSessionsTruncated] = useState(false);
@@ -1049,7 +1071,7 @@ export default function AdminDashboard() {
     setBookings([]); setBookingsError('');
     setPurchasesError('');
     setSupportSessions([]);
-    setServiceSessions([]);
+    setServiceSessions([]); setTeamInquiries([]); setOperations(null);setOperationsError('');
     transcriptCache.clear();
     transcriptRequests.clear();
   }, []);
@@ -1082,9 +1104,9 @@ export default function AdminDashboard() {
       setBookings(result.bookings); setBookingsError(result.bookings_error || '');
       setPurchases(result.purchases);
       setPurchasesError(result.purchases_error || '');
-      setSupportSessions(result.support_sessions);
+      setSupportSessions(result.support_sessions); setTeamInquiries(result.team_inquiries);setOperations(result.operations||null);setOperationsError(result.operations_error||'');
       setServiceSessions(result.service_sessions);
-      setChatErrors({ support: result.support_sessions_error, service: result.service_sessions_error, linked: result.linked_sessions_error });
+      setChatErrors({ team:result.team_inquiries_error || result.support_sessions_error, support: result.support_sessions_error, service: result.service_sessions_error, linked: result.linked_sessions_error });
       setLinkedSessionsTruncated(result.linked_sessions_truncated === true);
       setLastRefreshed(Date.now());
       setAuthorised(true);
@@ -1126,14 +1148,18 @@ export default function AdminDashboard() {
   };
   const deleteLead = (id) => setLeads((current) => current.filter((lead) => lead.id !== id));
   const updatePurchase = (updated) => setPurchases((current) => current.map((purchase) => purchase.reference === updated.reference ? { ...purchase, ...updated } : purchase));
-  const updateVisitor = (visitor) => {
-    const merge = (sessions) => sessions.map((session) => session.visitor_id === visitor.id ? { ...session, flag_status: visitor.flag_status, flag_reason: visitor.flag_reason } : session);
+  const updateVisitor = (visitor,review) => {
+    if(review)updateLead(review);
+    const merge = (sessions) => sessions.map((session) => session.visitor_id === visitor.id || (review && session.review_id===review.id) ? { ...session, flag_status: visitor.flag_status, flag_reason: visitor.flag_reason, moderation_strikes: visitor.moderation_strikes ?? session.moderation_strikes } : session);
     setSupportSessions(merge);
-    setServiceSessions(merge);
+    setServiceSessions(merge); setTeamInquiries(merge);
   };
 
+  const updateInquiry = saved => setTeamInquiries(current=>current.map(session=>session.id===saved.id?{...session,...saved}:session));
+  const metrics=workspaceMetrics({leads,purchases,inquiries:teamInquiries,bookings,now:lastRefreshed||0});
+
   const processed = useMemo(() => {
-    const now = Date.now();
+    const now = lastRefreshed || 0;
     const rangeDays = DATE_RANGES.find((r) => r.id === filters.dateRange)?.days ?? null;
 
     const filtered = leads.filter((lead) => {
@@ -1169,7 +1195,7 @@ export default function AdminDashboard() {
     };
 
     return [...filtered].sort(comparators[sortId] || byCreated);
-  }, [leads, filters, sortId]);
+  }, [leads, filters, sortId, lastRefreshed]);
 
   useEffect(() => { setPage(1); }, [filters, sortId]);
 
@@ -1186,7 +1212,7 @@ export default function AdminDashboard() {
       'converted_to_call', 'converted_to_purchase', 'deal_value',
       'followup_status', 'followup_notes', 'call_booked_at', 'created_at', 'updated_at',
     ];
-    const quote = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+    const quote = csvCell;
     const content = [
       columns.join(','),
       ...processed.map((lead) => columns.map((c) => quote(lead[c])).join(',')),
@@ -1252,7 +1278,7 @@ export default function AdminDashboard() {
 
         <div role="tablist" aria-label="Admin sections" className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-white/[0.07] bg-white/[0.02] p-1.5">
           {ADMIN_TABS.map((tab, index) => {
-            const count = tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'bookings' ? bookings.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
+            const count = tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'bookings' ? bookings.length : tab.id === 'team' ? teamInquiries.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
             return <button key={tab.id} id={`tab-${tab.id}`} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1}
               onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
                 const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -1266,11 +1292,21 @@ export default function AdminDashboard() {
             </button>;
           })}
         </div>
+        <section aria-label="Agency work queue" className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <QueueCard title="Open team inquiries" value={chatErrors.team?'Unavailable':metrics.openInquiries} detail={`${metrics.unassignedInquiries} unassigned · ${metrics.dueInquiries} follow-ups due`} onClick={()=>setActiveTab('team')} />
+          <QueueCard title="Hot leads awaiting follow-up" value={metrics.hotLeads} detail="Hot reviews still marked pending" onClick={()=>{setFilters(previous=>({...previous,temperature:'Hot',followup:'pending'}));setActiveTab('leads');}} />
+          <QueueCard title="Emails awaiting delivery" value={purchasesError?'Unavailable':metrics.purchaseEmails+metrics.reviewEmails} detail={`${metrics.purchaseEmails} purchases · ${metrics.reviewEmails} reviews · provider acceptance`} onClick={()=>setActiveTab('purchases')} />
+          <QueueCard title="Calls in the next 7 days" value={bookingsError?'Unavailable':metrics.upcomingBookings} detail="Active bookings · Africa/Lagos" onClick={()=>setActiveTab('bookings')} />
+        </section>
+        {operations && <section aria-label="Haven operational health" className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-3 rounded-xl border border-white/[0.06] px-4 py-3 text-xs text-zinc-400"><span className="text-zinc-500">Past 24 hours</span><span>Gemini replies <strong className="font-medium text-zinc-200">{operations.gemini_replies}</strong></span><span>Groq replies <strong className="font-medium text-zinc-200">{operations.groq_replies}</strong></span><span>Failed turns <strong className={operations.failed_turns?'text-amber-200':'text-zinc-200'}>{operations.failed_turns}</strong></span><span>Stalled turns <strong className={operations.stale_turns?'text-amber-200':'text-zinc-200'}>{operations.stale_turns}</strong></span><button type="button" disabled={retryingFlagEmails} onClick={retryFlagEmails} className="rounded-lg border border-white/10 px-3 py-2 text-zinc-300 disabled:opacity-40">{retryingFlagEmails?'Retrying flag notices…':`${operations.pending_flag_events} flag events awaiting delivery · Retry`}</button></section>}
+        {operationsError && <p role="alert" className="mb-4 text-xs text-amber-200">{operationsError}</p>}
+        {flagEmailError && <p role="alert" className="mb-4 text-xs text-amber-200">{flagEmailError}</p>}
+        <p className="mb-5 text-[11px] leading-relaxed text-zinc-500">Work queue counts cover loaded records, not lifetime totals. Provider counts are completed replies, not token usage or billing. Flag events cover the saved delivery queue. Inquiry status is maintained by the team; confirmed bookings appear in Bookings.</p>
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-200">{error}</p>}
         <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
         {activeTab === 'bookings' && <BookingsPanel bookings={bookings} error={bookingsError} now={lastRefreshed || 0} />}
         {activeTab === 'purchases' && <PurchasesPanel purchases={purchases} error={purchasesError} password={password} onAuthLost={handleAuthLost} onPurchaseChange={updatePurchase} showToast={showToast} />}
-        {(activeTab === 'support' || activeTab === 'service') && <SessionsPanel key={activeTab} scope={activeTab} sessions={activeTab === 'support' ? supportSessions : serviceSessions} error={chatErrors[activeTab]} password={password} onAuthLost={handleAuthLost} onVisitorChange={updateVisitor} showToast={showToast} />}
+        {['team','support','service'].includes(activeTab) && <SessionsPanel key={activeTab} scope={activeTab} sessions={activeTab==='team'?teamInquiries:activeTab === 'support' ? supportSessions : serviceSessions} error={chatErrors[activeTab]} password={password} onAuthLost={handleAuthLost} onVisitorChange={updateVisitor} showToast={showToast} onSessionChange={updateInquiry} />}
         {activeTab === 'leads' && <>
 
         <p className="mb-3 text-xs text-zinc-500">Reviews show the newest 500 records maximum. Counts, filters and exports apply to loaded reviews.</p>

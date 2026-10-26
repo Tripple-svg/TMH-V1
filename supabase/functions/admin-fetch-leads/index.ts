@@ -16,7 +16,7 @@ const SIGNED_URL_TTL = 60 * 60; // 1 hour
 const MAX_TRANSCRIPT_MESSAGES = 200;
 const MAX_RECORDS = 500;
 const MAX_LINKED_SESSIONS = 5000;
-const SESSION_FIELDS = 'id,review_id,visitor_id,scope,service_id,current_step,last_step_reached,total_exchanges,message_count,created_at,updated_at';
+const SESSION_FIELDS = 'inquiry_status,inquiry_owner,inquiry_notes,inquiry_next_followup_on,inquiry_revision,inquiry_updated_at,id,review_id,visitor_id,scope,service_id,current_step,last_step_reached,total_exchanges,message_count,created_at,updated_at';
 // Keep credentials and future private columns out of the admin payload.
 const REVIEW_FIELDS = [
   'id', 'full_name', 'brand_name', 'email', 'whatsapp', 'main_goal',
@@ -26,7 +26,7 @@ const REVIEW_FIELDS = [
   'utm_source', 'utm_campaign', 'referrer_url', 'device_type', 'visit_count',
   'first_visit_at', 'days_to_convert', 'country', 'city', 'clicked_booking_link',
   'clicked_playbook_link', 'converted_to_call', 'converted_to_purchase', 'deal_value',
-  'followup_status', 'followup_notes', 'call_booked_at', 'flag_status', 'flag_reason',
+  'followup_status', 'followup_notes', 'call_booked_at', 'flag_status', 'flag_reason', 'moderation_strikes',
   'agreed_to_terms', 'agreed_at', 'created_at', 'updated_at',
   'welcome_email_sent', 'welcome_email_id', 'welcome_email_attempted_at', 'welcome_email_last_error',
 ];
@@ -63,7 +63,7 @@ function sanitiseMessage(m: unknown) {
   return {
     id: typeof msg.id === 'string' ? msg.id : null,
     role: typeof msg.role === 'string' ? msg.role : null,
-    content: typeof msg.content === 'string' ? msg.content.slice(0, 8000) : '',
+    content: typeof msg.content === 'string' ? msg.content.slice(0, 8000).replace(/\[\[(?:STEP|LEAD|FLAG|NEED|CHIPS|NAV_CHIPS):[\s\S]*?\]\]|\[\[DIAGNOSTIC_QUESTION\]\]/g, '').trim() : '',
     timestamp: typeof msg.timestamp === 'number' || typeof msg.timestamp === 'string' ? msg.timestamp : null,
     hasImage: Boolean(msg.hasImage),
     isChipIntent: Boolean(msg.isChipIntent),
@@ -78,6 +78,8 @@ function sessionMetadata(session: Record<string, any>) {
     current_step: session.current_step || null, last_step_reached: session.last_step_reached || null,
     total_exchanges: session.total_exchanges || 0, created_at: session.created_at || null,
     updated_at: session.updated_at || null, last_session_update: session.updated_at || null,
+    inquiry_status: session.inquiry_status || 'new', inquiry_owner: session.inquiry_owner || '', inquiry_notes: session.inquiry_notes || '',
+    inquiry_next_followup_on: session.inquiry_next_followup_on || null, inquiry_revision: session.inquiry_revision || 0, inquiry_updated_at: session.inquiry_updated_at || null,
     message_count: Number.isFinite(Number(session.message_count)) ? Number(session.message_count) : null,
     messages_returned: 0, transcript_loaded: false,
   };
@@ -192,23 +194,26 @@ serve(async (req) => {
     }));
 
     const fetchStandalone = async (scope: string) => {
-      const { data, error } = await supabase.from('haven_sessions').select(SESSION_FIELDS)
-        .eq('scope', scope).is('review_id', null).order('updated_at', { ascending: false }).limit(MAX_RECORDS);
-      if (error) console.error(`admin-fetch-leads: ${scope} sessions query failed`, error);
-      return { sessions: (data || []).map(sessionMetadata), error: error ? `Could not load ${scope} chats. Refresh to retry.` : null };
+      let query=supabase.from('haven_sessions').select(SESSION_FIELDS).eq('scope',scope==='team'?'support':scope);
+      if(scope==='team') query=query.eq('service_id','team-inquiry');
+      else if(scope==='support') query=query.or('service_id.is.null,service_id.neq.team-inquiry');
+      const {data,error}=await query.order('updated_at',{ascending:false}).limit(MAX_RECORDS);
+      if(error) console.error('admin-fetch-leads: scoped sessions query failed',scope);
+      return {sessions:(data||[]).map(sessionMetadata),error:error?`Could not load ${scope==='team'?'team inquiries':scope+' chats'}. Refresh to retry.`:null};
     };
-    const [support, service] = await Promise.all([fetchStandalone('support'), fetchStandalone('service')]);
-    const standalone = [...support.sessions, ...service.sessions];
+    const [support,service,team]=await Promise.all([fetchStandalone('support'),fetchStandalone('service'),fetchStandalone('team')]);
+    const standalone=[...support.sessions,...service.sessions,...team.sessions];
     const visitorIds = [...new Set(standalone.map((session) => session.visitor_id).filter(Boolean))];
     let visitorsError: string | null = null;
     if (visitorIds.length) {
       const { data: visitors, error } = await supabase.from('haven_chat_visitors')
-        .select('id,flag_status,flag_reason').in('id', visitorIds);
+        .select('id,flag_status,flag_reason,moderation_strikes').in('id', visitorIds);
       if (error) visitorsError = 'Guest flag status could not be loaded. Refresh before moderating these chats.';
       const byId = new Map((visitors || []).map((visitor: any) => [visitor.id, visitor]));
       for (const session of standalone) {
         const visitor: any = byId.get(session.visitor_id);
-        Object.assign(session, { flag_status: visitor?.flag_status || 'white', flag_reason: visitor?.flag_reason || null, flag_error: error ? visitorsError : null });
+        const lead = rows.find(row => row.id === session.review_id);
+        Object.assign(session, { linked_name: lead?.full_name || null, linked_brand: lead?.brand_name || null, moderation_strikes: visitor?.moderation_strikes || lead?.moderation_strikes || 0, flag_status: visitor?.flag_status || lead?.flag_status || 'white', flag_reason: visitor?.flag_reason || null, flag_error: error ? visitorsError : null });
       }
     }
 
@@ -229,8 +234,9 @@ serve(async (req) => {
       thankyou_last_error: purchase.thankyou_last_error, thankyou_email_id: purchase.thankyou_email_id,
     }));
 
+    const {data:operations,error:operationsError}=await supabase.rpc('haven_operational_stats');
     return json({
-      ok: true, leads, count: leads.length, support_sessions: support.sessions, service_sessions: service.sessions,
+      ok: true, leads, count: leads.length, operations:operationsError?null:operations, operations_error:operationsError?'Operational counts are unavailable. Apply the reliability migration and refresh.':null, support_sessions: support.sessions, service_sessions: service.sessions, team_inquiries: team.sessions, team_inquiries_error: team.error,
       purchases, playbook_purchases: purchases, records_limit: MAX_RECORDS, transcript_limit: MAX_TRANSCRIPT_MESSAGES,
       bookings: bookings || [], bookings_error: bookingsError ? 'Could not load bookings. Apply the strategy call bookings migration and refresh.' : null,
       support_sessions_error: support.error, service_sessions_error: service.error,

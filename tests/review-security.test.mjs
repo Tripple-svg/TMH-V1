@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { webcrypto, createHash } from 'node:crypto';
-import { transformSync } from 'esbuild';
+import { transformSync, buildSync } from 'esbuild';
 
 const reviewId = '11111111-1111-4111-8111-111111111111';
 const sessionId = '22222222-2222-4222-8222-222222222222';
@@ -18,7 +18,7 @@ const request = (body, method = 'POST') => new Request('https://project.supabase
 
 function database({ present = true, failTable, rpcError, uploadError } = {}) {
   const rows = {
-    brand_reviews: present ? [{ id: reviewId, email: 'owner@example.com', screenshot_url: null }] : [],
+    brand_reviews: present ? [{ id: reviewId, email: 'owner@example.com', platform_type:'website', website_url:'https://example.com/', screenshot_url: null }] : [],
     haven_sessions: present ? [{ id: sessionId, review_id: reviewId, scope: 'audit', current_step: 'AWAITING_DIAGNOSTIC_Q1' }] : [],
     review_access_tokens: present ? [{ review_id: reviewId, session_id: sessionId, token_hash: tokenHash }] : [],
   };
@@ -55,14 +55,13 @@ function load(name, db, options = {}) {
   vm.runInNewContext(transformSync(readFileSync(new URL('../supabase/functions/_shared/haven-request.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'cjs' }).code, {
     module: requestModule, exports: requestModule.exports, require: () => ({ STEPS: {} }), TextDecoder,
   });
-  vm.runInNewContext(transformSync(readFileSync(new URL(`../supabase/functions/${name}/index.ts`, import.meta.url), 'utf8'), { loader: 'ts', format: 'cjs' }).code, {
-    require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } }
-      : specifier.includes('review-access') ? shared.exports
-        : specifier.includes('haven-request') ? requestModule.exports : { createClient: () => db.client },
-    Deno: { env: { get: (key) => env[key] } }, Response, Request, Headers, TextEncoder, Uint8Array,
-    crypto: webcrypto, URLSearchParams, AbortSignal, atob,
-    fetch: options.fetch || (async () => new Response(JSON.stringify({ success: true }))),
-    console: { log() {}, warn() {}, error() {} },
+  const code=buildSync({entryPoints:[new URL('../supabase/functions/'+name+'/index.ts',import.meta.url).pathname.replace(/^\/(\w:)/,'$1')],bundle:true,write:false,format:'cjs',platform:'node',external:['https://*'],logLevel:'silent'}).outputFiles[0].text;
+  vm.runInNewContext(code,{
+    require: specifier=>specifier.includes('server.ts')?{serve:fn=>{handler=fn;}}:{createClient:()=>db.client},
+    Deno:{serve:fn=>{handler=fn;},env:{get:key=>env[key]}},Response,Request,Headers,TextEncoder,TextDecoder,Uint8Array,
+    crypto:webcrypto,URL,URLSearchParams,AbortSignal,atob,
+    fetch:options.fetch||(async()=>new Response(JSON.stringify({success:true}))),
+    console:{log(){},warn(){},error(){}},
   });
   return handler;
 }
@@ -146,7 +145,7 @@ test('failed or missing CAPTCHA and invalid required fields never create a revie
 
 test('failed creation transaction returns failure; no screenshot is uploaded and no success IDs escape', async () => {
   const db = database({ present: false, rpcError: { message: 'session insert failed' } });
-  const response = await load('create-brand-review', db)(request({ ...creationPayload(), screenshotBase64: 'data:image/png;base64,YQ==' }));
+  const response = await load('create-brand-review', db)(request({ ...creationPayload(), platformType:'social', websiteUrl:null, screenshotBase64: 'data:image/png;base64,YQ==' }));
   assert.equal(response.status, 500);
   const body = await response.json(); assert.equal(body.ok, false); assert.equal(body.reviewId, undefined);
   assert.equal(db.uploads.length, 0);
@@ -166,7 +165,7 @@ test('screenshot upload failure is recoverable with same saved credentials and p
   let uploads = 0;
   const db = database({ present: false, uploadError: () => ++uploads === 1 ? { message: 'storage offline' } : null });
   const handler = load('create-brand-review', db);
-  const payload = { ...creationPayload(), screenshotBase64: 'data:image/png;base64,YQ==' };
+  const payload = { ...creationPayload(), platformType:'social', websiteUrl:null, screenshotBase64: 'data:image/png;base64,YQ==' };
   assert.equal((await handler(request(payload))).status, 500);
   assert.equal((await handler(request({ ...payload, hcaptchaToken: '' }))).status, 200);
   assert.equal(db.calls.length, 1); assert.equal(db.uploads.length, 2);
@@ -180,7 +179,7 @@ test('creation cannot acknowledge or orphan a screenshot when its review is dele
     async upload() { db.rows.brand_reviews = []; db.rows.haven_sessions = []; db.rows.review_access_tokens = []; return { error: null }; },
     async remove(paths) { removed.push({ bucket, paths }); return { error: null }; },
   });
-  const response = await load('create-brand-review', db)(request({ ...creationPayload(), screenshotBase64: 'data:image/png;base64,YQ==' }));
+  const response = await load('create-brand-review', db)(request({ ...creationPayload(), platformType:'social', websiteUrl:null, screenshotBase64: 'data:image/png;base64,YQ==' }));
   assert.equal(response.status, 403);
   assert.equal((await response.json()).ok, false);
   assert.deepEqual(JSON.parse(JSON.stringify(removed)), [{ bucket: 'tmh-screenshots', paths: [`${reviewId}/review.png`] }]);

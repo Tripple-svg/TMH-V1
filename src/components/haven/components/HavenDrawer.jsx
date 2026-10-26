@@ -343,7 +343,7 @@ export default function HavenDrawer() {
     && (!userProfile.reviewId || !userProfile.sessionId || !userProfile.accessToken);
   const scopeLabel     = getScopeLabel(activeScope, activeService);
 
-  const showPreflight = activeScope === 'audit'
+  const showPreflight = userProfile.businessDomain !== 'none' && activeScope === 'audit'
     && auditPreflight
     && !auditPreflight.dismissed
     && (auditPreflight.status === 'scraping'
@@ -847,7 +847,7 @@ export default function HavenDrawer() {
                     </p>
                   )}
                   <p className="mt-2.5 text-center text-[10px] uppercase tracking-[0.2em] text-zinc-600">
-                    Powered by The Marketing Haven · AI responses may vary
+                    Haven by TMH · AI responses may vary
                   </p>
                 </div>
               )}

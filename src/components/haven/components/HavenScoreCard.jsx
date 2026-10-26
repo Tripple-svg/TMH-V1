@@ -1,3 +1,4 @@
+import { scoreFailureCopy } from '../../../../supabase/functions/_shared/scoring-copy.js';
 // src/components/haven/components/HavenScoreCard.jsx
 // V3.2 — Loading state aware of website vs social path.
 
@@ -32,7 +33,7 @@ function ScoreBar({ value, max = 20 }) {
   return (
     <div className="h-[3px] w-full rounded-full bg-white/[0.04] overflow-hidden">
       <motion.div
-        className="h-full bg-blue-500"
+        className="h-full bg-zinc-500"
         initial={{ width: 0 }}
         animate={{ width: `${pct}%` }}
         transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
@@ -71,7 +72,7 @@ function FailedState({ error, onProceed, onRetry, retryCount = 0, kindLabel }) {
           <button
             type="button"
             onClick={onRetry}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all shadow-lg shadow-blue-600/20 cursor-pointer"
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-zinc-600 hover:bg-zinc-500 text-white text-sm font-semibold transition-all shadow-lg shadow-zinc-600/20 cursor-pointer"
           >
             <RotateCcw className="w-4 h-4" />
             Try again
@@ -88,7 +89,7 @@ function FailedState({ error, onProceed, onRetry, retryCount = 0, kindLabel }) {
         <button
           type="button"
           onClick={onProceed}
-          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all shadow-lg shadow-blue-600/20 cursor-pointer"
+          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-zinc-600 hover:bg-zinc-500 text-white text-sm font-semibold transition-all shadow-lg shadow-zinc-600/20 cursor-pointer"
         >
           Continue to Chat <ArrowRight className="w-4 h-4" />
         </button>
@@ -98,7 +99,7 @@ function FailedState({ error, onProceed, onRetry, retryCount = 0, kindLabel }) {
 }
 
 export default function HavenScoreCard({ preflight, kind: kindProp, userName, brandName, onProceed, onRetry }) {
-  const { status, score, breakdown, biggestIssue, url, error, retryCount = 0 } = preflight || {};
+  const { status, score, breakdown, biggestIssue, url, error, reason, retryCount = 0 } = preflight || {};
 
   // Prefer the kind from the breakdown (accurate) — fall back to the prop passed by the drawer (needed during loading)
   const kind = detectKind(breakdown) || kindProp || 'website';
@@ -111,12 +112,12 @@ export default function HavenScoreCard({ preflight, kind: kindProp, userName, br
       <div className="flex flex-col items-center justify-center flex-1 min-h-full text-center px-6 py-12 space-y-7">
         <div className="relative w-14 h-14">
           <motion.div
-            className="absolute inset-0 rounded-full border border-blue-500/20"
+            className="absolute inset-0 rounded-full border border-zinc-500/20"
             animate={{ scale: [1, 1.2, 1], opacity: [0.4, 0.1, 0.4] }}
             transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
           />
           <div className="absolute inset-0 flex items-center justify-center">
-            <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+            <Loader2 className="w-5 h-5 text-zinc-400 animate-spin" />
           </div>
         </div>
         <div className="space-y-2.5 max-w-xs">
@@ -157,13 +158,11 @@ export default function HavenScoreCard({ preflight, kind: kindProp, userName, br
         <div className="space-y-3 max-w-sm">
           <h3 className="text-base font-semibold text-white">Not enough readable content to score</h3>
           <p className="text-[13px] leading-relaxed text-zinc-400">
-            {kind === 'social'
-              ? SCORING_COPY.profile_bad_data
-              : SCORING_COPY.bad_data}
+            {scoreFailureCopy(reason, kind)}
           </p>
         </div>
         <button type="button" onClick={onProceed}
-          className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-500 transition-colors">
+          className="flex items-center gap-2 rounded-xl bg-zinc-600 px-5 py-3 text-sm font-semibold text-white hover:bg-zinc-500 transition-colors">
           Continue to Chat <ArrowRight className="w-4 h-4" />
         </button>
       </div>
@@ -178,13 +177,13 @@ export default function HavenScoreCard({ preflight, kind: kindProp, userName, br
         <div className="space-y-2 max-w-xs">
           <h3 className="text-base font-semibold text-white">Score unavailable</h3>
           <p className="text-[13px] text-zinc-400 leading-relaxed">
-            We couldn't generate a score right now. Haven has still read the content — let's talk through it.
+            We could not generate a score. No assessment of the site is available; you can continue in chat.
           </p>
         </div>
         <button
           type="button"
           onClick={onProceed}
-          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all shadow-lg shadow-blue-600/20 cursor-pointer"
+          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-zinc-600 hover:bg-zinc-500 text-white text-sm font-semibold transition-all shadow-lg shadow-zinc-600/20 cursor-pointer"
         >
           Continue to Chat <ArrowRight className="w-4 h-4" />
         </button>
@@ -220,7 +219,7 @@ export default function HavenScoreCard({ preflight, kind: kindProp, userName, br
         </div>
         <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full border ${
           passed
-            ? 'bg-blue-500/10 text-blue-300 border-blue-500/25'
+            ? 'bg-zinc-500/10 text-zinc-300 border-zinc-500/25'
             : 'bg-white/[0.03] text-zinc-400 border-white/[0.08]'
         }`}>
           {passed ? 'Above pass mark' : 'Below pass mark (60)'}
@@ -276,7 +275,7 @@ export default function HavenScoreCard({ preflight, kind: kindProp, userName, br
         transition={{ delay: 0.9 }}
         type="button"
         onClick={onProceed}
-        className="mt-auto flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all cursor-pointer"
+        className="mt-auto flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-zinc-600 hover:bg-zinc-500 text-white text-sm font-semibold transition-all cursor-pointer"
       >
         Proceed to Chat <ArrowRight className="w-4 h-4" />
       </motion.button>

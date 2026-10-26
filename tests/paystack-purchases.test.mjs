@@ -13,7 +13,7 @@ const AUTH = { Authorization: `Bearer ${ENV.SUPABASE_SERVICE_ROLE_KEY}` };
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status });
 const payment = (patch = {}) => ({
   event: 'charge.success', data: {
-    status: 'success', reference: 'UNSEEN_purchase-123', amount: 10000, currency: 'NGN',
+    status: 'success', reference: 'UNSEEN_purchase-123', amount: 963900, currency: 'NGN', paid_at:'2026-10-25T12:00:00Z',
     customer: { email: ' Buyer@Example.com ', first_name: 'Adéọlá' }, ...patch,
   },
 });
@@ -32,6 +32,7 @@ function database(seed = [], faults = {}) {
   const rows = structuredClone(seed), calls = [];
   const client = {
     from(table) {
+      if(table==='playbook_checkout_policy')return {select(){return this;},eq(){return this;},single:async()=>({data:{legacy_cutover_at:'2026-10-26T00:00:00Z'}})};
       assert.equal(table, 'playbook_purchases');
       let action = 'select', values;
       const filters = [];
@@ -126,7 +127,7 @@ test('accepts raw UTF-8 and whitespace signatures, records each supported NGN pr
     assert.equal(emails[0].payload.subject, 'Your copy of The Unseen Playbook');
     assert.deepEqual(emails[0].payload.to, ['buyer@example.com']);
     assert.equal(emails[0].payload.reply_to, 'info@themarketinghaven.xyz');
-    for (const text of ['https://themarketinghaven.xyz/#shop', 'Thank you for purchasing The Unseen Playbook.', 'reply to this email', 'Team Haven.']) {
+    for (const text of ['https://themarketinghaven.xyz/#shop', 'Thank you for choosing The Unseen Playbook.', 'reply to this email', 'Team Haven.']) {
       assert.ok(emails[0].payload.text.includes(text));
     }
     assert.equal(emails[0].headers.Authorization, `Bearer ${ENV.RESEND_API_KEY}`);
@@ -181,7 +182,7 @@ test('duplicate webhooks preserve the original buyer and amount and do not repea
   const { webhook, db, emails, invocations } = pipeline();
   assert.equal((await webhook(webhookRequest())).status, 200);
   assert.equal((await webhook(webhookRequest(payment({ amount: 963900, customer: { email: 'other@example.com' } })))).status, 200);
-  assert.equal(db.rows.length, 1); assert.equal(db.rows[0].email, 'buyer@example.com'); assert.equal(db.rows[0].amount, 10000);
+  assert.equal(db.rows.length, 1); assert.equal(db.rows[0].email, 'buyer@example.com'); assert.equal(db.rows[0].amount, 963900);
   assert.equal(emails.length, 1); assert.equal(invocations.length, 1);
 });
 

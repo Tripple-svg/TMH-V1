@@ -28,7 +28,7 @@ function bundled(name) {
 }
 
 function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scoring = LOW_SCORE,
-  reader = GOOD_TEXT, readerStatus = 200, fetchImpl, writeError = null, env = {}, visitor = {}, modelText } = {}) {
+  reader = GOOD_TEXT, readerStatus = 200, fetchImpl, writeError = null, env = {}, visitor = {}, modelText, rateAllowed = true } = {}) {
   let handler;
   const queries = [], writes = [], requests = [], rpcCalls = [], deliveries = [];
   const rows = {
@@ -46,6 +46,7 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
       if (event) event[name === 'send-flag-alert' ? 'sent_at' : 'customer_sent_at'] = new Date().toISOString(); return { data: { ok: true }, error: null }; } },
     async rpc(name, args) {
       rpcCalls.push({ name, args: structuredClone(args) });
+      if (name === 'consume_playbook_limit') return { data:rateAllowed,error:null };
       if (name === 'ensure_haven_conversation') {
         const identity = rows.haven_chat_visitors.find((row) => row.id === args.p_visitor_id);
         if (!identity || identity.token_hash !== args.p_token_hash) return { data: null, error: { code: '42501' } };
@@ -80,18 +81,22 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
         if (writeError === 'haven_sessions') return { data: null, error: { message: 'Save failed' } };
         const saved = rows.haven_sessions.find((row) => row.id === args.p_session_id);
         const turn = rows.haven_chat_turns.find((row) => row.id === args.p_turn_id);
-        turn.status = 'complete'; turn.response = structuredClone(args.p_response);
+        turn.status = 'complete'; turn.response = structuredClone(args.p_response); delete turn.response.conversationMemory;
+        if(args.p_response.conversationMemory) saved.conversation_memory=structuredClone(args.p_response.conversationMemory);
         saved.messages.push({ role: 'agent', content: args.p_response.text }); saved.message_count++;
+        if(args.p_response.routingState) saved.routing_state=structuredClone(args.p_response.routingState);
         saved.current_step = args.p_step; saved.diagnostic_questions_asked = Math.min(2, saved.diagnostic_questions_asked + (args.p_question ? 1 : 0));
         if (args.p_response.leadTemperature && saved.review_id) rows.brand_reviews.find((row)=>row.id===saved.review_id).lead_temperature = args.p_response.leadTemperature[0]+args.p_response.leadTemperature.slice(1).toLowerCase();
         return { data: null, error: null };
       }
       if (name === 'apply_haven_ai_flag') {
         const target = args.p_review_id ? rows.brand_reviews.find((row) => row.id === args.p_review_id) : rows.haven_chat_visitors.find((row) => row.id === args.p_visitor_id);
-        const changed = target.flag_status === 'white'; if (changed) target.flag_status = 'yellow';
-        if (changed) rows.flag_alert_notifications.push({ id: '70000000-0000-4000-8000-000000000001', review_id: args.p_review_id,
+        target.moderation_strikes = Math.min(3,(target.moderation_strikes || (target.flag_status==='red'?3:target.flag_status==='yellow'?2:0))+1);
+        const status=target.moderation_strikes===3?'red':target.moderation_strikes===2?'yellow':'white';
+        const changed=status!==target.flag_status;target.flag_status=status;
+        if (changed) rows.flag_alert_notifications.push({ id: '70000000-0000-4000-8000-'+String(rows.flag_alert_notifications.length+1).padStart(12,'0'), review_id: args.p_review_id,
           visitor_id: args.p_visitor_id, sent_at: null, customer_required: Boolean(args.p_review_id), customer_sent_at: null });
-        return { data: { flagStatus: target.flag_status, changed, reviewId: args.p_review_id, visitorId: args.p_visitor_id }, error: null };
+        return { data: { flagStatus: target.flag_status, changed, strikes: target.moderation_strikes, reviewId: args.p_review_id, visitorId: args.p_visitor_id }, error: null };
       }
       throw new Error(`Unexpected RPC ${name}`);
     },
@@ -135,11 +140,11 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
   });
   return { handler, rows, requests, writes, queries, request, rpcCalls, deliveries };
 }
-const chatBody = (extras = {}) => ({ scope: 'audit', requestId: REQUEST_ID, noticeVersion: '2026-10-23', context: ACCESS, messages: [{ role: 'user', content: 'I post but nothing happens.' }], ...extras });
+const chatBody = (extras = {}) => ({ scope: 'audit', requestId: REQUEST_ID, noticeVersion: '2026-10-26', context: ACCESS, messages: [{ role: 'user', content: 'I post but nothing happens.' }], ...extras });
 
 test('access refresh reads current restrictions without model calls or a new chat turn', async () => {
   const app = load('haven-chat', { review: { flag_status: 'red' } });
-  const body = { action: 'access', scope: 'audit', context: ACCESS, noticeVersion: '2026-10-23' };
+  const body = { action: 'access', scope: 'audit', context: ACCESS, noticeVersion: '2026-10-26' };
   const first = await app.handler(app.request(body));
   assert.equal((await first.json()).flagStatus, 'red');
   app.rows.brand_reviews[0].flag_status = 'white';
@@ -302,12 +307,12 @@ test('social scoring: only owned profiles accept screenshots; valid low and unre
   const unowned = load('score-social'); const response = await unowned.handler(unowned.request({ screenshot: 'data:image/png;base64,YQ==' }));
   assert.equal(response.status, 403); assert.equal(unowned.requests.length, 0);
 });
-test('prompt strategy: empathy, hesitation, transformation, and no-income-guarantees remain in server instructions', () => {
+test('prompt strategy: contextual tone, hesitation, transformation, and no-income-guarantees remain in server instructions', () => {
   const prompt = buildHavenSystemPrompt({ auditData: { currentStep: STEPS.ROUTING_TO_PLAYBOOK } });
-  for (const copy of ['I hear you. That is incredibly frustrating, and you are not alone in this.',
-    'Of course. Take your time. The review stays here if you want to revisit it.',
-    'It’s a blueprint designed to take you from feeling invisible to having a brand people trust and buy from without begging.',
-    "I'm not assuring you this is a quick money scheme."]) assert.ok(prompt.includes(copy));
+  for (const copy of ['No canned',
+    "respect 'let me think' or 'not now'",
+    'give a bounded public principle or small next step',
+    'guaranteed sales, income, customers or timelines']) assert.ok(prompt.toLowerCase().includes(copy.toLowerCase()));
 });
 
 test('server identity: wrong guest tokens and cross-visitor sessions cannot reach the provider', async () => {
@@ -348,25 +353,134 @@ test('server routing: model call and Playbook tags cannot bypass two substantive
     assert.match(data.text,/\?/);assert.equal(app.rows.haven_sessions[0].diagnostic_questions_asked,2);
   }
 });
-test('server automatic moderation: first AI event saves yellow, attempts both messages, strips metadata and never auto-red', async () => {
-  const app=load('haven-chat',{modelText:'Please keep this conversation respectful. [[FLAG:HARASSMENT]]'});
-  const response=await app.handler(app.request(chatBody()));const data=await response.json();
-  assert.equal(data.flagStatus,'yellow');assert.doesNotMatch(data.text,/FLAG:|HARASSMENT/);
-  assert.equal(app.rows.brand_reviews[0].flag_status,'yellow');
-  assert.deepEqual(app.deliveries.map((row)=>row.name),['send-flag-alert','send-flag-customer']);
-  const event=app.rpcCalls.find((call)=>call.name==='apply_haven_ai_flag');assert.match(event.args.p_event_key,/^chat:/);
+test('server automatic moderation: first event is recorded without mail, second warns and third restricts', async () => {
+  const app=load('haven-chat',{modelText:'Let us keep this respectful. [[FLAG:HARASSMENT]]'});
+  const first=await (await app.handler(app.request(chatBody()))).json();
+  assert.equal(first.flagStatus,'white');assert.equal(app.deliveries.length,0);
+  const secondBody=chatBody({requestId:'60000000-0000-4000-8000-000000000002'});
+  const second=await (await app.handler(app.request(secondBody))).json();
+  assert.equal(second.flagStatus,'yellow');assert.equal(app.deliveries.length,2);
+  await app.handler(app.request(secondBody));assert.equal(app.deliveries.length,2);
+  const third=await (await app.handler(app.request(chatBody({requestId:'60000000-0000-4000-8000-000000000003'})))).json();
+  assert.equal(third.flagStatus,'red');assert.match(third.text,/restricted/);assert.doesNotMatch(third.text,/FLAG:/);
 });
-test('provider privacy: unpaid Gemini is skipped while text chat and website scoring use Groq', async () => {
+
+test('provider configuration: explicit disabling skips Gemini while text chat and website scoring use Groq', async () => {
   for(const name of ['haven-chat','scrape-website']) {
-    const app=load(name,{env:{GEMINI_BILLING_CONFIRMED:'false'}});
+    const app=load(name,{env:{GEMINI_ENABLED:'false'}});
     const response=await app.handler(app.request(name==='haven-chat'?chatBody():{context:ACCESS}));
     assert.equal(response.status,200);assert.equal(app.requests.filter((row)=>row.url.includes('googleapis')).length,0);
     assert.ok(app.requests.some((row)=>row.url.includes('groq.com')));
   }
 });
-test('provider privacy: unpaid Gemini never receives a social screenshot and failure remains a clear continue path', async () => {
-  const app=load('score-social',{review:{platform_type:'social'},env:{GEMINI_BILLING_CONFIRMED:'false'}});
+test('provider configuration: explicit disabling never invents a vision score', async () => {
+  const app=load('score-social',{review:{platform_type:'social'},env:{GEMINI_ENABLED:'false'}});
   const response=await app.handler(app.request({context:ACCESS,screenshot:'data:image/png;base64,YQ=='}));
   assert.equal(response.status,503);assert.equal(app.requests.length,0);
   assert.equal((await response.json()).state,'failed');
+});
+
+test('free-tier testing explicitly uses Gemini 3.8 first with low thinking and no unsupported temperature',async()=>{
+  const app=load('haven-chat',{env:{GEMINI_BILLING_CONFIRMED:'false'}});
+  assert.equal((await app.handler(app.request(chatBody()))).status,200);
+  const request=app.requests.find(row=>row.url.includes('googleapis'));
+  assert.match(request.url,/gemini-3\.8-flash:generateContent$/);
+  assert.equal(request.headers['x-goog-api-key'],'gemini-test');
+  assert.equal(request.payload.generationConfig.thinkingConfig.thinkingLevel,'low');
+  assert.equal(request.payload.generationConfig.temperature,undefined);
+  assert.ok(!app.requests.some(row=>row.url.includes('groq.com')));
+});
+test('accepting the saved call invitation skips the provider and preserves the offered next step',async()=>{
+  const app=load('haven-chat',{session:{diagnostic_questions_asked:2,diagnostic_answers:2,messages:[
+    {role:'user',content:'I need the WordPress checkout and product pages rebuilt.'},
+    {role:'agent',content:'Would you like to schedule a strategy call to discuss that work?'},
+  ]}});
+  const data=await (await app.handler(app.request(chatBody({messages:[{role:'user',content:'Yes please!'}]})))).json();
+  assert.match(data.text,/BOOK_CALL/);assert.doesNotMatch(data.text,/explain the relevant|Before I recommend/);
+  assert.equal(app.requests.length,0);assert.equal(data.routingState.permission,'granted');
+});
+test('obvious direct abuse is counted and restricted without depending on any AI provider',async()=>{
+  const app=load('haven-chat');
+  for(let n=1;n<=3;n++) {
+    const data=await (await app.handler(app.request(chatBody({requestId:'60000000-0000-4000-8000-'+String(n).padStart(12,'0'),messages:[{role:'user',content:'You are an idiot'}]})))).json();
+    assert.equal(data.flagStatus,['white','yellow','red'][n-1]);
+    assert.doesNotMatch(data.text,/you are not alone|I hear you/);
+  }
+  assert.equal(app.requests.length,0);assert.equal(app.rows.brand_reviews[0].moderation_strikes,3);
+});
+test('a genuine complaint does not become an automatic strike or a false statement of solidarity',async()=>{
+  const app=load('haven-chat',{modelText:'Which response was unhelpful, and what were you trying to do?'});
+  const data=await (await app.handler(app.request(chatBody({messages:[{role:'user',content:'Your review was useless because the download button is broken.'}]})))).json();
+  assert.equal(data.flagStatus,'white');assert.equal(app.rpcCalls.filter(row=>row.name==='apply_haven_ai_flag').length,0);
+});
+test('Gemini rate limiting falls back once; an incomplete candidate cannot silently become a finished reply',async()=>{
+  const app=load('haven-chat',{fetchImpl:async url=>url.includes('googleapis')
+    ?Response.json({candidates:[{finishReason:'MAX_TOKENS',content:{parts:[{text:'A partial sentence'}]}}]})
+    :Response.json({choices:[{finish_reason:'stop',message:{content:'Which part of the site is getting in the way?'}}]})});
+  const data=await (await app.handler(app.request(chatBody()))).json();
+  assert.equal(data.model,'groq');assert.equal(app.requests.length,2);assert.doesNotMatch(data.text,/partial sentence/);
+});
+
+
+test('qualified Team enquiry remembers explicit implementation, then honours yes please without restarting',async()=>{
+  const app=load('haven-chat',{session:{scope:'support',service_id:'team-inquiry',diagnostic_questions_asked:2,diagnostic_answers:1,
+    routing_state:{problemType:'unknown',permission:'none'},messages:[
+      {role:'user',content:'I have an existing bakery website and want a more professional design that helps customers place orders.'},
+      {role:'agent',content:'What is the main result you want?'},
+      {role:'user',content:'More completed orders. Customers say it looks unfinished, and I need the checkout and product pages rebuilt.'},
+      {role:'agent',content:'Which platform is it on, and what have you tried?'},
+    ]},modelText:'Would you like to book a call? [[NEED:UNKNOWN]]'});
+  const first=await (await app.handler(app.request(chatBody({scope:'support',context:{...PUBLIC_ACCESS,sessionId:SESSION,entryContext:'team_inquiry'},
+    messages:[{role:'user',content:'It is WordPress. We tried changing the theme, but the ordering flow still looks unfinished. I want your team to implement the improvements.'}]})))).json();
+  assert.equal(first.routingState.problemType,'operational');assert.equal(first.routingState.pendingAction,'call');
+  assert.match(first.text,/Would you like.*strategy call/);assert.doesNotMatch(first.text,/what specifically.*change first/i);
+  const second=await (await app.handler(app.request(chatBody({requestId:'60000000-0000-4000-8000-000000000002',scope:'support',context:{...PUBLIC_ACCESS,sessionId:SESSION,entryContext:'team_inquiry'},messages:[{role:'user',content:'Yes, please!'}]})))).json();
+  assert.match(second.text,/BOOK_CALL/);assert.equal(second.routingState.permission,'granted');assert.equal(app.requests.length,1);
+  // A new support question must not be pulled back into the old sales decision.
+  const faq=await (await app.handler(app.request(chatBody({requestId:'60000000-0000-4000-8000-000000000003',scope:'support',context:{...PUBLIC_ACCESS,sessionId:SESSION},messages:[{role:'user',content:'Where can I find the privacy policy?'}]})))).json();
+  assert.match(faq.text,/Privacy Policy/);assert.doesNotMatch(faq.text,/BOOK_CALL|PLAYBOOK/);assert.equal(app.requests.length,1);
+});
+
+test('website reader caps oversized responses without sending them to a scoring provider',async()=>{
+  const app=load('scrape-website',{reader:'x'.repeat(1048577)});
+  const response=await app.handler(app.request({context:ACCESS}));
+  const data=await response.json();assert.equal(response.status,502);assert.equal(data.reason,'reader_too_large');
+  assert.equal(app.requests.length,1);assert.equal(app.rows.brand_reviews[0].haven_score,null);
+});
+
+test('saved reader failure reason reaches the conversation without invented video or script claims',async()=>{
+  const app=load('haven-chat',{review:{scrape_state:'bad_data',score_reason:'boilerplate_only'}});
+  await app.handler(app.request(chatBody()));
+  const prompt=app.requests[0].payload.systemInstruction.parts[0].text;
+  assert.match(prompt,/Most of the extracted text was navigation/);
+  assert.doesNotMatch(prompt,/exact empathy anchor/);
+});
+
+
+test('conversation memory survives the recent-history window, accepts evidenced corrections and stays server-owned',async()=>{
+  const oldQuote='I sell bread to office workers';
+  const correction='I now sell cakes for weddings';
+  const app=load('haven-chat',{session:{conversation_memory:{version:1,facts:{business:{quote:oldQuote,turnId:REQUEST_ID}}},
+    messages:[{role:'user',content:oldQuote},...Array.from({length:60},(_,n)=>({role:n%2?'agent':'user',content:'A later conversation detail '+n}))]},
+    modelText:'That changes the audience. Which wedding customer are you focusing on?\n[[MEMORY:{"business":"I now sell cakes for weddings","audience":"Invented wealthy buyers"}]]'});
+  const body=chatBody({context:{...ACCESS,conversationMemory:{business:'FORGED CLIENT MEMORY'}},messages:[{role:'user',content:'Actually, I now sell cakes for weddings.'}]});
+  const result=await (await app.handler(app.request(body))).json();
+  assert.doesNotMatch(result.text,/MEMORY|Invented wealthy/);assert.equal(result.conversationMemory,undefined);
+  const payload=app.requests[0].payload;
+  assert.match(payload.systemInstruction.parts[0].text,/I sell bread to office workers/);
+  assert.doesNotMatch(JSON.stringify(payload.contents),/I sell bread to office workers/);
+  assert.doesNotMatch(payload.systemInstruction.parts[0].text,/FORGED CLIENT MEMORY/);
+  assert.equal(app.rows.haven_sessions[0].conversation_memory.facts.business.quote,correction);
+  assert.equal(app.rows.haven_sessions[0].conversation_memory.facts.audience,undefined);
+  assert.equal((await (await app.handler(app.request(body))).json()).text,result.text);assert.equal(app.requests.length,1);
+});
+
+
+test('paid scoring and chat reject exhausted budgets before provider calls and preserve a prior saved score',async()=>{
+  for(const name of ['haven-chat','scrape-website','score-social']){
+    const app=load(name,{rateAllowed:false,review:{platform_type:name==='score-social'?'social':'website'}});
+    const body=name==='haven-chat'?chatBody():{context:ACCESS,screenshot:'data:image/png;base64,YQ=='};
+    assert.equal((await app.handler(app.request(body))).status,429);assert.equal(app.requests.length,0);
+    assert.equal(app.rows.brand_reviews[0].haven_score,20);
+  }
 });

@@ -51,8 +51,9 @@ test('book routing: verified application help stays conversational; calls still 
 test('editorial mail: purchase button has the requested destination, plain-text fallback and honest recovery wording', () => {
   const { html, text } = purchaseEmail();
   assert.match(html, /href="https:\/\/themarketinghaven.xyz\/#shop"[^>]*>Access Your Playbook</);
-  assert.match(html, /Already purchased\?/);
-  assert.match(text, /further guidance/);
+  assert.match(html, /Otherwise, choose Already purchased/);
+  assert.match(text, /If your purchase is still saved on that device, your download will be available/);
+  assert.match(text, /apply the ideas/);
   assert.doesNotMatch(text, /further stuff|we tracked your download|download it.*free/i);
   assert.match(text, /https:\/\/themarketinghaven.xyz\/#shop/);
 });

@@ -261,10 +261,10 @@ export default function TestimonialsSection() {
 
                 {currentSlide.type === 'words' && (
                   <div className="w-full max-w-xl">
-                    <div className="relative w-full rounded-3xl overflow-hidden border border-zinc-200 dark:border-white/10 shadow-xl p-8 sm:p-12">
-                      {/* Background image — brightened, softer overlay */}
-                      <ProgressiveImage src="/Background.jpeg" alt="" aria-hidden="true" loading="eager" className="absolute inset-0 w-full h-full" imageClassName="brightness-110 saturate-105" />
-                      <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/45 to-black/30" />
+                    <div className="relative w-full rounded-3xl overflow-hidden border border-zinc-200 dark:border-white/10 shadow-xl bg-zinc-50 dark:bg-zinc-900 p-8 sm:p-12">
+                      {/* Keep the image treatment and text contrast appropriate to each theme. */}
+                      <ProgressiveImage src="/Background.jpeg" alt="" aria-hidden="true" loading="eager" className="absolute inset-0 w-full h-full" />
+                      <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/15 to-black/10" />
 
                       <div className="relative z-10">
                         <div className="flex items-center gap-2 mb-6 justify-center">
@@ -275,7 +275,7 @@ export default function TestimonialsSection() {
                           <span className="block w-5 h-px bg-white/50" />
                         </div>
 
-                        {currentPerson.pending ? <p className="mb-4 text-center text-[10px] uppercase tracking-[0.2em] text-zinc-300">Story coming soon</p> : <Quote className="w-7 h-7 text-amber-400/80 mb-4 mx-auto" />}
+                        {currentPerson.pending ? <p className="mb-4 text-center text-[10px] uppercase tracking-[0.2em] text-zinc-300">Story coming soon</p> : <Quote className="w-7 h-7 text-zinc-200 mb-4 mx-auto" />}
 
                         <p className="text-base sm:text-lg leading-relaxed text-white text-center font-light max-w-lg mx-auto drop-shadow-md">
                           {currentPerson.words}

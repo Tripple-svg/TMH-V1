@@ -36,5 +36,5 @@ test('scorecard: genuine low and zero scores are rendered rather than treated as
 });
 test('scorecard: social bad data uses screenshot-specific copy rather than inventing a website failure', () => {
   const html = renderToStaticMarkup(React.createElement(Scorecard, { kind: 'social', preflight: { status: 'bad_data' }, onProceed() {} }));
-  assert.match(html, /screenshot didn/); assert.doesNotMatch(html, /complex scripts/);
+  assert.match(html, /screenshot did not/); assert.doesNotMatch(html, /complex scripts/);
 });

@@ -47,3 +47,9 @@ verify_jwt = false
 
 [functions.send-welcome-email]
 verify_jwt = false
+
+[functions.request-playbook-recovery]
+verify_jwt = false
+
+[functions.verify-playbook-recovery]
+verify_jwt = false

@@ -1,7 +1,8 @@
+import { enforceScoringLimits } from '../_shared/haven-limits.ts';
 // supabase/functions/score-social/index.ts
 // Verified screenshot review; the saved result is authoritative for chat.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { geminiProcessingEnabled } from '../_shared/haven-model.ts';
+import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiText } from '../_shared/haven-model.ts';
 import { verifyReviewAccess, ReviewAccessError } from '../_shared/review-access.ts';
 import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson, screenshotPart } from '../_shared/haven-request.ts';
 import { parseScoringResult, persistScoring, cachedScoring } from '../_shared/haven-scoring.ts';
@@ -74,14 +75,14 @@ async function scoreWithGemini(screenshot: string): Promise<{ raw: string; statu
   if (!apiKey) throw new Error('GEMINI_API_KEY not configured.');
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), 22000);
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${Deno.env.get('GEMINI_MODEL') || 'gemini-3.8-flash'}:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel()}:generateContent`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey.trim() },
         signal: controller.signal,
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: SOCIAL_SCORING_PROMPT }] },
@@ -92,11 +93,7 @@ async function scoreWithGemini(screenshot: string): Promise<{ raw: string; statu
               { text: '\n\nScore the profile in this screenshot.' },
             ],
           }],
-          generationConfig: {
-            maxOutputTokens: 500,
-            temperature: 0,
-            responseMimeType: 'application/json',
-          },
+          generationConfig: geminiGenerationConfig(true),
         }),
       },
     );
@@ -106,7 +103,7 @@ async function scoreWithGemini(screenshot: string): Promise<{ raw: string; statu
       return { raw: body, status };
     }
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const text = geminiText(data);
     return { raw: text, status: 200 };
   } finally {
     clearTimeout(timeout);
@@ -133,12 +130,13 @@ Deno.serve(async (request) => {
     if (review.platform_type !== 'social') throw new HavenRequestError('This review does not have a social profile to score.');
     const cached = body.force === true ? null : cachedScoring(review, 'social');
     if (cached) return json({ ok: true, ...cached, cached: true });
+    await enforceScoringLimits(supabase, request, key, review.id);
     started = true;
     if (!geminiProcessingEnabled()) throw new HavenRequestError('Image scoring is unavailable. Please continue to chat and describe your profile.', 503);
 
     // Only Gemini has vision. No Groq fallback possible.
     let lastErr: string = '';
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 1; attempt++) {
       try {
         const { raw, status } = await scoreWithGemini(screenshot);
         if (status === 200) {
@@ -148,12 +146,12 @@ Deno.serve(async (request) => {
             return json({ ok: true, ...parsed });
           }
           lastErr = 'Gemini returned unparseable JSON';
-          console.warn('[social-scoring] unparseable:', raw.slice(0, 200));
+          console.warn('[social-scoring] unparseable:', '[redacted model output]');
         } else if (status === 503 || status === 502 || status === 504) {
           lastErr = `Gemini ${status}`;
           console.warn(`[social-scoring] Gemini ${status} on attempt ${attempt + 1}`);
         } else {
-          lastErr = `Gemini ${status}: ${raw.slice(0, 200)}`;
+          lastErr = `Gemini ${status}: ${'[redacted model output]'}`;
           console.warn(`[social-scoring] Gemini ${status} — not retryable`);
           break;
         }
@@ -161,18 +159,18 @@ Deno.serve(async (request) => {
         lastErr = err instanceof Error ? err.message : String(err);
         console.warn(`[social-scoring] threw on attempt ${attempt + 1}:`, lastErr);
       }
-      if (attempt === 0) await new Promise(r => setTimeout(r, 1500));
+
     }
 
     console.warn('Social scoring unavailable', Boolean(lastErr));
     throw new HavenRequestError('I ran into an unexpected error while reading your profile. Please try again or continue to chat.', 502);
   } catch (error) {
     if (started && supabase && review) {
-      try { await persistScoring(supabase, review.id, { state: 'failed' }, null); }
+      try { await persistScoring(supabase, review.id, { state: 'failed', reason: 'provider_unavailable' }, null); }
       catch { return json({ ok: false, state: 'failed', error: 'Could not save the reader status. Please try again.' }, 500); }
     }
     const known = error instanceof HavenRequestError || error instanceof ReviewAccessError;
     console.error('score-social request failed', known ? error.status : 502);
-    return json({ ok: false, state: 'failed', error: known ? error.message : 'Unable to read your profile. Please try again.' }, known ? error.status : 502);
+    return json({ ok: false, state: 'failed', reason: 'provider_unavailable', error: known ? error.message : 'Unable to read your profile. Please try again.' }, known ? error.status : 502);
   }
 });

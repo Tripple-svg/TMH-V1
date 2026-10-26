@@ -78,7 +78,7 @@ Talk soon,
 Team Haven.`;
       acceptedEmailId = await deliverEmail(configuration, {
         to: [purchase.email], reply_to: 'info@themarketinghaven.xyz',
-        subject: 'Your copy of The Unseen Playbook', ...(purchase.email_template_version === 'legacy' ? { text } : purchaseEmail(purchase.reference)),
+        subject: 'Your copy of The Unseen Playbook', ...(purchase.email_template_version === 'legacy' ? { text } : purchaseEmail(purchase.reference, purchase.email_template_version)),
       }, `playbook-purchase-thankyou/${purchase.reference}`);
     }
     // The durable flag is written only after Resend accepts the email.

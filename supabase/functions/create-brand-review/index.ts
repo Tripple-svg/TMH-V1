@@ -1,3 +1,4 @@
+import { normalizeWebsiteUrl } from '../_shared/haven-scoring.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { hashReviewToken, validReviewCredentials, verifyReviewAccess, ReviewAccessError } from '../_shared/review-access.ts';
@@ -33,10 +34,12 @@ serve(async (req) => {
       || !['website', 'social', 'none'].includes(body.platformType)) {
       return json({ ok: false, error: 'Please complete the required review fields and accept the terms' }, 400);
     }
+    const websiteUrl = body.platformType === 'website' ? normalizeWebsiteUrl(body.websiteUrl) : null;
+    if (body.platformType === 'social' && !body.screenshotBase64) return json({ ok: false, error: 'Upload a profile screenshot to request a social review.' }, 400);
     let screenshot: Uint8Array | null = null;
     let contentType = '';
     let screenshotPath: string | null = null;
-    if (body.screenshotBase64) {
+    if (body.platformType === 'social' && body.screenshotBase64) {
       const match = typeof body.screenshotBase64 === 'string' && /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(body.screenshotBase64);
       if (!match) return json({ ok: false, error: 'Use a PNG, JPEG or WebP screenshot' }, 400);
       try { screenshot = Uint8Array.from(atob(match[2]), (c) => c.charCodeAt(0)); }
@@ -51,7 +54,7 @@ serve(async (req) => {
     if (lookupError) return json({ ok: false, error: 'Unable to check the review' }, 500);
     if (existing) {
       const { review } = await verifyReviewAccess(supabase, sessionId, id, accessToken);
-      if (review.screenshot_url !== screenshotPath || review.email !== text(body.email, 254).toLowerCase()) {
+      if (review.screenshot_url !== screenshotPath || review.email !== text(body.email, 254).toLowerCase() || review.platform_type !== body.platformType || (review.website_url || null) !== websiteUrl) {
         return json({ ok: false, error: 'Retry the original submission or contact the team' }, 409);
       }
     } else {
@@ -70,8 +73,8 @@ serve(async (req) => {
         id, full_name: text(body.fullName, 150), brand_name: text(body.brandName, 200),
         email: text(body.email, 254).toLowerCase(), whatsapp: text(body.whatsapp, 40),
         main_goal: text(body.mainGoal), platform_type: body.platformType,
-        social_platform: text(body.socialPlatform, 50), social_link: text(body.socialLink, 1000),
-        website_url: text(body.websiteUrl, 2000), screenshot_url: screenshotPath,
+        social_platform: body.platformType === 'social' ? text(body.socialPlatform, 50) : null, social_link: body.platformType === 'social' ? text(body.socialLink, 1000) : null,
+        website_url: websiteUrl, screenshot_url: screenshotPath,
         agreed_to_terms: true, utm_source: text(body.utmSource), utm_campaign: text(body.utmCampaign),
         referrer_url: text(body.referrerUrl, 2000), device_type: text(body.deviceType, 50),
         visit_count: boundedInt(body.visitCount, 1, 100000),

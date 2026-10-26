@@ -7,9 +7,9 @@ const VISITOR = '20000000-0000-4000-8000-000000000001';
 const EVENT = '30000000-0000-4000-8000-000000000001';
 const source = buildSync({ entryPoints: [new URL('../supabase/functions/flag-user/index.ts', import.meta.url).pathname.replace(/^\/(\w:)/,'$1')],
   bundle: true, write: false, platform: 'node', format: 'cjs', external: ['https://*'], logLevel: 'silent' }).outputFiles[0].text;
-function load({ flag = 'white', rpcError = null, deliveryFailure = null, pendingFailure = false, auth = null, env = {}, guest = false } = {}) {
+function load({ flag = 'white', rpcError = null, deliveryFailure = null, pendingFailure = false, auth = null, env = {}, guest = false, strikes = flag==='red'?3:flag==='yellow'?2:0 } = {}) {
   let handler; const calls = [], sends = [], notifications = [], events = new Set();
-  let currentFlag = flag;
+  let currentFlag = flag; let currentStrikes=strikes;
   const client = {
     auth: { async getUser() { return auth || { data: { user: null }, error: { message: 'Invalid' } }; } },
     async rpc(name, args) {
@@ -18,8 +18,7 @@ function load({ flag = 'white', rpcError = null, deliveryFailure = null, pending
       const visitor = args.p_visitor_id || null;
       let changed = false;
       if (name === 'apply_haven_ai_flag') {
-        changed = !events.has(args.p_event_key) && currentFlag === 'white'; events.add(args.p_event_key);
-        if (changed) currentFlag = 'yellow';
+        if(!events.has(args.p_event_key)){ currentStrikes=Math.min(3,currentStrikes+1);const next=currentStrikes===3?'red':currentStrikes===2?'yellow':'white';changed=next!==currentFlag;currentFlag=next;} events.add(args.p_event_key);
       } else { changed = currentFlag !== args.p_status; currentFlag = args.p_status; }
       if (changed && ['yellow','red'].includes(currentFlag)) notifications.push({ id: EVENT, review_id: targetReview, visitor_id: visitor,
         status: currentFlag, sent_at: null, customer_required: Boolean(targetReview), customer_sent_at: null });
@@ -111,9 +110,9 @@ test('automatic moderation: only internal service credentials may create AI even
   const app=load(); assert.equal((await app.handler(app.request({...automatic(),password:'admin-test'},'Bearer anon'))).status,401);
   assert.equal(app.calls.length,0);
 });
-test('automatic moderation: first event becomes yellow; repeated events cannot become red or spam notifications', async () => {
+test('automatic moderation: first event is recorded white and repeated events do not add strikes or mail', async () => {
   const app=load(); for(let i=0;i<3;i++) assert.equal((await app.handler(app.request(automatic()))).status,200);
-  assert.equal(app.flag,'yellow'); assert.equal(app.notifications.length,1); assert.equal(app.sends.length,2);
+  assert.equal(app.flag,'white'); assert.equal(app.notifications.length,0); assert.equal(app.sends.length,0);
   assert.equal(app.calls[0].name,'apply_haven_ai_flag'); assert.equal('p_status' in app.calls[0].args,false);
 });
 test('automatic moderation: a new AI event cannot clear or escalate an existing administrator restriction', async () => {
@@ -122,17 +121,17 @@ test('automatic moderation: a new AI event cannot clear or escalate an existing 
   assert.equal((await app.handler(app.request(automatic({status:'red'})))).status,400);
 });
 test('automatic moderation: guests receive a durable yellow flag and team alert without pretending to know an email', async () => {
-  const app=load({guest:true}); const response=await app.handler(app.request(automatic({reviewId:undefined,visitorId:VISITOR})));
+  const app=load({guest:true,strikes:1}); const response=await app.handler(app.request(automatic({reviewId:undefined,visitorId:VISITOR})));
   assert.equal((await response.json()).flagStatus,'yellow'); assert.equal(app.notifications[0].visitor_id,VISITOR);
   assert.equal(app.notifications[0].customer_required,false); assert.deepEqual(app.sends.map((item)=>item.name),['send-flag-alert']);
 });
 test('automatic moderation: email transport failure is pending durable work rather than a lost flag or failed chat', async () => {
-  const app=load({deliveryFailure:'send-flag-alert'}); const response=await app.handler(app.request(automatic()));
+  const app=load({deliveryFailure:'send-flag-alert',strikes:1}); const response=await app.handler(app.request(automatic()));
   const data=await response.json(); assert.equal(response.status,200); assert.equal(data.flagStatus,'yellow'); assert.equal(data.deliveryPending,true);
 });
 test('automatic moderation: pending read failure preserves saved status for later drain', async () => {
   const app=load({pendingFailure:true}); const response=await app.handler(app.request(automatic()));
-  assert.equal((await response.json()).deliveryPending,true); assert.equal(app.flag,'yellow');
+  assert.equal((await response.json()).deliveryPending,true); assert.equal(app.flag,'white');
 });
 test('automatic moderation: malformed event keys, IDs and reasons cannot reach the RPC', async () => {
   for(const body of [automatic({eventKey:'person@example.com'}),automatic({reviewId:'bad'}),automatic({reason:''})]) {

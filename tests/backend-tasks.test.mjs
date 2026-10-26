@@ -12,8 +12,8 @@ function loadHandler(name, { client = {}, fetch = () => { throw new Error('Unexp
   const code = buildSync({ stdin: { contents: source, loader: 'ts', resolveDir: new URL(`../supabase/functions/${name}/`, import.meta.url).pathname.replace(/^\/(\w:)/, '$1') }, bundle: true, write: false, format: 'cjs', platform: 'node', external: ['https://*'] }).outputFiles[0].text;
   vm.runInNewContext(code, {
     require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: () => client },
-    Deno: { env: { get: (name) => ({ ...secrets, ...env })[name] } },
-    fetch, Response, Request, Headers, AbortSignal, URL, TextEncoder, Uint8Array, crypto: webcrypto,
+    Deno: { serve(fn) { handler = fn; }, env: { get: (name) => ({ ...secrets, ...env })[name] } },
+    fetch, Response, Request, Headers, AbortSignal, URL, TextEncoder, TextDecoder, Uint8Array, crypto: webcrypto,
     console: { error() {}, warn() {}, log() {} },
   });
   return handler;
@@ -43,59 +43,57 @@ test('Task 6: email lookup trims input, matches case-insensitively and escapes S
   assert.equal(lookedUp, '');
 });
 
-test('Task 5: only verified NGN payments at either allowed price receive one-hour download URLs', async () => {
+const GRANT = 'a'.repeat(64);
+function grantDatabase({ publicBucket = false, validGrant = true } = {}) {
   let signed = 0;
-  for (const amount of [10000, 963900, 1]) {
-    const handler = loadHandler('verify-paystack', {
-      fetch: async (url, options) => {
-        assert.equal(options.headers.Authorization, 'Bearer paystack-test');
-        assert.match(url, /\/verify\/UNSEEN_123$/);
-        return response({ status: true, data: { reference: 'UNSEEN_123', status: 'success', amount, currency: 'NGN', customer: { email: 'buyer@example.com' } } });
-      },
-      client: { storage: {
-        getBucket: async () => ({ data: { public: false } }),
-        from: (bucket) => ({ createSignedUrl: async (path, ttl, options) => {
-          assert.equal(bucket, 'playbook-private'); assert.equal(path, 'The_Unseen_Playbook.pdf');
-          assert.equal(ttl, 3600); assert.equal(options.download, path); signed++;
-          return { data: { signedUrl: 'https://private.example/signed' } };
-        } }),
-      } },
-    });
-    const result = await handler(request({ reference: 'UNSEEN_123', email: 'buyer@example.com' }));
-    const body = await result.json();
-    assert.equal(body.ok, amount !== 1);
-    if (body.ok) assert.equal(body.expiresIn, 3600);
-    else assert.equal(body.error, 'Payment not verified');
-    assert.equal(result.headers.get('Cache-Control'), 'no-store');
+  return { get signed() { return signed; }, client: {
+    rpc: async () => ({ data: true }),
+    from(table) { return { select() { return this; }, eq() { return this; },
+      async maybeSingle() { return { data: validGrant ? { reference:'UNSEEN_123',email:'buyer@example.com',expires_at:'2099-01-01T00:00:00Z',revoked_at:null } : null }; },
+      async single() { assert.equal(table,'playbook_checkout_policy'); return { data:{legacy_cutover_at:'2026-10-26T00:00:00Z'} }; } }; },
+    storage: { getBucket: async () => ({ data:{public:publicBucket} }), from: () => ({
+      async createSignedUrl(path,ttl) { signed++; assert.equal(ttl,600); return { data:{signedUrl:'https://private.example/signed'} }; }
+    }) },
+  }};
+}
+const paid = (patch={}) => ({status:true,data:{reference:'UNSEEN_123',status:'success',amount:963900,currency:'NGN',customer:{email:'buyer@example.com'},paid_at:'2026-10-25T12:00:00Z',...patch}});
+test('download security: email/reference alone never receive a URL or reader capability', async () => {
+  const db=grantDatabase();
+  const handler=loadHandler('verify-paystack',{client:db.client,fetch:async()=>{throw new Error('Must reject before Paystack');}});
+  const response=await handler(request({reference:'UNSEEN_123',email:'buyer@example.com'}));
+  assert.equal(response.status,403);
+  const body=await response.json();assert.equal(body.code,'recovery_required');assert.equal(body.url,undefined);assert.equal(body.playbookAccessToken,undefined);assert.equal(db.signed,0);
+});
+test('download security: verified device grants get short-lived URLs; historical test purchases remain recoverable', async () => {
+  for(const amount of [963900,10000]) {
+    const db=grantDatabase();
+    const handler=loadHandler('verify-paystack',{client:db.client,fetch:async()=>response(paid({amount}))});
+    const result=await handler(request({reference:'UNSEEN_123',email:'buyer@example.com',downloadToken:GRANT}));
+    const body=await result.json();assert.equal(body.ok,true);assert.equal(body.expiresIn,600);assert.ok(body.playbookAccessToken);assert.equal(db.signed,1);
   }
-  assert.equal(signed, 2);
 });
-
-test('Task 5: invalid references, origins, methods and missing secrets cannot trigger delivery', async () => {
-  const handler = loadHandler('verify-paystack');
-  assert.equal((await handler(request({ reference: 'OTHER_123' }))).status, 400);
-  assert.equal((await handler(request({ reference: 'UNSEEN_../escape' }))).status, 400);
-  assert.equal((await handler(request({}, { origin: 'https://evil.example' }))).status, 403);
-  assert.equal((await handler(request({}, {}, 'GET'))).status, 405);
-  assert.equal((await handler(request({}, {}, 'OPTIONS'))).headers.get('Access-Control-Allow-Origin'), 'http://localhost:5175');
-  const missingSecret = loadHandler('verify-paystack', { env: { PAYSTACK_SECRET_KEY: undefined } });
-  assert.equal((await missingSecret(request({ reference: 'UNSEEN_123', email: 'buyer@example.com' }))).status, 500);
+test('download security: invalid references, origins, methods and missing service configuration fail closed', async () => {
+  const handler=loadHandler('verify-paystack');
+  assert.equal((await handler(request({reference:'OTHER_123'}))).status,400);
+  assert.equal((await handler(request({}, {origin:'https://evil.example'}))).status,403);
+  assert.equal((await handler(request({}, {}, 'GET'))).status,405);
+  assert.equal((await handler(request({}, {}, 'OPTIONS'))).status,204);
+  const missing=loadHandler('verify-paystack',{env:{SUPABASE_SERVICE_ROLE_KEY:undefined}});
+  assert.equal((await missing(request({reference:'UNSEEN_123',email:'buyer@example.com'}))).status,503);
 });
-
-test('Task 5: failed, wrong-reference, wrong-currency and public-bucket payments never receive a URL', async () => {
-  for (const patch of [{ status: 'failed' }, { reference: 'UNSEEN_another' }, { currency: 'USD' }, {}]) {
-    const handler = loadHandler('verify-paystack', {
-      fetch: async () => response({ status: true, data: { reference: 'UNSEEN_123', status: 'success', amount: 10000, currency: 'NGN', ...patch } }),
-      client: { storage: { getBucket: async () => ({ data: { public: true } }) } },
-    });
-    assert.equal((await (await handler(request({ reference: 'UNSEEN_123', email: 'buyer@example.com' }))).json()).ok, false);
+test('download security: invalid payments, post-cutover underpayments and public buckets never receive a URL', async () => {
+  for(const patch of [{status:'failed'},{reference:'UNSEEN_wrong'},{currency:'USD'},{customer:{email:'other@example.com'}},{amount:1},{amount:10000,paid_at:'2099-01-01T00:00:00Z'},{}]) {
+    const db=grantDatabase({publicBucket:Object.keys(patch).length===0});
+    const handler=loadHandler('verify-paystack',{client:db.client,fetch:async()=>response(paid(patch))});
+    const result=await (await handler(request({reference:'UNSEEN_123',email:'buyer@example.com',downloadToken:GRANT}))).json();
+    assert.equal(result.ok,false);assert.equal(result.url,undefined);assert.equal(db.signed,0);
   }
 });
 
 function database(seed) {
   const rows = structuredClone(seed);
   const calls = [];
-  const client = { rpc: async (name, args) => { calls.push({ action: 'rpc', name, values: args.p_booking }); return { error: null }; }, from(table) {
+  const client = { rpc: async (name, args = {}) => { calls.push({ action: 'rpc', name, values: args.p_booking }); return { error: null }; }, from(table) {
     let filters = [], sort = null, cap = Infinity, offset = 0, action = 'select', values;
     const run = async (single = false) => {
       calls.push({ table, action, values });
@@ -110,6 +108,7 @@ function database(seed) {
     };
     const query = {
       select() { return this; },
+      or() { filters.push(row=>row.service_id==null||row.service_id!=='team-inquiry'); return this; },
       ilike(column, pattern) { filters.push((row) => String(row[column]).toLowerCase() === pattern.replace(/\\([\\%_])/g, '$1').toLowerCase()); return this; },
       eq(column, value) { filters.push((row) => row[column] === value); return this; },
       is(column, value) { filters.push((row) => value === null ? row[column] == null : row[column] === value); return this; },
@@ -133,12 +132,11 @@ function signedRequest(body, { timestamp = Math.floor(Date.now() / 1000), signat
   return request(body, { 'Calendly-Webhook-Signature': `t=${timestamp},v1=${signature}` });
 }
 
-test('purchase recovery rejects a mismatched checkout email without signing a download or guidance token', async () => {
-  let signed = 0;
-  const handler = loadHandler('verify-paystack', { fetch: async () => response({ status: true, data: { reference: 'UNSEEN_123', status: 'success', amount: 10000, currency: 'NGN', customer: { email: 'real-buyer@example.com' } } }),
-    client: { storage: { getBucket() { signed++; throw new Error('Must not reach storage'); } } } });
-  const result = await (await handler(request({ reference: 'UNSEEN_123', email: 'someone@example.com' }))).json();
-  assert.equal(result.ok, false); assert.equal(signed, 0); assert.equal(result.playbookAccessToken, undefined);
+test('purchase recovery: another email cannot use a valid device token', async () => {
+  const db=grantDatabase();
+  const handler=loadHandler('verify-paystack',{client:db.client});
+  const result=await (await handler(request({reference:'UNSEEN_123',email:'someone@example.com',downloadToken:GRANT}))).json();
+  assert.equal(result.ok,false);assert.equal(db.signed,0);
 });
 
 test('Calendly cancellation is signature checked, saved and never sends a customer confirmation', async () => {

@@ -26,6 +26,14 @@ function creationCredentials(id, payload) {
       accessToken: Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(''),
     };
   }
+  if (credentials?.submission) {
+    const fields = ['fullName', 'brandName', 'email', 'whatsapp', 'mainGoal', 'platformType', 'socialPlatform', 'socialLink', 'websiteUrl'];
+    if (fields.some(field => String(credentials.submission[field] ?? '').trim() !== String(payload[field] ?? '').trim())) {
+      const error = new Error('A previous submission is pending with different details. Resume those details or start a new submission; we will not silently reuse the old review.');
+      error.code = 'pending_submission_changed';
+      throw error;
+    }
+  }
   // A lost response may hide an already committed review. Retrying its id
   // must use the original details rather than silently creating a new profile.
   const submission = credentials.submission || { ...payload };
@@ -111,8 +119,10 @@ export async function createBrandReview(payload) {
       sessionStorage.removeItem(`haven_review_creation_${payload.id}`);
     } catch { /* The saved profile owns the capability after success. */ }
     return { success: true, reviewId: result.reviewId, sessionId, accessToken, submission: credentials.submission };
-  } catch {
-    return { success: false, reviewId: null, sessionId: null, accessToken: null, error: new Error('Unable to save brand review') };
+  } catch (error) {
+    return { success: false, reviewId: null, sessionId: null, accessToken: null,
+      code: error.code === 'pending_submission_changed' ? error.code : null,
+      error: error.code === 'pending_submission_changed' ? error : new Error('Unable to save brand review. Please retry or contact info@themarketinghaven.xyz.') };
   }
 }
 

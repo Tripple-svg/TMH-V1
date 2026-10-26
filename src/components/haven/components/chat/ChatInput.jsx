@@ -269,7 +269,7 @@ const ChatInput = forwardRef(function ChatInput(
               whileTap={{ scale: 0.9 }}
               onClick={() => fileInputRef.current?.click()}
               className="text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer"
-              title="Upload image asset"
+              title="Attach PNG, JPEG or WebP · up to 5 MB"
               aria-label="Attach a PNG, JPEG or WebP image"
               disabled={isThinking || disabled}
             >
@@ -301,7 +301,7 @@ const ChatInput = forwardRef(function ChatInput(
           </motion.button>
         )}
       </form>
-      <div className="mt-2 flex items-start justify-between gap-3 text-[11px] leading-relaxed text-zinc-500">
+      <div className={`${inputError || imagePreview || inputValue.length > 3500 ? "mt-2 flex items-start justify-between gap-3" : "sr-only"} text-[11px] leading-relaxed text-zinc-500`}>
         {inputError ? <p id="haven-message-error" role="alert" className="text-amber-200/90">{inputError}</p> : <span>PNG, JPEG or WebP · up to 5 MB</span>}
         <span id="haven-message-count" className="shrink-0 tabular-nums">{inputValue.length.toLocaleString()} / 4,000</span>
       </div>

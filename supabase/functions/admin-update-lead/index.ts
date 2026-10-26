@@ -40,6 +40,7 @@ serve(async (req) => {
 
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(origin) });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, origin, 405);
+  if (origin && !ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, origin, 403);
 
   try {
     if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ADMIN_PASSWORD) {
@@ -53,13 +54,27 @@ serve(async (req) => {
     if (password !== ADMIN_PASSWORD) {
       return json({ ok: false, error: 'Unauthorised' }, origin, 401);
     }
-    if (!reviewId || reviewId.length > 200) {
-      return json({ ok: false, error: 'Missing reviewId' }, origin, 400);
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+    if (body.action === 'updateInquiry') {
+      const allowed = ['action','password','sessionId','expectedRevision','status','owner','notes','followupOn'];
+      const followup = body.followupOn;
+      if (Object.keys(body).some(key => !allowed.includes(key))
+        || typeof body.sessionId !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.sessionId)
+        || !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision<0
+        || !['new','reviewing','contacted','booked','closed','lost'].includes(body.status)
+        || typeof body.owner !== 'string' || body.owner.length>80 || typeof body.notes !== 'string' || body.notes.length>4000
+        || (followup !== null && (typeof followup !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(followup)
+          || !Number.isFinite(Date.parse(followup)) || new Date(followup).toISOString().slice(0,10)!==followup))) {
+        return json({ ok:false,error:'Check the inquiry status, owner, notes and follow-up date.' },origin,400);
+      }
+      const {data,error}=await supabase.rpc('update_haven_inquiry',{
+        p_session_id:body.sessionId,p_revision:body.expectedRevision,p_status:body.status,p_owner:body.owner.trim(),p_notes:body.notes,p_followup:followup,
+      });
+      if(error) return json({ok:false,error:error.code==='P0002'?'Team inquiry not found.':'Could not save the inquiry. Check the migration and retry.'},origin,error.code==='P0002'?404:503);
+      if(data?.conflict) return json({ok:false,code:'conflict',error:'Another team member updated this inquiry. Your draft is still here. Copy it if needed, then reload the saved details.',session:data.session},origin,409);
+      return data?.session ? json({ok:true,session:data.session},origin) : json({ok:false,error:'Inquiry update could not be confirmed.'},origin,503);
     }
-
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-      auth: { persistSession: false },
-    });
+    if (!reviewId || reviewId.length > 200) return json({ ok: false, error: 'Missing reviewId' }, origin, 400);
 
     if (body.action === 'delete') {
       if (body.confirmation !== reviewId) {

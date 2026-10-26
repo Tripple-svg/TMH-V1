@@ -1,3 +1,22 @@
+// Infer only explicit needs from server-saved user messages; a model marker is
+// not required to remember a request for implementation on an existing site.
+export function inferHavenNeed(messages = []) {
+  const facts = messages.filter(message => message.role === 'user').slice(-8).map(message => String(message.content || '')).join(' ').toLowerCase();
+  const implementationRequested = /\b(?:rebuild|implement|redesign|set up|build|repair|fix)\b/.test(facts)
+    && /\b(?:website|site|wordpress|checkout|landing page|product page|campaign|tracking|funnel)\b/.test(facts)
+    && /\b(?:need|want|your team|help|hire|looking for)\b/.test(facts);
+  return { implementationRequested, problemType: implementationRequested ? 'operational' : 'unknown' };
+}
+
+export function isAffirmative(text) {
+  return /^(?:yes(?: (?:please|sure|of course))?|please do(?: it)?(?: again)?|go ahead|show me|sure|okay|ok|continue|i am interested)$/.test(
+    String(text || '').toLowerCase().replace(/[!.,?]/g, ' ').replace(/\s+/g, ' ').trim());
+}
+export function acceptedCallInvitation(latest, messages = []) {
+  const previous = [...messages].reverse().find(message => message.role === 'agent');
+  return isAffirmative(latest) && /\b(?:would you like|want to|shall we|can i)\b[^?\n]{0,120}\b(?:book|schedule|call)\b/i.test(previous?.content || '');
+}
+
 const SERVICE_QUESTIONS = {
   web: 'In Brand & Web Engineering, which part of your website are you looking to improve, and what is going wrong there?',
   growth: 'In Strategic Growth, what are you trying to grow, and where is progress getting stuck?',
@@ -22,13 +41,19 @@ export function supportHelpReply(text, scope) {
 export function resolveHavenRouting(rawText, context = {}) {
   const text = typeof rawText === 'string' ? rawText : '';
   const previous = context.routingState || {};
+  const callAllowed = context.explicitCallRequested || context.teamInquiry === true;
   const marker = text.match(/\[\[NEED:(FOUNDATIONAL|OPERATIONAL|UNKNOWN)\]\]/)?.[1]?.toLowerCase();
-  let problemType = marker && marker !== 'unknown' ? marker : previous.problemType || context.problemType || 'unknown';
-  const state = { problemType, permission: previous.permission || 'none' };
+  let problemType = marker && marker !== 'unknown' ? marker : (previous.problemType && previous.problemType !== 'unknown' ? previous.problemType : context.problemType) || 'unknown';
+  const state = { problemType, permission: previous.permission || 'none', pendingAction: previous.pendingAction || null };
   const latest = String(context.latestUserText || '').trim();
   const qualified = Number(context.questionsAsked) >= 2 && Number(context.diagnosticAnswers) >= 2;
+  if (isAffirmative(latest) && ((previous.permission === 'asked' && previous.pendingAction === 'call') || context.acceptedCall === true)) {
+    return { text: 'Yes. Choose a time that works for you, and the team will discuss the work you have described.\n[[BOOK_CALL]]\n[[STEP:ROUTING_TO_CALL]]',
+      routingState: { problemType: 'operational', permission: 'granted', pendingAction: null } };
+  }
+
   const declined = /\b(?:let me think|not ready|rather not|don['’]?t want|do not want|not right now)\b/i.test(latest) || /^(?:no|no thanks|not now)[.!\s]*$/i.test(latest) || /\b(?:don['’]?t|do not)\s+(?:(?:want|need)(?:\s+to)?\s+)?(?:book|schedule|arrange|call)\b/i.test(latest);
-  const agrees = /^(?:yes(?: please)?|please do(?: it)?(?: again)?|go ahead|show me|yes,? show me|sure|okay|ok|continue|i['’]?m interested)[.!\s]*$/i.test(latest);
+  const agrees = isAffirmative(latest);
   const asksCall = !declined && /\b(?:book|schedule|arrange|want|need)\b[^.!?\n]{0,45}\bcall\b/i.test(latest);
   const controlReply = agrees || (asksCall && latest.length <= 100 && !/\b(?:website|checkout|broken|campaign|ads|tracking|positioning|clarity|content|offer)\b/i.test(latest));
   if (controlReply && previous.problemType && previous.problemType !== 'unknown') {
@@ -46,19 +71,27 @@ export function resolveHavenRouting(rawText, context = {}) {
     state.permission = 'declined';
     return { text: 'Of course. Take your time. You can come back to this conversation when you are ready.\n[[STEP:CLEAN_EXIT]]', routingState: state };
   }
+  if (qualified && context.implementationRequested && previous.permission === 'none' && context.playbookVerified !== true) {
+    state.problemType = 'operational'; state.permission = 'asked'; state.pendingAction = callAllowed ? 'call' : 'service';
+    return { text: callAllowed
+      ? 'You are looking for implementation work, rather than another general marketing guide. TMH can help scope the website and ordering changes you have described. Would you like to discuss that work on a strategy call?\n[[STEP:AWAITING_PERMISSION]]'
+      : 'You are looking for implementation work. TMH can help scope the website or campaign changes you have described. Would you like me to explain the relevant service?\n[[STEP:AWAITING_PERMISSION]]',
+      routingState: state };
+  }
   if (qualified && problemType !== 'unknown') {
     if ((previous.permission === 'asked' && agrees) || (asksCall && problemType === 'operational')) state.permission = 'granted';
     if (state.permission === 'granted') {
-      if (problemType === 'operational' && context.scope === 'support' && !context.explicitCallRequested && agrees) return { text: 'TMH’s Services section is where you can discuss implementation work with the team. Open the card that matches the website, content, or campaign work we have discussed; its enquiry chat will help capture the scope.\n[[STEP:CLEAN_EXIT]]', routingState: state };
+      if (problemType === 'operational' && context.scope === 'support' && !callAllowed && agrees) return { text: 'TMH’s Services section is where you can discuss implementation work with the team. Open the card that matches the website, content, or campaign work we have discussed; its enquiry chat will help capture the scope.\n[[STEP:CLEAN_EXIT]]', routingState: state };
       if (problemType === 'foundational' && (offers || agrees)) return { text: 'The Unseen Playbook is a practical guide to clarifying your message, positioning your offer, and building trust. It can help you work through that foundation at your own pace. It does not guarantee sales. You can see what it covers here.\n[[PLAYBOOK]]\n[[STEP:ROUTING_TO_PLAYBOOK]]', routingState: state };
-      if (problemType === 'operational' && (offers || asksCall || agrees) && (context.scope !== 'support' || context.explicitCallRequested)) return { text: 'A strategy call is a useful next step for the execution problem we have discussed. The team can clarify the scope and what support would fit. You can choose a time here.\n[[BOOK_CALL]]\n[[STEP:ROUTING_TO_CALL]]', routingState: state };
+      if (problemType === 'operational' && (offers || asksCall || agrees) && (context.scope !== 'support' || callAllowed)) return { text: 'A strategy call is a useful next step for the execution problem we have discussed. The team can clarify the scope and what support would fit. You can choose a time here.\n[[BOOK_CALL]]\n[[STEP:ROUTING_TO_CALL]]', routingState: state };
     }
     if (offers || permissionAsk || asksCall) {
       state.permission = 'asked';
+      state.pendingAction = problemType === 'foundational' ? 'playbook' : context.scope === 'support' && !callAllowed ? 'service' : 'call';
       const leadIn = asksCall && problemType === 'foundational' ? 'I hear that you would like a call. From what you have shared, the first gap is in your message and positioning, so a call may not be the best first step. ' : '';
       const offer = problemType === 'foundational'
         ? 'There is a resource that can help you tighten that message and give people a clearer reason to choose you. Would you like me to show you what it covers?'
-        : context.scope === 'support' && !context.explicitCallRequested
+        : context.scope === 'support' && !callAllowed
           ? 'This needs practical implementation rather than a general marketing guide. Would you like me to explain the relevant TMH service?'
           : 'There is a way our team can help you work through this execution problem. Would you like me to explain the next step?';
       return { text: `${leadIn}${offer}\n[[STEP:AWAITING_PERMISSION]]`, routingState: state };

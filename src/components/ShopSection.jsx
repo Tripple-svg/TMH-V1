@@ -8,7 +8,7 @@ import ConfirmModal from './ui/ConfirmModal';
 import { supabase } from '../lib/supabase';
 
 const PAYSTACK_PUBLIC_KEY = 'pk_live_bb9d07c83cbd8bc94ee9c7fb5fb95e14a35fa93b';
-const PAYSTACK_AMOUNT_KOBO = 10000; // ₦100 test — revert to 963900 before launch
+const PAYSTACK_AMOUNT_KOBO = 963900; // ₦9,639, charged in kobo
 
 const PLAYBOOK_FILENAME      = 'The_Unseen_Playbook.pdf';
 const PURCHASE_STORAGE_KEY   = 'tmh_playbook_purchase';
@@ -22,11 +22,21 @@ const features = [
 ];
 
 const playbookModules = [
-  { title: 'Chapters 1–3 · Find your direction', desc: 'The Unseen Path, The Illusion of More, and Strategy Is a Filter. Understand why attention is not a sale and choose what deserves your effort.' },
+  { title: 'Chapters 1–3 · Find your direction', desc: 'The Unseen Path, The Illusion of More, and Strategy Is a Filter. Understand why attention does not equal sales, and choose what deserves your effort.' },
   { title: 'Chapters 4–6 · Give people a reason to choose you', desc: 'The Hidden Drivers of Influence, The Shift From Knowing to Doing, and The Brand Is You. Connect your offer to a real need, show proof, and make buying easier.' },
   { title: 'Chapters 7–8 · Work through the sticking points', desc: 'Making It Real and Your Unseen Playbook. Tackle posts that get likes without orders, connect helpful content to your offer, and adjust what is already there.' },
   { title: 'Chapter 9 · Make your next move', desc: 'The Wrap Up & 24-Hour Action Plan. Start with one product, one buyer problem, and a focused post you can put into practice.' },
 ];
+
+async function functionData(name, body) {
+  const { data, error } = await supabase.functions.invoke(name, { body, signal: AbortSignal.timeout(30000) });
+  if (error || data?.ok !== true) {
+    let detail = data;
+    if (error?.context instanceof Response) detail = await error.context.clone().json().catch(() => null);
+    throw Object.assign(new Error(detail?.error || 'We could not complete this request. Please try again.'), { code: detail?.code });
+  }
+  return data;
+}
 
 export default function ShopSection() {
   const reduceMotion = useReducedMotion();
@@ -34,6 +44,7 @@ export default function ShopSection() {
   const [email, setEmail]                       = useState('');
   const [loading, setLoading]                   = useState(false);
   const [paymentSuccess, setPaymentSuccess]     = useState(false);
+  const [verificationPending, setVerificationPending] = useState(false);
   const [paymentReference, setPaymentReference] = useState('');
   const [deliveryContact, setDeliveryContact]   = useState('');
   const [alreadyDownloaded, setAlreadyDownloaded] = useState(false);
@@ -43,6 +54,10 @@ export default function ShopSection() {
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoveryReference, setRecoveryReference] = useState('');
+  const [otpChallenge, setOtpChallenge] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpMessage, setOtpMessage] = useState('');
+  const [resendAt, setResendAt] = useState(0);
 
   const [alertState, setAlertState]             = useState(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -50,6 +65,9 @@ export default function ShopSection() {
   const paystackHandlerRef = useRef(null);
   const paymentTimeoutRef  = useRef(null);
   const dialogRef = useRef(null);
+  const deviceGrantRef = useRef(null);
+  const downloadOpenedRef = useRef(false);
+  const downloadPendingRef = useRef(false);
 
   const clearPaymentTimeout = () => {
     if (paymentTimeoutRef.current) {
@@ -57,21 +75,6 @@ export default function ShopSection() {
       paymentTimeoutRef.current = null;
     }
   };
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(PURCHASE_STORAGE_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      if (data?.reference) {
-        setPaymentReference(data.reference);
-        setDeliveryContact(data.email || '');
-        setPaymentSuccess(false);
-        setAlreadyDownloaded(Boolean(data.downloadedAt));
-        void verifyPurchase(data.reference, data.email);
-      }
-    } catch {}
-  }, []);
 
   useEffect(() => {
     const handler = () => setIsPreviewOpen(true);
@@ -113,7 +116,7 @@ export default function ShopSection() {
       localStorage.setItem(
         PURCHASE_STORAGE_KEY,
         JSON.stringify({
-          ...(saved?.reference === ref ? { accessToken: saved.accessToken } : {}),
+          ...(saved?.reference === ref ? { accessToken: saved.accessToken, downloadToken: saved.downloadToken } : {}),
           reference: ref,
           email: mail,
           paidAt: new Date().toISOString(),
@@ -123,28 +126,86 @@ export default function ShopSection() {
     } catch {}
   };
 
-  async function verifyPurchase(reference, purchaseEmail) {
+  const verifyPurchase = useCallback(async (reference, purchaseEmail) => {
     setVerifying(true);
     setDownloadUrl('');
     setVerificationError('');
     try {
-      const { data, error } = await supabase.functions.invoke('verify-paystack', { body: { reference, email: purchaseEmail }, signal: AbortSignal.timeout(25000) });
-      if (error || !data?.ok || !data.url) throw new Error('Verification failed');
+      let savedPurchase = deviceGrantRef.current;
+      try { savedPurchase ||= JSON.parse(localStorage.getItem(PURCHASE_STORAGE_KEY) || 'null'); } catch { /* Memory proof remains usable. */ }
+      const downloadToken = savedPurchase?.reference === reference ? savedPurchase.downloadToken : null;
+      if (!downloadToken) throw Object.assign(new Error('Confirm your checkout inbox to recover access.'), { code: 'recovery_required' });
+      const data = await functionData('verify-paystack', { reference, email: purchaseEmail, downloadToken });
+      if (!data.url) throw new Error('The download is temporarily unavailable. Please retry opening your copy.');
       setDownloadUrl(data.url);
-      setPaymentReference(reference); setDeliveryContact(purchaseEmail); setPaymentSuccess(true);
+      setPaymentReference(reference); setDeliveryContact(purchaseEmail); setPaymentSuccess(true); setVerificationPending(false);
+      setAlreadyDownloaded(downloadOpenedRef.current);
       try {
         const saved = JSON.parse(localStorage.getItem(PURCHASE_STORAGE_KEY) || 'null');
-        setAlreadyDownloaded(saved?.reference === reference && Boolean(saved.downloadedAt));
-        localStorage.setItem(PURCHASE_STORAGE_KEY, JSON.stringify({ ...(saved?.reference === reference ? saved : {}), reference, email: purchaseEmail, accessToken: data.playbookAccessToken }));
+        localStorage.setItem(PURCHASE_STORAGE_KEY, JSON.stringify({ ...(saved?.reference === reference ? saved : {}), reference, email: purchaseEmail, downloadToken, accessToken: data.playbookAccessToken }));
       } catch { /* Verified access works for this visit even if storage is unavailable. */ }
       return data.url;
-    } catch {
+    } catch (error) {
       setPaymentSuccess(false);
-      setVerificationError('We could not verify this purchase. Check the checkout email and Paystack reference, or contact info@themarketinghaven.xyz. Please do not pay again to recover a purchase.');
+      if (error.code === 'recovery_required') {
+        setVerificationPending(false);
+        setRecoveryOpen(true); setRecoveryEmail(purchaseEmail || ''); setRecoveryReference(reference);
+        setVerificationError('Please confirm your checkout email with a one-time code. You do not need to pay again.');
+      } else {
+        setVerificationPending(true);
+        setVerificationError(error.message || 'Payment verification is temporarily unavailable. Retry shortly; you do not need to pay again.');
+      }
       return null;
     } finally {
       setVerifying(false);
     }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PURCHASE_STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (data?.reference) {
+        setPaymentReference(data.reference);
+        setDeliveryContact(data.email || '');
+        setPaymentSuccess(false);
+        setAlreadyDownloaded(false);
+        if (data.downloadToken) { deviceGrantRef.current = data; void verifyPurchase(data.reference, data.email); }
+        else { setRecoveryOpen(true); setRecoveryEmail(data.email || ''); setRecoveryReference(data.reference); }
+      }
+    } catch {}
+  }, [verifyPurchase]);
+
+  async function requestPurchaseCode(reference, checkoutEmail) {
+    if (verifying) return;
+    setVerifying(true); setRecoveryOpen(true); setVerificationError(''); setOtpMessage('');
+    setRecoveryEmail(checkoutEmail); setRecoveryReference(reference);
+    try {
+      const data = await functionData('request-playbook-recovery', { reference, email: checkoutEmail });
+      setOtpChallenge(data.challengeId); setOtpCode('');
+      setOtpMessage(data.message); setResendAt(Date.now() + 60000);
+    } catch (error) { setVerificationError(error.message); }
+    finally { setVerifying(false); }
+  }
+
+  async function verifyPurchaseCode(event) {
+    event.preventDefault();
+    if (verifying) return;
+    setVerifying(true); setVerificationError('');
+    try {
+      const data = await functionData('verify-playbook-recovery', { challengeId: otpChallenge, code: otpCode });
+      if (!data.downloadToken) throw new Error('Access could not be completed. Request a new code and try again.');
+      deviceGrantRef.current = data;
+      setPaymentReference(data.reference); setDeliveryContact(data.email); setDownloadUrl(data.url || '');
+      setVerificationError(data.downloadPending ? data.message : '');
+      setPaymentSuccess(true); setVerificationPending(false); setAlreadyDownloaded(downloadOpenedRef.current); setOtpCode(''); setOtpChallenge('');
+      try { localStorage.setItem(PURCHASE_STORAGE_KEY, JSON.stringify({
+        reference: data.reference, email: data.email, downloadToken: data.downloadToken,
+        accessToken: data.playbookAccessToken, paidAt: new Date().toISOString(),
+      })); } catch { /* The current visit can still download. */ }
+    } catch (error) { setVerificationError(error.message); }
+    finally { setVerifying(false); }
   }
 
   const handlePaystackCheckout = async (e) => {
@@ -190,12 +251,22 @@ export default function ShopSection() {
       return;
     }
 
+    let checkout;
+    try {
+      checkout = await functionData('verify-paystack', { action: 'prepare-checkout', email: trimmed });
+      if (!checkout.downloadToken || !checkout.reference || checkout.amount !== PAYSTACK_AMOUNT_KOBO) throw new Error('Checkout could not be prepared. Please retry.');
+    } catch (error) {
+      setLoading(false);
+      setAlertState({ title: 'Checkout unavailable', message: error.message, variant: 'danger', confirmText: 'Got it' });
+      return;
+    }
+
     const handler = window.PaystackPop.setup({
       key: PAYSTACK_PUBLIC_KEY,
       email: trimmed,
       amount: PAYSTACK_AMOUNT_KOBO,
       currency: 'NGN',
-      ref: `UNSEEN_${crypto.randomUUID()}`,
+      ref: checkout.reference,
       metadata: {
         custom_fields: [
           {
@@ -208,12 +279,19 @@ export default function ShopSection() {
       callback: function (response) {
         clearPaymentTimeout();
         const ref = response.reference || '';
+        if (ref !== checkout.reference) {
+          setLoading(false);
+          setAlertState({ title: 'Check your payment receipt', message: 'The returned receipt does not match this checkout. Keep your receipt and contact info@themarketinghaven.xyz before paying again.', variant: 'danger', confirmText: 'Got it' });
+          return;
+        }
         setLoading(false);
         setPaymentReference(ref);
         setDeliveryContact(trimmed);
         setPaymentSuccess(false);
+        setVerificationPending(true);
         setAlreadyDownloaded(false);
-        persistPurchase(ref, trimmed, null);
+        deviceGrantRef.current = { reference: ref, email: trimmed, downloadToken: checkout.downloadToken };
+        try { localStorage.setItem(PURCHASE_STORAGE_KEY, JSON.stringify({ ...deviceGrantRef.current, paidAt: new Date().toISOString() })); } catch { /* Proof remains available for this visit. */ }
         void verifyPurchase(ref, trimmed);
         setEmail('');
         paystackHandlerRef.current = null;
@@ -258,7 +336,8 @@ export default function ShopSection() {
   };
 
   const handleDownloadPlaybook = (url = downloadUrl) => {
-    if (!url) return;
+    if (!url || downloadOpenedRef.current) return;
+    downloadOpenedRef.current = true;
 
     const a = document.createElement('a');
     a.href = url;
@@ -275,9 +354,12 @@ export default function ShopSection() {
 
   const handleRedownloadPlaybook = async (event) => {
     event.preventDefault();
-    if (verifying) return;
-    const url = await verifyPurchase(paymentReference, deliveryContact);
-    if (url) handleDownloadPlaybook(url);
+    if (verifying || downloadPendingRef.current || downloadOpenedRef.current) return;
+    downloadPendingRef.current = true;
+    try {
+      const url = await verifyPurchase(paymentReference, deliveryContact);
+      if (url) handleDownloadPlaybook(url);
+    } finally { downloadPendingRef.current = false; }
   };
 
   const handleCloseModal = useCallback(() => {
@@ -389,7 +471,7 @@ export default function ShopSection() {
               >
                 Get The Unseen Playbook <ArrowRight className="w-4 h-4" />
               </button>
-              <button type="button" onClick={() => { setRecoveryOpen(true); setIsPreviewOpen(true); }} className="mt-4 self-start text-xs text-zinc-500 underline underline-offset-4 hover:text-zinc-800 dark:hover:text-zinc-200">Already purchased? Recover your copy</button>
+
             </div>
           </div>
         </motion.div>
@@ -433,12 +515,12 @@ export default function ShopSection() {
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold tracking-tight text-white">
-                      {paymentSuccess ? "You're In." : 'The Unseen Playbook'}
+                      {paymentSuccess ? "You're In." : verificationPending ? 'Checking your payment' : 'The Unseen Playbook'}
                     </h3>
                     <p className="text-xs text-zinc-400">
                       {paymentSuccess
                         ? (alreadyDownloaded ? 'Download opened on this device' : 'Purchase verified')
-                        : 'Digital Blueprint & Strategy Guide'}
+                        : verificationPending ? 'Keep your receipt; no new payment needed' : 'Digital Blueprint & Strategy Guide'}
                     </p>
                   </div>
                 </div>
@@ -451,7 +533,14 @@ export default function ShopSection() {
                 </button>
               </div>
 
-              {paymentSuccess ? (
+              {!paymentSuccess && !verificationPending && <div role="tablist" aria-label="Playbook purchase options" className="grid grid-cols-2 gap-1 border-b border-white/10 px-6 py-3 sm:px-8">
+                {[{recover:false,label:'Buy a copy',id:'buy'},{recover:true,label:'Already purchased',id:'recover'}].map(tab=><button key={tab.id} type="button" role="tab" id={`playbook-${tab.id}-tab`} aria-selected={recoveryOpen===tab.recover} aria-controls={`playbook-${tab.id}-panel`} tabIndex={recoveryOpen===tab.recover?0:-1} disabled={loading||verifying}
+                  onClick={()=>{setRecoveryOpen(tab.recover);setVerificationError('');}}
+                  onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const recover=event.key==='Home'?false:event.key==='End'?true:!recoveryOpen;setRecoveryOpen(recover);document.getElementById(`playbook-${recover?'recover':'buy'}-tab`)?.focus();}}
+                  className={`rounded-lg px-3 py-3 text-sm font-medium transition-colors disabled:opacity-50 ${recoveryOpen===tab.recover?'bg-white/10 text-white':'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}>{tab.label}</button>)}
+              </div>}
+
+              {paymentSuccess || verificationPending ? (
                 <div className="p-6 sm:p-8 overflow-y-auto overscroll-contain space-y-6 text-center">
                   <motion.div
                     initial={{ scale: reduceMotion ? 1 : 0.92, opacity: 0 }}
@@ -464,10 +553,10 @@ export default function ShopSection() {
 
                   <div className="space-y-2">
                     <h4 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">
-                      Your copy is ready.
+                      {downloadUrl ? 'Your copy is ready.' : verificationPending ? 'Confirming your payment.' : 'Purchase confirmed.'}
                     </h4>
                     <p className="text-sm text-zinc-400 max-w-md mx-auto leading-relaxed">
-                      Thank you for grabbing The Unseen Playbook. Your copy is ready. Click below to download it straight to your device.
+                      {downloadUrl ? 'Thank you for choosing The Unseen Playbook. Open your copy below and start with the question that matters most to your business.' : verificationPending ? 'We are checking your receipt. If you were charged, keep your reference and retry here before making another payment.' : 'Your access is confirmed. Your purchase is safe while the download becomes available.'}
                     </p>
                   </div>
 
@@ -476,7 +565,7 @@ export default function ShopSection() {
                       <ShieldCheck className="w-4 h-4 text-zinc-400" />
                       <span>Reference:</span>
                       <span className="font-mono break-all text-zinc-200">
-                        {paymentReference || '—'}
+                    {paymentReference || '—'}
                       </span>
                     </div>
                     {deliveryContact && (
@@ -497,7 +586,7 @@ export default function ShopSection() {
                       download={PLAYBOOK_FILENAME}
                       target="_blank"
                       rel="noopener noreferrer"
-                      onClick={(event) => { event.preventDefault(); handleDownloadPlaybook(); }}
+                      onClick={handleRedownloadPlaybook}
                       className="w-full inline-flex items-center justify-center gap-3 px-8 py-4 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-base transition-colors active:scale-[0.98]"
                     >
                       <Download className="w-5 h-5" />
@@ -505,14 +594,11 @@ export default function ShopSection() {
                     </a>
                   ) : null}
                   {verifying && <p role="status" className="text-sm text-zinc-400">Verifying your payment...</p>}
-                  {verificationError && <p role="alert" className="text-sm text-red-300">{verificationError}</p>}
-                  {alreadyDownloaded && downloadUrl && !verifying && (
-                    <a href={downloadUrl} onClick={handleRedownloadPlaybook} className="block text-xs text-zinc-300 underline underline-offset-4 hover:text-white">
-                      Re-download Playbook
-                    </a>
-                  )}
+                  {alreadyDownloaded && <p className="text-xs leading-relaxed text-zinc-400">Your purchase remains saved on this device. Reload this page to open your copy again later. On another device, use Already purchased.</p>}
 
-                  <div className="pt-6 mt-2 border-t border-white/10 text-left">
+                  {!downloadUrl && <button type="button" disabled={verifying} onClick={handleRedownloadPlaybook} className="w-full rounded-lg bg-zinc-100 px-5 py-3 text-sm text-zinc-950">{verifying ? 'Opening your copy…' : 'Retry opening my copy'}</button>}
+                  {verificationError && <p role="status" className="text-sm text-zinc-300">{verificationError}</p>}
+                  {paymentSuccess && <div className="pt-6 mt-2 border-t border-white/10 text-left">
                     <div className="flex items-center gap-2">
                       <span className="block w-5 h-px bg-zinc-600" />
                       <span className="text-[10px] uppercase tracking-[0.24em] text-zinc-400">
@@ -522,7 +608,7 @@ export default function ShopSection() {
                     <p className="mt-4 text-sm leading-relaxed text-zinc-300">
                       Congratulations on your copy. Enjoy the read. And if you need any clarity or help applying anything, reach out to us anytime. We are here.
                     </p>
-                  </div>
+                  </div>}
 
                   <button
                     onClick={handleCloseModal}
@@ -533,17 +619,17 @@ export default function ShopSection() {
                 </div>
               ) : (
                 <>
-                  <div className="p-6 sm:p-8 overflow-y-auto overscroll-contain space-y-6">
+                  <div role="tabpanel" id={`playbook-${recoveryOpen?'recover':'buy'}-panel`} aria-labelledby={`playbook-${recoveryOpen?'recover':'buy'}-tab`} className="p-6 sm:p-8 overflow-y-auto overscroll-contain space-y-6">
                     <div>
                       <h4 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-3 text-white">
-                        What's Inside The Playbook?
+                        {recoveryOpen ? 'Recover your copy' : "What's Inside The Playbook?"}
                       </h4>
-                      <p className="text-sm leading-relaxed text-zinc-400">
+                      {!recoveryOpen && <p className="text-sm leading-relaxed text-zinc-400">
                         People like the post. They ask the price. Then the conversation stops. These nine chapters help you understand the gap and give your next marketing move a clear purpose.
-                      </p>
+                      </p>}
                     </div>
 
-                    <div className="divide-y divide-white/10">
+                    {!recoveryOpen && <div className="divide-y divide-white/10">
                       {playbookModules.map((m, idx) => (
                         <div
                           key={idx}
@@ -558,19 +644,26 @@ export default function ShopSection() {
                           </p>
                         </div>
                       ))}
-                    </div>
+                    </div>}
 
-                    <div className="rounded-xl border border-white/10 p-4">
-                      <button type="button" aria-expanded={recoveryOpen} onClick={() => setRecoveryOpen((value) => !value)} className="text-sm text-zinc-200 underline underline-offset-4">Already purchased?</button>
-                      {recoveryOpen && <form onSubmit={async (event) => { event.preventDefault(); await verifyPurchase(recoveryReference.trim(), recoveryEmail.trim()); }} className="mt-4 space-y-3">
-                        <p className="text-xs leading-relaxed text-zinc-400">Recover your download on this device using the email and reference from your Paystack receipt. No extra payment is needed.</p>
-                        <label className="block text-xs text-zinc-400">Checkout email<input required type="email" value={recoveryEmail} onChange={(event) => setRecoveryEmail(event.target.value)} className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-3 text-base text-white" autoComplete="email" /></label>
-                        <label className="block text-xs text-zinc-400">Paystack reference<input required value={recoveryReference} onChange={(event) => setRecoveryReference(event.target.value)} placeholder="UNSEEN_…" className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-3 text-base text-white" autoCapitalize="none" spellCheck={false} /></label>
-                        <button disabled={verifying} className="rounded-lg bg-zinc-100 px-4 py-3 text-xs font-semibold text-zinc-950 disabled:opacity-50">{verifying ? 'Verifying purchase…' : 'Verify & access your copy'}</button>
-                      </form>}
+                    {recoveryOpen && <div className="rounded-xl border border-white/10 p-4">
+                      <p className="text-sm leading-relaxed text-zinc-300">Bought the Playbook on another device, or lost your saved access? Recover it here. New purchases open directly after payment.</p>
+                      {recoveryOpen && (otpChallenge ? <form onSubmit={verifyPurchaseCode} className="mt-4 space-y-3">
+                        <p role="status" className="text-sm leading-relaxed text-zinc-300">{otpMessage}</p>
+                        <label className="block text-xs text-zinc-400">Six-digit email code<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={otpCode} onChange={event => setOtpCode(event.target.value.replace(/\D/g, ''))} className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-3 text-lg tracking-[0.3em] text-white" /></label>
+                        <p className="text-xs text-zinc-400">Valid for 10 minutes. Never share this code.</p>
+                        <button disabled={verifying} className="rounded-lg bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-950 disabled:opacity-50">{verifying ? 'Checking code…' : 'Confirm code & access your copy'}</button>
+                        <button type="button" disabled={verifying} onClick={() => { if (Date.now() < resendAt) setVerificationError('Please wait a minute before requesting another code.'); else void requestPurchaseCode(recoveryReference.trim(), recoveryEmail.trim()); }} className="ml-3 text-xs text-zinc-300 underline underline-offset-4">Send a new code</button>
+                        <button type="button" disabled={verifying} onClick={() => { setOtpChallenge(''); setOtpCode(''); setVerificationError(''); }} className="block text-xs text-zinc-400 underline underline-offset-4">Use different purchase details</button>
+                      </form> : <form onSubmit={async event => { event.preventDefault(); await requestPurchaseCode(recoveryReference.trim(), recoveryEmail.trim()); }} className="mt-4 space-y-3">
+                        <p className="text-sm leading-relaxed text-zinc-400">Enter your receipt details. We will send a one-time code to the checkout email before opening your download.</p>
+                        <label className="block text-xs text-zinc-400">Checkout email<input required disabled={verifying} type="email" value={recoveryEmail} onChange={event => setRecoveryEmail(event.target.value)} className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-3 text-base text-white" autoComplete="email" /></label>
+                        <label className="block text-xs text-zinc-400">Paystack reference<input required disabled={verifying} value={recoveryReference} onChange={event => setRecoveryReference(event.target.value)} placeholder="UNSEEN_…" className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-3 text-base text-white" autoCapitalize="none" spellCheck={false} /></label>
+                        <button disabled={verifying} className="rounded-lg bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-950 disabled:opacity-50">{verifying ? 'Sending code…' : 'Send my access code'}</button>
+                      </form>)}
                       {verificationError && <p role="alert" className="mt-3 text-xs leading-relaxed text-red-300">{verificationError}</p>}
                       {verifying && !recoveryOpen && <p role="status" className="mt-3 text-xs text-zinc-400">Checking your saved purchase…</p>}
-                    </div>
+                    </div>}
 
                     {!recoveryOpen && <form id="paystack-form" onSubmit={handlePaystackCheckout} className="space-y-3 pt-2">
                       <label htmlFor="playbook-receipt-email" className="block text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-300">
@@ -586,7 +679,7 @@ export default function ShopSection() {
                         className="w-full px-4 py-3 rounded-lg border border-white/15 bg-zinc-950/40 text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-400 transition-colors"
                       />
                       <p className="text-xs text-zinc-400">
-                        Use an email you can access. Your download is available after payment verification.
+                        Use an email you can access for your receipt. Your download opens here after payment is verified.
                       </p>
                     </form>}
 
@@ -596,8 +689,8 @@ export default function ShopSection() {
                     </div>
                   </div>
 
-                  <div className="p-6 sm:px-8 border-t border-white/10 bg-zinc-900 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div>
+                  {!recoveryOpen && <div className="p-6 sm:px-8 border-t border-white/10 bg-zinc-900 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    {!recoveryOpen && <div>
                       <span className="text-[10px] uppercase tracking-[0.2em] block text-zinc-400">
                         Total Investment
                       </span>
@@ -605,18 +698,17 @@ export default function ShopSection() {
                         <span className="text-3xl font-medium tracking-tight text-white">₦9,639</span>
                         <span className="text-xs text-zinc-400 line-through">₦15,000</span>
                       </div>
-                      {PAYSTACK_AMOUNT_KOBO === 10000 && <p className="mt-2 text-xs text-zinc-300">Current live checkout charge: ₦100 (testing).</p>}
-                    </div>
+                    </div>}
 
-                    {recoveryOpen ? <button type="button" onClick={() => setRecoveryOpen(false)} className="rounded-lg border border-white/15 px-5 py-3 text-sm text-zinc-200">Back to checkout</button> : <button
+                    <button
                       type="button"
                       onClick={handlePaystackCheckout}
                       disabled={loading || verifying}
                       className="w-full sm:w-auto px-8 py-3.5 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-sm transition-colors active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Opening Checkout...' : 'Confirm & Pay via Paystack'}
-                    </button>}
-                  </div>
+                    </button>
+                  </div>}
                 </>
               )}
             </motion.div>

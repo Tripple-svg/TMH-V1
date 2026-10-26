@@ -99,7 +99,7 @@ function AppInner() {
   const handleReviewSubmit = async (payload) => {
     const tracking = trackingRef.current || {};
 
-    const { success, reviewId, sessionId, accessToken, submission } = await createBrandReview({
+    const { success, reviewId, sessionId, accessToken, submission, error: submissionError, code: submissionCode } = await createBrandReview({
       id: payload.id,
       fullName: payload.fullName,
       brandName: payload.brandName,
@@ -127,7 +127,7 @@ function AppInner() {
     });
 
     if (!success || !reviewId || !sessionId || !/^[a-f\d]{64}$/i.test(accessToken || '')) {
-      return { success: false };
+      return { success: false, error: submissionError?.message, code: submissionCode };
     }
     try {
       localStorage.setItem(REVIEW_ID_KEY, reviewId);

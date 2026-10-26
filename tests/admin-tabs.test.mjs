@@ -1,3 +1,4 @@
+import * as workspace from '../src/lib/adminWorkspace.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -24,6 +25,7 @@ function harness({ dashboard = false, send = async () => ({ status: 200, ...sess
   let cursor = 0, refCursor = 0, effectCursor = 0, lost = 0;
   const context = {
     module: { exports: {} },
+    require(name) { return name.includes('adminWorkspace') ? workspace : { __esModule:true, default:function InquiryWorkflow(){} }; },
     React: { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) },
     useState(initial) {
       const slot = cursor++;
@@ -68,14 +70,14 @@ function harness({ dashboard = false, send = async () => ({ status: 200, ...sess
   };
 }
 
-test('admin tabs: five counted sections switch panels without leaving other section content visible', () => {
+test('admin tabs: six counted sections switch panels without leaving other section content visible', () => {
   const ui = harness({ dashboard: true });
   let tree = ui.render('AdminDashboard');
   const tabs = tree.filter((node) => node.props.role === 'tab');
-  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Leads', 'Playbook Purchases', 'Bookings', 'Support Chats', 'Service Chats']);
-  assert.ok(tabs.every((node) => node.props.children[1].props.children[0] === (node.props.id === 'tab-bookings' ? 0 : 1)));
+  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Leads', 'Playbook Purchases', 'Bookings', 'Team Inquiries', 'Support Chats', 'Service Chats']);
+  assert.ok(tabs.every((node) => node.props.children[1].props.children[0] === (['tab-bookings','tab-team'].includes(node.props.id) ? 0 : 1)));
   assert.ok(tree.some((node) => node.type === 'table'));
-  tabs[3].props.onClick();
+  tabs[4].props.onClick();
   tree = ui.render('AdminDashboard');
   assert.ok(!tree.some((node) => node.type === 'table'));
   const support = tree.find((node) => node.type?.name === 'SessionsPanel');

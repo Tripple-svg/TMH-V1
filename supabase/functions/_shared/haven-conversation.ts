@@ -1,6 +1,6 @@
 import { hashReviewToken, verifyReviewAccess, ReviewAccessError } from './review-access.ts';
 import { HavenRequestError } from './haven-request.ts';
-export const CHAT_NOTICE_VERSION = '2026-10-23';
+export const CHAT_NOTICE_VERSION = '2026-10-26';
 export const RESTRICTED_MESSAGE = 'Your access is currently restricted due to a violation of our terms. Please contact info@themarketinghaven.xyz.';
 const UUID = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
 

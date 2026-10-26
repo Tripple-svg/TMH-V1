@@ -1,3 +1,4 @@
+import { acceptedPaymentAmount } from '../_shared/playbook-recovery.ts';
 import { internalHeaders } from '../_shared/internal-auth.js';
 import { invocationFailure } from '../_shared/resend-delivery.js';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
@@ -55,6 +56,7 @@ serve(async (req) => {
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (!url || !serviceKey) return failure('missing_database_configuration', 'Server misconfigured', 500);
     const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
+    if (!await acceptedPaymentAmount(supabase, payment.amount, payment.paid_at || payment.paidAt)) return json({ ok: true, ignored: true });
     console.log('Inserting into playbook_purchases');
     const { error: insertError } = await supabase.from('playbook_purchases').insert({ email, reference, amount: payment.amount });
     // Replays must preserve the original buyer and amount, including during races.

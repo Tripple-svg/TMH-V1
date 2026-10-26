@@ -1,3 +1,4 @@
+import { scoreFailureCopy } from '../../../../supabase/functions/_shared/scoring-copy.js';
 // src/components/haven/context/HavenContext.jsx
 // VERSION 5.6 — Persists haven_score, score_breakdown, biggest_leak,
 // assessment_summary to brand_reviews alongside lead temperature
@@ -39,7 +40,7 @@ const DEFAULT_USER_PROFILE = {
 
 const DEFAULT_PREFLIGHT = {
   status: 'idle', url: null, score: null, breakdown: null,
-  biggestIssue: null, summary: null, error: null,
+  biggestIssue: null, summary: null, error: null, reason: null,
   dismissed: false, retryCount: 0,
 };
 
@@ -171,6 +172,7 @@ async function readHavenResponse(response) {
   if (!response.ok || data.ok === false) {
     const error = new Error(data.error || 'Haven could not complete the request. Please try again.');
     error.status = response.status;
+    error.reason = data.reason;
     throw error;
   }
   return data;
@@ -264,8 +266,9 @@ export function HavenProvider({ children }) {
     setSupportSessions(loadSessionsForScope('support'));
     setServiceSessions(loadSessionsForScope('service'));
     setAuditSessions(loadSessionsForScope('audit'));
-    setUserProfile(loadUserProfile());
-    setAuditPreflight(loadPreflight());
+    const profile = loadUserProfile();
+    setUserProfile(profile);
+    setAuditPreflight(profile.businessDomain === 'none' ? { ...DEFAULT_PREFLIGHT } : loadPreflight());
     setMounted(true);
     return () => { if (abortControllerRef.current) abortControllerRef.current.abort(); };
   }, []);
@@ -409,7 +412,7 @@ export function HavenProvider({ children }) {
       const valid = result.state === 'valid' && Number.isInteger(result.score);
 
       setAuditPreflight(prev => ({
-        status: valid ? 'ready' : 'bad_data', url,
+        status: valid ? 'ready' : 'bad_data', url, reason: result.reason || null,
         score: valid ? result.score : null, breakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null, summary: result.summary || '',
         error: null, dismissed: false, retryCount: prev.retryCount || 0,
@@ -427,7 +430,7 @@ export function HavenProvider({ children }) {
       setAuditPreflight(prev => ({
         status: 'failed', url, score: null, breakdown: null, biggestIssue: null,
         summary: null,
-        error: err instanceof Error && /access recovery/.test(err.message) ? err.message : SCORING_COPY.failed,
+        reason: err.reason || null, error: err instanceof Error && /access recovery/.test(err.message) ? err.message : scoreFailureCopy(err.reason || 'provider_unavailable'),
         dismissed: false, retryCount: (prev.retryCount || 0) + 1,
       }));
       setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true, scrapeState: 'failed', auditScore: null, scoreBreakdown: null, biggestIssue: null }));
@@ -453,7 +456,7 @@ export function HavenProvider({ children }) {
       const valid = result.state === 'valid' && Number.isInteger(result.score);
 
       setAuditPreflight(prev => ({
-        status: valid ? 'ready' : 'bad_data', url: null,
+        status: valid ? 'ready' : 'bad_data', url: null, reason: result.reason || null,
         score: valid ? result.score : null, breakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null, summary: null,
         error: null, dismissed: false, retryCount: prev.retryCount || 0,
@@ -532,10 +535,10 @@ export function HavenProvider({ children }) {
     } else if (targetMode === 'audit') {
       const name           = profileData?.name           || userProfile.name;
       const brandName      = profileData?.brandName      || userProfile.brandName;
-      const isReturning    = profileData?.isReturningUser || userProfile.isReturningUser || false;
-      const businessDomain = profileData?.businessDomain || userProfile.businessDomain;
-      const screenshot     = profileData?.screenshot     || userProfile.screenshot;
-      const websiteUrl     = profileData?.websiteUrl     || userProfile.websiteUrl;
+      const isReturning    = profileData ? profileData.isReturningUser === true : userProfile.isReturningUser === true;
+      const businessDomain = profileData ? profileData.businessDomain : userProfile.businessDomain;
+      const screenshot     = profileData ? profileData.screenshot : userProfile.screenshot;
+      const websiteUrl     = profileData ? profileData.websiteUrl : userProfile.websiteUrl;
       const access = { ...userProfile, ...profileData };
       if (access.sessionId !== userProfile.sessionId) scoringRequestRef.current += 1;
       if (!access.reviewId || !access.sessionId || !access.accessToken) {
@@ -548,6 +551,7 @@ export function HavenProvider({ children }) {
         return;
       }
 
+      if (businessDomain === 'none') resetPreflight();
       if (isReturning) {
         const existingAudit = matchingAuditSession(auditSessions, access);
 
@@ -744,6 +748,7 @@ export function HavenProvider({ children }) {
     setIsThinking(true);
 
     const controller = new AbortController();
+    const responseTimeout = setTimeout(() => controller.abort(), 45000);
     abortControllerRef.current = controller;
     const abort = () => controller.abort();
     if (options?.signal) {
@@ -764,7 +769,7 @@ export function HavenProvider({ children }) {
       const context = activeScope === 'audit' ? { ...identity, ...reviewAccess(userProfile) } : {
         ...identity, ...linkedAccess, sessionId: publicSessionId,
         userName: userProfile.name || 'there', brandName: userProfile.brandName || 'your business',
-        serviceId: activeService?.id || null,
+        serviceId: activeService?.id || currentSession?.serviceId || null,
         entryContext: currentSession?.serviceId === 'team-inquiry' ? 'team_inquiry' : null,
         currentStep: currentSession?.currentStep,
       };
@@ -851,10 +856,10 @@ export function HavenProvider({ children }) {
       setSessionsForScope(activeScope, prev => prev.map(s => s.id === activeSessionId
         ? { ...s, failedTurn: { content, image, requestId, screenshot: saved?.payload?.screenshot || null, error } } : s));
     } finally {
+      clearTimeout(responseTimeout);
       options?.signal?.removeEventListener('abort', abort);
       inFlightTurnsRef.current.delete(turnKey);
-      setIsThinking(false);
-      abortControllerRef.current = null;
+      if (abortControllerRef.current === controller) { setIsThinking(false); abortControllerRef.current = null; }
     }
   }, [activeScope, activeSessionId, currentSession, getSessionsForScope, setSessionsForScope, createSession, addMessage, userProfile, activeService]);
 
@@ -910,7 +915,7 @@ export function HavenProvider({ children }) {
     let sessionId = currentSession?.serverSessionId || publicSessionIdsRef.current.get(key);
     if (!sessionId) { sessionId = crypto.randomUUID(); publicSessionIdsRef.current.set(key, sessionId); }
     const context = activeScope === 'audit' ? { ...identity, ...reviewAccess(userProfile) }
-      : { ...identity, ...linked, sessionId, serviceId: activeService?.id || null };
+      : { ...identity, ...linked, sessionId, serviceId: activeService?.id || currentSession?.serviceId || null, entryContext: currentSession?.serviceId === 'team-inquiry' ? 'team_inquiry' : null };
     const result = await callHavenAPI({ action: 'access', context, scope: activeScope });
     if (!['white','yellow','red'].includes(result.flagStatus)) throw new Error('Could not verify your access. Please try again.');
     setUserProfile((previous) => ({ ...previous, flag_status: result.flagStatus }));

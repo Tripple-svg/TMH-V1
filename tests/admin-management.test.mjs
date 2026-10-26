@@ -1,3 +1,4 @@
+import * as workspace from '../src/lib/adminWorkspace.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -28,7 +29,7 @@ function readDatabase({ purchasesError = false, seed = {} } = {}) {
     playbook_purchases: [{ id: 'purchase-1', email: 'buyer@example.com', reference: 'UNSEEN_123', amount: 10000, thankyou_sent: true, created_at: '2026-10-23T12:00:00Z', private_field: 'never-return-private' }],
     ...seed,
   };
-  return { calls, client: { from(table) {
+  return { calls, client: { async rpc(){return {data:{gemini_replies:0,groq_replies:0,failed_turns:0,stale_turns:0,pending_flag_events:0},error:null};}, from(table) {
     const call = { table }; calls.push(call);
     const filters = [];
     let offset = 0, cap = Infinity;
@@ -42,6 +43,7 @@ function readDatabase({ purchasesError = false, seed = {} } = {}) {
     return {
       select(fields) { call.fields = fields; return this; },
       order() { return this; },
+      or() { filters.push(row=>row.service_id==null||row.service_id!=='team-inquiry'); return this; },
       in(key, values) { filters.push((row) => values.includes(row[key])); return this; },
       eq(key, value) { filters.push((row) => row[key] === value); return this; },
       is(key, value) { filters.push((row) => value === null ? row[key] == null : row[key] === value); return this; },
@@ -72,22 +74,24 @@ test('admin data: password gate prevents reads and authorized payload includes p
   assert.equal(db.calls.find((call) => call.table === 'playbook_purchases').limit, 500);
 });
 
-test('admin data: linked audit/support/service stay under the lead while guest scopes stay in their own tabs', async () => {
+test('admin data: linked chats stay under the lead and remain discoverable in scope tabs', async () => {
   const db = readDatabase({ seed: {
     haven_sessions: [
       ...['audit', 'support', 'service'].map((scope) => ({ id: `linked-${scope}`, review_id: 'review-1', scope, total_exchanges: 2, message_count: 4, messages: [{ role: 'user', content: 'Never include full transcripts in overview' }] })),
       { id: 'guest-support', review_id: null, visitor_id: 'visitor-1', scope: 'support', message_count: 3 },
+      { id: 'team-inquiry', scope:'support', service_id:'team-inquiry', review_id:'review-1', visitor_id:'visitor-1', inquiry_status:'reviewing', inquiry_owner:'Francis', inquiry_revision:2 },
       { id: 'guest-service', review_id: null, visitor_id: 'visitor-1', scope: 'service', service_id: 'web', message_count: 5 },
     ],
     haven_chat_visitors: [{ id: 'visitor-1', flag_status: 'red', flag_reason: 'Repeated misuse', token_hash: 'never-return-visitor-hash' }],
   } });
   const data = await (await handler('admin-fetch-leads', db.client)(request({ password: 'admin-test' }))).json();
-  assert.deepEqual(data.leads[0].sessions.map((session) => session.scope), ['audit', 'support', 'service']);
+  assert.deepEqual(data.leads[0].sessions.map((session) => session.scope), ['audit', 'support', 'service', 'support']);
   assert.equal(data.leads[0].session.id, 'linked-audit');
-  assert.deepEqual(data.support_sessions.map((session) => session.id), ['guest-support']);
-  assert.deepEqual(data.service_sessions.map((session) => session.id), ['guest-service']);
-  assert.equal(data.support_sessions[0].flag_status, 'red');
-  assert.equal(data.service_sessions[0].flag_status, 'red');
+  assert.equal(data.team_inquiries.length,1);assert.equal(data.team_inquiries[0].inquiry_owner,'Francis');assert.equal(data.team_inquiries[0].inquiry_revision,2);
+  assert.deepEqual(data.support_sessions.map((session) => session.id), ['linked-support','guest-support']);
+  assert.deepEqual(data.service_sessions.map((session) => session.id), ['linked-service','guest-service']);
+  assert.equal(data.support_sessions.find(row=>row.id==='guest-support').flag_status, 'red');
+  assert.equal(data.service_sessions.find(row=>row.id==='guest-service').flag_status, 'red');
   assert.equal(data.leads[0].sessions[0].transcript_loaded, false);
   assert.equal(data.leads[0].sessions[0].message_count, 4);
   assert.ok(!JSON.stringify(data).includes('Never include full transcripts'));
@@ -204,6 +208,7 @@ function ui({ confirm = true, networkError = false, httpStatus = 200, response =
   let cursor = 0, refCursor = 0, lost = 0;
   const context = {
     module: { exports: {} },
+    require(name) { return name.includes('adminWorkspace') ? workspace : { __esModule:true, default:function InquiryWorkflow(){} }; },
     React: { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) },
     useState(initial) { const slot = cursor++; if (!(slot in states)) states[slot] = typeof initial === 'function' ? initial() : initial; return [states[slot], (v) => { states[slot] = typeof v === 'function' ? v(states[slot]) : v; }]; },
     useRef(initial) { const slot = refCursor++; return refs[slot] ||= { current: initial }; },
@@ -269,4 +274,18 @@ test('admin UI: purchase response reaches dashboard helper and kobo displays as 
   assert.ok(tree.some((node) => node.type === 'td' && node.props.children.includes('₦100')));
   assert.ok(tree.some((node) => node.type === 'td' && node.props.children.includes('buyer@example.com')));
   assert.ok(!tree.some((node) => node.type === 'td' && node.props.children.includes('₦10,000')));
+});
+
+
+const inquiryUpdate={password:'admin-test',action:'updateInquiry',sessionId:'10000000-0000-4000-8000-000000000001',expectedRevision:0,status:'reviewing',owner:' Francis ',notes:'Review the request',followupOn:'2026-11-03'};
+test('inquiry management authorizes and validates dates, fields and revisions before the privileged update',async()=>{
+  const calls=[];const update=handler('admin-update-lead',{rpc:async(name,args)=>{calls.push({name,args});return{data:{session:{id:args.p_session_id,inquiry_revision:1}},error:null};}});
+  assert.equal((await update(request({...inquiryUpdate,password:'wrong'}))).status,401);
+  for(const extra of [{followupOn:'2026-02-30'},{expectedRevision:-1},{status:'red'},{flag_status:'red'},{owner:'x'.repeat(81)}])assert.equal((await update(request({...inquiryUpdate,...extra}))).status,400);
+  assert.equal(calls.length,0);assert.equal((await update(request(inquiryUpdate))).status,200);
+  assert.equal(calls[0].name,'update_haven_inquiry');assert.equal(calls[0].args.p_owner,'Francis');assert.equal(calls[0].args.p_revision,0);
+});
+test('inquiry management returns a stale-edit conflict rather than overwriting another team member',async()=>{
+  const update=handler('admin-update-lead',{rpc:async()=>({data:{conflict:true,session:{id:inquiryUpdate.sessionId,inquiry_revision:2}},error:null})});
+  const result=await update(request(inquiryUpdate));assert.equal(result.status,409);const data=await result.json();assert.equal(data.code,'conflict');assert.equal(data.session.inquiry_revision,2);
 });

@@ -62,11 +62,11 @@ test('privacy and terms: warning automation, human restriction review, and priva
   assert.ok(!terms.includes('without notice and without refund'));
 });
 
-test('privacy: provider processing reflects paid Gemini guard without promising universal no-training', () => {
+test('privacy: provider processing discloses free-tier testing without promising universal no-training', () => {
   const page = render('src/pages/PrivacyPage.jsx', 'PrivacyPage');
   const copy = text(page);
-  assert.match(copy, /Groq for text processing/);
-  assert.match(copy, /Gemini chat and image processing disabled until TMH confirms the paid-service configuration/);
+  assert.match(copy, /Gemini models as its primary AI provider and Groq as a fallback/);
+  assert.match(copy, /During the current testing phase, TMH may use this unpaid tier/);
   assert.match(copy, /possible human review/);
   assert.ok(!copy.includes('We do not use your conversations to train public models'));
   assert.ok(find(page, (node) => node.props.href === 'https://ai.google.dev/gemini-api/terms').length);

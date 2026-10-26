@@ -65,7 +65,7 @@ export default function TermsPage() {
           <article className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100/70 backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.03]">
             <div className="border-b border-zinc-200 px-6 py-10 sm:px-10 sm:py-14 dark:border-white/[0.08]">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                Effective Date: 23 October 2026 · Notice version 2026-10-23
+                Effective Date: 26 October 2026 · Notice version 2026-10-26
               </p>
               <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl dark:text-white">
                 Terms of Service
@@ -191,7 +191,7 @@ export default function TermsPage() {
                     <li>Attempting to break into our systems, uploading malicious files, or impersonating anyone else</li>
                   </ul>
                   <p>
-                    <span className="font-semibold text-zinc-900 dark:text-white">Warnings and team alerts.</span> Automated misuse detection may record a yellow warning and its reason, and send an internal alert to the TMH team through Resend. Administrators can review the context and apply a red restriction across Haven chat modes. Warning and restriction emails may be sent where a linked email is available; guest notices can appear in the chat instead. A flag is an assessment that can be mistaken, not proof of unlawful conduct.
+                    <span className="font-semibold text-zinc-900 dark:text-white">Warnings and team alerts.</span> Automated misuse detection records a first strike, issues a yellow warning on the second distinct abusive message, and applies a red restriction on the third. Yellow and red transitions alert the TMH team through Resend. Administrators can review the context and clear or change a restriction. Specific criticism and legitimate complaints are not misuse. Warning and restriction emails may be sent where a linked email is available; guest notices can appear in the chat instead. A flag is an assessment that can be mistaken, not proof of unlawful conduct.
                   </p>
                   <p>
                     <span className="font-semibold text-zinc-900 dark:text-white">Review and appeal.</span> If access is restricted, email info@themarketinghaven.xyz to explain the context and request human review. We may retain relevant safety records where necessary and lawful and respond to valid legal requests. A chat restriction does not itself remove statutory consumer rights or automatically cancel an existing purchase or separate service agreement.

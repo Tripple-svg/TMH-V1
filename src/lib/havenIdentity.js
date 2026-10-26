@@ -1,4 +1,4 @@
-export const CHAT_NOTICE_VERSION = '2026-10-23';
+export const CHAT_NOTICE_VERSION = '2026-10-26';
 const KEY = 'haven_chat_identity_v1';
 let memoryIdentity;
 export function getHavenIdentity() {

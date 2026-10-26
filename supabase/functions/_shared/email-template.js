@@ -22,11 +22,25 @@ ${href ? `<table role="presentation" cellpadding="0" cellspacing="0" style="marg
 </td></tr></table><p style="font:11px/1.6 Arial,sans-serif;color:#71717a;">Clarity. Direction. Work that matters.</p></td></tr></table></body></html>`;
 }
 
-export function purchaseEmail(reference = '') {
+function purchaseEmailV1(reference = '') {
   const paragraphs = ['Hi there,', 'Thank you for purchasing The Unseen Playbook. Your copy is ready.',
     'Keep this email if you need another copy. The button takes you to our Shop; open the Playbook panel to download.',
     'On a different device, choose Already purchased? and verify your checkout email and Paystack reference.',
     'Need further guidance? Verify in the Shop, then ask Haven how to apply an idea to your business. You can also reply to this email for help.'];
   return { text: `${paragraphs.join('\n\n')}${reference ? `\n\nYour Paystack reference: ${reference}` : ''}\n\nAccess Your Playbook: https://themarketinghaven.xyz/#shop\n\nTalk soon,\nTeam Haven.`,
     html: editorialEmail({ label: 'YOUR PLAYBOOK', title: 'A clearer next move.', paragraphs, details: reference ? [['Your Paystack reference', reference]] : [], button: { label: 'Access Your Playbook', href: 'https://themarketinghaven.xyz/#shop' } }) };
+}
+
+
+export function purchaseEmail(reference = '', version = 'editorial-v2') {
+  if (version === 'editorial-v1') return purchaseEmailV1(reference);
+  const paragraphs = ['Hi there,', 'Thank you for choosing The Unseen Playbook.',
+    'If you have already downloaded your copy, you are ready to begin. Start with the problem you most want to solve, and turn one idea into an action for your business.',
+    'Need your copy again? Open the Shop using the button below. If your purchase is still saved on that device, your download will be available. Otherwise, choose Already purchased and confirm your checkout inbox with a one-time code. Keep your receipt reference for recovery.',
+    'As you read, Haven can help you apply the ideas to your own brand. Bring a question or a short draft, and work through the next step together. You can also reply to this email for help.'];
+  return { text: paragraphs.join('\n\n') + (reference ? '\n\nYour Paystack reference: ' + reference : '') +
+    '\n\nAccess Your Playbook: https://themarketinghaven.xyz/#shop\n\nTalk soon,\nTeam Haven.',
+    html: editorialEmail({ label: 'YOUR PLAYBOOK', title: 'Your next chapter starts here.', paragraphs,
+      details: reference ? [['Your Paystack reference', reference]] : [],
+      button: { label: 'Access Your Playbook', href: 'https://themarketinghaven.xyz/#shop' } }) };
 }
