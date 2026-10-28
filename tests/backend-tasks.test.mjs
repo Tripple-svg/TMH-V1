@@ -1,3 +1,4 @@
+import { withSecurityRpc } from './helpers/security-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -11,7 +12,7 @@ function loadHandler(name, { client = {}, fetch = () => { throw new Error('Unexp
   const source = readFileSync(new URL(`../supabase/functions/${name}/index.ts`, import.meta.url), 'utf8');
   const code = buildSync({ stdin: { contents: source, loader: 'ts', resolveDir: new URL(`../supabase/functions/${name}/`, import.meta.url).pathname.replace(/^\/(\w:)/, '$1') }, bundle: true, write: false, format: 'cjs', platform: 'node', external: ['https://*'] }).outputFiles[0].text;
   vm.runInNewContext(code, {
-    require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: () => client },
+    require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: () => withSecurityRpc(client) },
     Deno: { serve(fn) { handler = fn; }, env: { get: (name) => ({ ...secrets, ...env })[name] } },
     fetch, Response, Request, Headers, AbortSignal, URL, TextEncoder, TextDecoder, Uint8Array, crypto: webcrypto,
     console: { error() {}, warn() {}, log() {} },
@@ -93,7 +94,22 @@ test('download security: invalid payments, post-cutover underpayments and public
 function database(seed) {
   const rows = structuredClone(seed);
   const calls = [];
-  const client = { rpc: async (name, args = {}) => { calls.push({ action: 'rpc', name, values: args.p_booking }); return { error: null }; }, from(table) {
+  const client = { rpc: async (name, args = {}) => {
+    calls.push({ action: 'rpc', name, values: args.p_booking });
+    if (name === 'prepare_booking_confirmation') {
+      rows.booking_confirmation_emails ||= [];
+      let saved=rows.booking_confirmation_emails.find(row=>row.id===args.p_id);
+      if(!saved){saved={id:args.p_id,payload:args.p_payload};rows.booking_confirmation_emails.push(saved);}
+      return {data:structuredClone(saved),error:null};
+    }
+    if (name === 'record_strategy_call_booking') {
+      rows.strategy_call_bookings ||= [];
+      const previous=rows.strategy_call_bookings.find(row=>row.invitee_uri===args.p_booking.invitee_uri);
+      if(previous)Object.assign(previous,args.p_booking);
+      else rows.strategy_call_bookings.push({id:`booking-${rows.strategy_call_bookings.length}`,booking_email_version:'legacy-v1',...args.p_booking});
+    }
+    return { error: null };
+  }, from(table) {
     let filters = [], sort = null, cap = Infinity, offset = 0, action = 'select', values;
     const run = async (single = false) => {
       calls.push({ table, action, values });

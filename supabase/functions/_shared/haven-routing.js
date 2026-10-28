@@ -118,8 +118,14 @@ export function supportHelpReply(text, scope, context = {}) {
   if (/\b(?:are you|is this)\b.{0,25}\b(?:human|real person|ai|bot)\b/.test(value)) return 'I am Haven, TMH’s AI marketing guide. I can help with marketing and questions about this platform. If you need a person, Team Haven is available through the contact details in the footer.';
   if (/\b(?:another|new|second|redo|again)\b/.test(value) && /\b(?:brand review|review)\b/.test(value)) return 'Your saved brand review normally reopens from Request a Free Brand Review. Use the review correction controls to replace a wrong link or screenshot. For a different brand or a fresh review, contact info@themarketinghaven.xyz so the team can help without mixing your records. Deleting a review is a separate privacy action.';
   if (/\b(?:lost|missing|recover|recovery|restore|disappeared)\b/.test(value) && /\b(?:chat|review|access)\b/.test(value) && !/\b(?:playbook|purchase|download)\b/.test(value)) return 'A visible older chat does not restore the secure review access key. Contact info@themarketinghaven.xyz to verify ownership and recover that review. Please do not share an access token in chat. Clearing storage again will not restore the key.';
-  if (SUPPORT_ISSUE.test(value) && /\b(?:playbook|purchase|download|paid|receipt|payment|otp)\b/.test(value)
-    && /\b(?:missing|not|haven.t|didn.t|pending|never|where|broken|recover|expired|working|failed|help|problem)\b/.test(value)) return 'Please do not pay again to recover your copy. Open Get The Unseen Playbook in the Shop: saved valid access opens your download, or Already purchased lets you confirm your checkout email and receipt reference with a six-digit email code. Enter those details and the code only in that secure panel, not this chat. If verification still fails, contact info@themarketinghaven.xyz; I cannot resend mail or repair payment access from chat.';
+  if (/\b(?:otp|code)\b/.test(value) && /arriv|receiv|inbox|spam|delay|sent|email/.test(value)) return 'Check the inbox and spam folder for the checkout email you entered. If the code has not arrived, wait for the resend timer in Already purchased, then request a fresh code there. Avoid requesting several codes at once. If it is still missing, contact info@themarketinghaven.xyz; I cannot resend it from chat, and you should not share a code here.';
+  if (/\b(?:playbook|download|copy|pdf|ebook)\b/.test(value)
+    && /\b(?:missing|lost|not|haven.t|didn.t|where|how|broken|recover|again|another|different|laptop|computer|expired|failed|help|problem)\b/.test(value)) {
+    if (/\b(?:downloaded|download was|file|files|folder)\b/.test(value) && /\b(?:lost|find|missing|where|saved)\b/.test(value)) return 'First check Downloads or the Files app on the device you used. If the copy is missing, open Get The Unseen Playbook again. Saved purchase access can reopen it on a later page visit; on another device, choose Already purchased to verify your checkout inbox. You do not need to pay again.';
+    if (/\b(?:another|different|laptop|computer|new phone)\b/.test(value)) return 'If you already bought the book, you can open your copy on that device. Go to Get The Unseen Playbook, choose Already purchased, and enter your checkout email and Paystack reference. Confirm the six-digit code sent to that inbox to unlock the download. Enter those details in the recovery panel, not here.';
+    if(!/\b(?:paid|purchased|bought|already|again|lost|broken|missing|expired|my)\b/.test(value))return 'After a successful checkout, your download opens in the Playbook panel. If you already bought a copy, open Get The Unseen Playbook and choose Already purchased to recover it using your checkout email, receipt reference and the code sent to your inbox. Keep those details in that panel rather than this chat.';
+    return 'You do not need to pay again. Open Get The Unseen Playbook: if your purchase is saved on this device, use its download option. Otherwise, choose Already purchased, enter your checkout email and Paystack reference, then confirm the six-digit code sent to your inbox. If that still does not work, email info@themarketinghaven.xyz. Keep your recovery details and code in the secure panel, not this chat.';
+  }
   if (/\b(?:where|find|navigate|take me|show me|how do i)\b/.test(value)) {
     if (/\b(?:shop|playbook|download)\b/.test(value)) return 'Open Playbook in the menu, or scroll to Digital Products. Get The Unseen Playbook opens its panel. A new verified checkout opens the download directly; on another device or without saved access, Already purchased confirms the checkout inbox with a one-time code. Enter recovery details only in that panel.';
     if (/\b(?:services|web engineering|growth|content)\b/.test(value)) return 'Open Services in the menu. Brand & Web Engineering covers brand/web implementation, Strategic Growth & Consulting covers positioning and growth systems, and Content & Social Architecture covers content planning and production. Each card explains the service and opens its enquiry.';
@@ -136,23 +142,26 @@ const SERVICE_QUESTIONS = {
 };
 function bookExplanation(raw, state) {
   const candidate = cleanReply(raw).replace(/\[\[(?:STEP:[A-Z0-9_]+|DIAGNOSTIC_QUESTION|CHIPS:.*?)\]\]/gs, '').trim();
-  if (/The Unseen Playbook/.test(candidate) && candidate.length <= 550 && !PRICE.test(candidate)
-    && !/\?|\b(?:buy|purchase|guarantee|will fix|losing money|bleeding money)\b/i.test(candidate)) return candidate;
+  if (/The Unseen Playbook/.test(candidate) && candidate.length <= 550 && !PRICE.test(candidate) && !/learning need|gap we have discussed|practical exercises for/i.test(candidate)
+    && !/\?|\b(?:buy|purchase|guarantee|will fix|exact blueprint|guaranteed fix|losing money|bleeding money)\b/i.test(candidate)) return candidate;
   const customer = /\b(?:audience|customer|buyer|anybody)\b/i.test(state.evidence.join(' '));
   return customer
-    ? 'The Unseen Playbook can help you choose a clearer audience and explain the offer to them. Its practical exercises give you a way to work on the gap we have discussed. You can see what it covers below.'
-    : 'The Unseen Playbook gives brand owners and creators practical guidance for a clearer offer, positioning and trust. It can help you work through the learning need we have discussed at your own pace. You can see what it covers below.';
+    ? 'The Unseen Playbook is relevant here because you need to choose who the offer is for and give that buyer a clear reason to care. Use it to sharpen one offer for one audience, then use Chapter 5, The Shift From Knowing to Doing, to put your next step into practice. The button below opens the book details.'
+    : /\btrust|proof|testimonial/i.test(state.evidence.join(' '))
+      ? 'The Unseen Playbook explains how clarity, positioning and trust affect the buying decision. For the proof gap you described, look at how you can give a buyer a concrete reason to believe the offer, then use Chapter 5 to turn that into one practical action. Open the details below to see whether it fits.'
+      : 'The Unseen Playbook gives you a structured way to examine your offer, positioning and the obstacles a buyer faces. Chapter 5, The Shift From Knowing to Doing, helps move that reflection into a practical next step. The button below opens the details so you can decide whether it suits what you want to work on.';
 }
 function callExplanation(raw) {
   const candidate = cleanReply(raw).replace(/\[\[(?:STEP:[A-Z0-9_]+|DIAGNOSTIC_QUESTION|CHIPS:.*?)\]\]/gs, '').trim();
   if (candidate && candidate.length <= 550 && /\b(?:call|scope|team can discuss)\b/i.test(candidate)
-    && !/\?|\b(?:playbook|booked|scheduled|guarantee|losing money|bleeding money|before i recommend|tell me your goal|qualif(?:y|ication))\b/i.test(candidate)) return candidate;
+    && !/\?|\b(?:playbook|booked|scheduled|guarantee|losing money|bleeding money|before i recommend|tell me your goal|qualif(?:y|ication))\b/i.test(candidate)) return /\bstrategy call\b/i.test(candidate)?candidate:candidate.replace(/\b(?:free\s+)?call\b/i,'free strategy call');
   return 'The team can discuss the scope of the work you have described on a free 25-minute strategy call. Choose an available time using the button below; the call helps establish fit and does not commission a project.';
 }
 function result(text, state, action) {
   state.lastAction = action;
   state.problemType = state.need === 'learning' ? 'foundational' : ['implementation', 'research'].includes(state.need) ? 'operational' : 'unknown';
-  return { text: cleanMetadata(text), routingState: state };
+  const visible=cleanMetadata(text).replace(/\b(?:free\s+)?(?:(\d+)[ -]minute\s+)?strategy call(s)?\b/gi,(_match,minutes,plural)=>`free ${minutes?minutes+'-minute ':''}strategy call${plural||''}`);
+  return { text: visible, routingState: state };
 }
 
 export function resolveHavenRouting(rawText, context = {}) {
@@ -266,7 +275,7 @@ export function resolveHavenRouting(rawText, context = {}) {
     }
     if (knowsNeed && wantsTeam) {
       state.permission = 'asked'; state.pendingAction = 'call';
-      return result('The work you have described can be discussed with the team. Would you like to explore its scope on a 25-minute strategy call?\n[[STEP:AWAITING_PERMISSION]]', state, 'offer_call');
+      return result('The work you have described can be discussed with the team. Would you like to explore its scope on a free 25-minute strategy call?\n[[STEP:AWAITING_PERMISSION]]', state, 'offer_call');
     }
     if (knowsNeed && learningFits) {
       state.permission = 'asked'; state.pendingAction = 'playbook';

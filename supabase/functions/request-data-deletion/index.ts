@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { publicRequestLimit } from '../_shared/abuse-limits.ts';
+import { HavenRequestError } from '../_shared/haven-request.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -31,7 +33,7 @@ function corsHeaders(origin: string | null) {
 function json(body: unknown, origin: string | null, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control':'no-store', ...(status===429?{'Retry-After':'600'}:{}) },
   });
 }
 
@@ -82,10 +84,11 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
     });
+    await publicRequestLimit(supabase,req,SUPABASE_SERVICE_ROLE_KEY,'deletion-email');
     const { data: reviews, error: reviewError } = await supabase
       .from('brand_reviews')
       .select('id, email')
-      .ilike('email', email)
+      .ilike('email', email.replace(/[\\%_]/g,'\\$&'))
       .limit(1);
 
     if (reviewError) {
@@ -137,10 +140,10 @@ serve(async (req) => {
     });
 
     if (!resendResponse.ok) {
-      const detail = await resendResponse.text().catch(() => '');
-      console.error('Resend rejected data deletion request:', resendResponse.status, detail);
+      console.error('Resend rejected data deletion request:', resendResponse.status);
     }
   } catch (error) {
+    if(error instanceof HavenRequestError)return json({ok:false,error:error.message},origin,error.status);
     console.error('request-data-deletion failed:', error);
   }
 

@@ -16,7 +16,7 @@ Deno.serve(async request => {
     const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), url = Deno.env.get('SUPABASE_URL');
     if (!secret || !url) throw new HavenRequestError('Recovery is not configured.', 503);
     const db = createClient(url, secret, { auth: { persistSession: false } });
-    await limitRecovery(db, 'recovery-ip:' + await requestBucket(request, secret), 20);
+    await limitRecovery(db, 'recovery-ip:' + await requestBucket(request, secret), 5, 900);
     await limitRecovery(db, 'recovery-pair:' + await codeHash(reference, email, secret), 3);
     const id = crypto.randomUUID();
     const generic = (challengeId = id) => json({ ok: true, challengeId, expiresIn: 600, resendAfter: 60,
@@ -44,6 +44,7 @@ Deno.serve(async request => {
     }
     return generic();
   } catch (error) {
+    if(error instanceof HavenRequestError && error.status===429)Object.assign(headers,{'Retry-After':String(error.retryAfter||900)});
     return json({ ok: false, error: error instanceof HavenRequestError ? error.message : 'Recovery is temporarily unavailable.' }, error instanceof HavenRequestError ? error.status : 502);
   }
 });

@@ -1,7 +1,7 @@
 import { STEPS } from './haven-prompts.js';
 
 export class HavenRequestError extends Error {
-  constructor(message: string, public status = 400) { super(message); }
+  constructor(message: string, public status = 400, public retryAfter?: number) { super(message); }
 }
 
 export const ALLOWED_ORIGINS = [

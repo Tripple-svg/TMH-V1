@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useInView, useReducedMotion } from 'framer-motion';
-import { Play, VolumeX, X } from 'lucide-react';
+import { Play, Pause, VolumeX, Volume2, Maximize, X } from 'lucide-react';
+
+const elapsed = value => `${Math.floor((Number(value)||0)/60)}:${String(Math.floor((Number(value)||0)%60)).padStart(2,'0')}`;
 
 export default function AboutStoryVideo({ videoSrc, poster }) {
   const shellRef = useRef(null);
@@ -13,6 +15,10 @@ export default function AboutStoryVideo({ videoSrc, poster }) {
   const [saveData, setSaveData] = useState(() => typeof navigator !== 'undefined' && navigator.connection?.saveData === true);
   const [playbackError, setPlaybackError] = useState(false);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
 
   useEffect(() => {
     const connection = navigator.connection;
@@ -54,6 +60,8 @@ export default function AboutStoryVideo({ videoSrc, poster }) {
     const video = videoRef.current;
     if (!video) return;
     video.currentTime = 0; video.muted = false; video.loop = false;
+    if(video.volume===0){video.volume=1;setVolume(1);}
+    setPosition(0); setMuted(false);
     setPlaybackError(false); setAutoplayBlocked(false); setActive(true);
     video.play()?.catch(() => setAutoplayBlocked(true));
   };
@@ -70,9 +78,12 @@ export default function AboutStoryVideo({ videoSrc, poster }) {
     transition={{ duration: reduceMotion ? 0 : 0.6 }}
     className="relative w-full rounded-[26px] border border-white/30 bg-white/[0.08] p-[3px] shadow-2xl shadow-black/20 backdrop-blur-lg dark:border-white/20 dark:bg-white/[0.06] sm:rounded-[30px]">
     <div className="relative aspect-video overflow-hidden rounded-[22px] bg-zinc-950 ring-1 ring-inset ring-white/10 sm:rounded-[26px]">
-      {videoSrc ? <video ref={videoRef} src={videoSrc} poster={poster} muted={!active} loop={!active} playsInline controls={active}
+      {videoSrc ? <video ref={videoRef} src={videoSrc} poster={poster} muted={!active || muted} loop={!active} playsInline
         preload={saveData || reduceMotion ? 'none' : 'metadata'} aria-label={active ? 'TMH story video player' : undefined} aria-hidden={!active}
         onPlay={() => { setPlaying(true); setAutoplayBlocked(false); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
+        onClick={active ? togglePlayback : undefined}
+        onLoadedMetadata={event=>setDuration(Number.isFinite(event.currentTarget.duration)?event.currentTarget.duration:0)}
+        onTimeUpdate={event=>setPosition(event.currentTarget.currentTime||0)}
         onError={() => setPlaybackError(true)} className="absolute inset-0 h-full w-full object-cover" />
         : poster && <img src={poster} alt="" className="absolute inset-0 h-full w-full object-cover" />}
       {!active && <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/5" />}
@@ -87,10 +98,14 @@ export default function AboutStoryVideo({ videoSrc, poster }) {
         </button>
       </>}
       {active && <>
-        <button type="button" onClick={togglePlayback} aria-label={playing ? 'Pause story video' : 'Resume story video'}
-          className="absolute inset-x-0 bottom-12 top-0 flex items-center justify-center focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-white">
-          {!playing && <span className="rounded-full border border-white/30 bg-black/20 p-3 text-white backdrop-blur-sm"><Play className="h-7 w-7" fill="currentColor" aria-hidden="true" /></span>}
-        </button>
+        <div className="absolute inset-x-2 bottom-2 flex flex-wrap items-center gap-2 rounded-xl border border-white/20 bg-black/25 p-2 text-white backdrop-blur-md sm:inset-x-3 sm:bottom-3">
+          <button type="button" onClick={togglePlayback} aria-label={playing ? 'Pause story video' : 'Resume story video'} className="rounded-lg border border-white/20 bg-white/10 p-2 focus-visible:outline-2 focus-visible:outline-white">{playing?<Pause className="h-4 w-4" aria-hidden="true"/>:<Play className="h-4 w-4" fill="currentColor" aria-hidden="true"/>}</button>
+          <input type="range" min="0" max={duration||0} step="0.1" value={Math.min(position,duration||0)} disabled={!duration} aria-label="Seek story video" aria-valuetext={`${elapsed(position)} of ${elapsed(duration)}`} onChange={event=>{const value=Number(event.target.value);if(videoRef.current){videoRef.current.currentTime=value;setPosition(value);}}} className="min-w-0 flex-1 accent-white"/>
+          <span className="text-[10px] tabular-nums">{elapsed(position)} / {elapsed(duration)}</span>
+          <button type="button" aria-label={muted?'Unmute story video':'Mute story video'} onClick={()=>{if(videoRef.current){videoRef.current.muted=!muted;setMuted(!muted);}}} className="rounded-lg p-2 focus-visible:outline-2 focus-visible:outline-white">{muted?<VolumeX className="h-4 w-4"/>:<Volume2 className="h-4 w-4"/>}</button>
+          <input type="range" min="0" max="1" step="0.05" value={volume} aria-label="Story video volume" onChange={event=>{const value=Number(event.target.value);if(videoRef.current){videoRef.current.volume=value;videoRef.current.muted=value===0;setVolume(value);setMuted(value===0);}}} className="hidden w-16 accent-white sm:block"/>
+          <button type="button" aria-label="Show story video fullscreen" onClick={()=>{const shell=shellRef.current;if(shell?.requestFullscreen)shell.requestFullscreen()?.catch(()=>{});else videoRef.current?.webkitEnterFullscreen?.();}} className="rounded-lg p-2 focus-visible:outline-2 focus-visible:outline-white"><Maximize className="h-4 w-4"/></button>
+        </div>
         <button type="button" onClick={closePlayback} aria-label="Close story playback" title="Return to muted preview"
           className="absolute right-3 top-3 z-10 rounded-full border border-white/25 bg-black/20 p-2.5 text-white backdrop-blur-sm hover:bg-black/40 focus-visible:outline-2 focus-visible:outline-white"><X className="h-4 w-4" aria-hidden="true" /></button>
       </>}

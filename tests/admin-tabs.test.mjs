@@ -25,7 +25,7 @@ function harness({ dashboard = false, send = async () => ({ status: 200, ...sess
   let cursor = 0, refCursor = 0, effectCursor = 0, lost = 0;
   const context = {
     module: { exports: {} },
-    require(name) { return name.includes('adminWorkspace') ? workspace : { __esModule:true, default:function InquiryWorkflow(){} }; },
+    require(name) { return name.includes('adminWorkspace') ? workspace : name.includes('team-assignment-public') ? {SERVICE_NAMES:{web:'Brand & Web Engineering',growth:'Strategic Growth & Consulting',content:'Content & Social Architecture'}} : { __esModule:true, default:function InquiryWorkflow(){} }; },
     React: { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) },
     useState(initial) {
       const slot = cursor++;

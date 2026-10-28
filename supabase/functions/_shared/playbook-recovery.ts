@@ -28,7 +28,7 @@ export async function codeHash(id: string, code: string, secret: string) {
 export async function limitRecovery(supabase: any, bucket: string, max: number, seconds = 3600) {
   const { data, error } = await supabase.rpc('consume_playbook_limit', { p_bucket: bucket, p_max: max, p_seconds: seconds });
   if (error) throw new HavenRequestError('Purchase security checks are unavailable. Please try again shortly.', 503);
-  if (data !== true) throw new HavenRequestError('Too many attempts. Please wait before trying again.', 429);
+  if (data !== true) throw new HavenRequestError(`Too many attempts. Please wait ${Math.ceil(seconds/60)} minutes before trying again.`, 429, seconds);
 }
 export async function requestBucket(request: Request, secret: string) {
   const ip = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';

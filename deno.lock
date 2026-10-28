@@ -11,6 +11,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@electric-sql/pglite@~0.5.11",
         "npm:@esbuild/win32-x64@~0.28.2",
         "npm:@eslint/js@^10.0.1",
         "npm:@google/genai@^2.18.0",

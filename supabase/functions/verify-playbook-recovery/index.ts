@@ -14,7 +14,7 @@ Deno.serve(async request => {
     const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), url = Deno.env.get('SUPABASE_URL');
     if (!secret || !url) throw new HavenRequestError('Recovery is not configured.', 503);
     const db = createClient(url, secret, { auth: { persistSession: false } });
-    await limitRecovery(db, 'redeem-ip:' + await requestBucket(request, secret), 30);
+    await limitRecovery(db, 'redeem-ip:' + await requestBucket(request, secret), 5, 600);
     const token = privateToken();
     const { data, error } = await db.rpc('redeem_playbook_recovery', {
       p_id: body.challengeId, p_code_hash: await codeHash(body.challengeId, body.code, secret), p_grant_hash: await digest(token),
@@ -32,6 +32,7 @@ Deno.serve(async request => {
       return json({ ...access, downloadPending: true, message: 'Your email is confirmed. The download is temporarily unavailable; retry opening your copy shortly.' });
     }
   } catch (error) {
+    if(error instanceof HavenRequestError && error.status===429)Object.assign(headers,{'Retry-After':String(error.retryAfter||600)});
     return json({ ok: false, error: error instanceof HavenRequestError ? error.message : 'Recovery is temporarily unavailable.' }, error instanceof HavenRequestError ? error.status : 502);
   }
 });

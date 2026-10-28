@@ -1,9 +1,10 @@
+import { withSecurityRpc, securityGlobals } from './helpers/security-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { webcrypto } from 'node:crypto';
 import vm from 'node:vm';
-import { transformSync } from 'esbuild';
+import { transformSync, buildSync } from 'esbuild';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 function render(path, name, overrides = {}) {
@@ -108,9 +109,9 @@ function deletionHandler(name) {
       then(resolve, reject) { return Promise.resolve({ data: table === 'brand_reviews' && name === 'request-data-deletion' ? [{ id: 'review-1', email: 'owner@example.com' }] : [], error: null }).then(resolve, reject); },
     };
   } };
-  const code = transformSync(read(`supabase/functions/${name}/index.ts`), { loader: 'ts', format: 'cjs' }).code;
-  vm.runInNewContext(code, {
-    require: (module) => module.includes('server.ts') ? { serve: (callback) => { handler = callback; } } : { createClient: () => client },
+  const code = buildSync({entryPoints:[`supabase/functions/${name}/index.ts`],bundle:true,write:false,format:'cjs',platform:'node',external:['https://*']}).outputFiles[0].text;
+  vm.runInNewContext(code, { ...securityGlobals,
+    require: (module) => module.includes('server.ts') ? { serve: (callback) => { handler = callback; } } : { createClient: () => withSecurityRpc(client) },
     Deno: { env: { get: () => 'configured-for-test' } },
     Response, Request, Uint8Array, crypto: webcrypto,
     fetch: async (_, options) => { emails.push(JSON.parse(options.body)); return new Response(JSON.stringify({ id: 'email-1' })); },

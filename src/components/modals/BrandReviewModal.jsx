@@ -275,17 +275,22 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
         body: JSON.stringify({ email: formData.email.trim() }),
       });
 
-      if (!response.ok) throw new Error(`Email check failed with status ${response.status}`);
+      if (!response.ok) {
+        setErrors({email:response.status===429?'Too many email checks. Please wait 10 minutes, then try again.':'We could not check your email. Please try again shortly.'});
+        return;
+      }
 
       const data = await response.json();
       if (data?.exists === true) {
         setErrors({
-          email: 'This email has already been used to submit a review. To submit yours, use a different email.',
+          email: 'This email already has a review. Continue on the original device, or contact info@themarketinghaven.xyz for help recovering access.',
         });
         return;
       }
     } catch (error) {
       console.error('Unable to check whether the email has already submitted a review:', error);
+      setErrors({email:'We could not check your email. Check your connection and try again.'});
+      return;
     } finally {
       setCheckingEmail(false);
     }

@@ -1,9 +1,10 @@
+import { withSecurityRpc } from './helpers/security-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
-import { transformSync } from 'esbuild';
+import { transformSync, buildSync } from 'esbuild';
 
 const ENV = {
   SUPABASE_URL: 'https://project.supabase.co',
@@ -91,9 +92,9 @@ function database(seed = [{ id: 'review-1', email: 'Owner@Example.com', flag_sta
 function load(name, { db = database(), env = {}, fetch: send = async () => json({ id: 'email-1' }) } = {}) {
   let handler;
   const mail = [];
-  const code = transformSync(readFileSync(new URL(`../supabase/functions/${name}/index.ts`, import.meta.url), 'utf8'), { loader: 'ts', format: 'cjs' }).code;
+  const code = buildSync({entryPoints:[`supabase/functions/${name}/index.ts`],bundle:true,write:false,format:'cjs',platform:'node',external:['https://*']}).outputFiles[0].text;
   vm.runInNewContext(code, {
-    require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: () => db.client },
+    require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: () => withSecurityRpc(db.client) },
     Deno: { env: { get: (key) => ({ ...ENV, ...env })[key] } },
     fetch: async (url, options) => { mail.push({ url, ...options, body: JSON.parse(options.body) }); return send(url, options); },
     Response, Request, Headers, AbortSignal, TextEncoder, Uint8Array, crypto: webcrypto,

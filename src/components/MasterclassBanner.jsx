@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, X } from 'lucide-react';
 
-const YOUTUBE_VIDEO_ID = 'REPLACE_WITH_VIDEO_ID';
+const YOUTUBE_VIDEO_ID = import.meta.env.VITE_FREE_CLASS_VIDEO_ID?.trim() || '';
+const HAS_VIDEO = /^[A-Za-z0-9_-]{11}$/.test(YOUTUBE_VIDEO_ID);
 
 export default function MasterclassBanner() {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -76,13 +77,13 @@ export default function MasterclassBanner() {
 
             {isPlaying && (
               <div className="absolute inset-0 z-0 bg-black">
-                <iframe
+                {HAS_VIDEO ? <iframe
                   src={`https://www.youtube.com/embed/${YOUTUBE_VIDEO_ID}?autoplay=1&rel=0&modestbranding=1`}
                   title="Free Class — The Marketing Haven"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
                   className="absolute inset-0 w-full h-full"
-                />
+                /> : <div role="status" className="flex h-full items-center justify-center px-8 text-center text-sm leading-relaxed text-zinc-300">The free class video is being prepared. Please check back or contact Team Haven for an update.</div>}
               </div>
             )}
 
@@ -95,12 +96,12 @@ export default function MasterclassBanner() {
                   transition={{ duration: 0.4, delay: 0.2 }}
                   className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"
                 >
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full bg-zinc-100 text-zinc-950 flex items-center justify-center shadow-2xl shadow-black/25 transition-transform group-hover:scale-105">
+                  <button type="button" onClick={handlePlay} aria-label={HAS_VIDEO ? 'Play the free class' : 'Free class availability'} className="pointer-events-auto w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full bg-zinc-100 text-zinc-950 flex items-center justify-center shadow-2xl shadow-black/25 transition-transform group-hover:scale-105">
                     <Play
                       className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 text-zinc-950 ml-1"
                       fill="currentColor"
                     />
-                  </div>
+                  </button>
                 </motion.div>
               )}
             </AnimatePresence>

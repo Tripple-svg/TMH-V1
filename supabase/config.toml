@@ -62,3 +62,9 @@ verify_jwt = false
 
 [functions.playbook-followup-unsubscribe]
 verify_jwt = false
+
+[functions.admin-team-assignment]
+verify_jwt = false
+
+[functions.read-team-assignment]
+verify_jwt = false

@@ -1,3 +1,5 @@
+import { webcrypto } from 'node:crypto';
+import { withSecurityRpc } from './helpers/security-fixture.mjs';
 import {test} from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {buildSync} from 'esbuild';
 const cache=new Map();
 function fixture(name,{sent=false,confirm=true,status=503}={}){
@@ -5,7 +7,7 @@ function fixture(name,{sent=false,confirm=true,status=503}={}){
  const db={functions:{async invoke(name,options){calls.push({name,options});if(confirm)row.welcome_email_sent=true;return {data:{ok:true}}}},from(table){assert.equal(table,'brand_reviews');let patch;return {select(){return this},eq(){return this},update(value){patch=value;return this},async maybeSingle(){return {data:{...row},error:null}},then(resolve){Object.assign(row,patch);return Promise.resolve({error:null}).then(resolve)}}}};
  const env={SUPABASE_URL:'https://project.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'private-service-secret',ADMIN_PASSWORD:'qa-admin-password',GEMINI_API_KEY:'private-gemini-secret',GEMINI_MODEL:' models/configured-model '};
  if(!cache.has(name))cache.set(name,buildSync({entryPoints:[`supabase/functions/${name}/index.ts`],bundle:true,write:false,format:'cjs',platform:'node',external:['https://*']}).outputFiles[0].text);
- vm.runInNewContext(cache.get(name),{require:specifier=>specifier.includes('server.ts')?{serve:fn=>handler=fn}:{createClient:()=>db},Deno:{env:{get:key=>env[key]}},fetch:async(url,init)=>{fetches.push({url,init});return Response.json({}, {status})},Response,Request,Headers,URL,AbortSignal,console:{error(){},warn(){}}});
+ vm.runInNewContext(cache.get(name),{crypto:webcrypto,TextEncoder,Uint8Array,require:specifier=>specifier.includes('server.ts')?{serve:fn=>handler=fn}:{createClient:()=>withSecurityRpc(db)},Deno:{env:{get:key=>env[key]}},fetch:async(url,init)=>{fetches.push({url,init});return Response.json({}, {status})},Response,Request,Headers,URL,AbortSignal,console:{error(){},warn(){}}});
  const request=body=>new Request('https://project.supabase.co/functions/v1/qa',{method:'POST',headers:{origin:'http://localhost:5173','Content-Type':'application/json'},body:JSON.stringify(body)});
  return{handler,request,calls,fetches,env,row};
 }

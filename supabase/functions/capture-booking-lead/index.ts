@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { publicRequestLimit } from '../_shared/abuse-limits.ts';
+import { HavenRequestError } from '../_shared/haven-request.ts';
 
 const ALLOWED_ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz', 'http://localhost:5173', 'http://localhost:5175'];
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -12,7 +14,7 @@ serve(async (req) => {
     'Content-Type': 'application/json', Vary: 'Origin',
   };
   if (origin && ALLOWED_ORIGINS.includes(origin)) headers['Access-Control-Allow-Origin'] = origin;
-  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers,...(status===429?{'Retry-After':'600'}:{})} });
   if (origin && !ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, 403);
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
@@ -28,13 +30,15 @@ serve(async (req) => {
     const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (!url || !key) return json({ ok: false, error: 'Server misconfigured' }, 500);
     const supabase = createClient(url, key, { auth: { persistSession: false } });
+    await publicRequestLimit(supabase,req,key,'booking-intent');
     const { error } = await supabase.from('booking_intents').insert({
       email, service_id: serviceId,
       ip_address: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
     });
     if (error) throw error;
     return json({ ok: true });
-  } catch {
+  } catch (error) {
+    if(error instanceof HavenRequestError)return json({ok:false,error:error.message},error.status);
     console.error('capture-booking-lead: insert failed');
     return json({ ok: false, error: 'Unable to save booking details' }, 500);
   }

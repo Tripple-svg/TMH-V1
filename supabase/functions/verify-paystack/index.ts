@@ -22,7 +22,7 @@ Deno.serve(async request => {
       // A client-selected reference could belong to an existing buyer. This
       // capability can unlock only the NEW payment generated here.
       const { email } = details;
-      await limitRecovery(db, 'checkout-ip:' + await requestBucket(request, secret), 10);
+      await limitRecovery(db, 'checkout-ip:' + await requestBucket(request, secret), 5);
       const reference = 'UNSEEN_' + crypto.randomUUID();
       const downloadToken = privateToken();
       const { error } = await db.from('playbook_download_grants').insert({
@@ -33,11 +33,13 @@ Deno.serve(async request => {
     }
     const { reference, email } = details;
     if (!await hasDownloadGrant(db, reference, email, body.downloadToken)) {
+      await limitRecovery(db,'invalid-download-ip:'+await requestBucket(request,secret),5,600);
       return json({ ok: false, code: 'recovery_required', error: 'Confirm your checkout email with a one-time code to access your copy.' }, 403);
     }
     if (!await verifyPurchasePayment(db, reference, email)) return json({ ok: false, code: 'payment_not_verified', error: 'Payment has not been confirmed. If you were charged, keep your receipt and retry shortly. You do not need to pay again.' }, 403);
     return json(await downloadResult(db, reference, secret));
   } catch (error) {
+    if(error instanceof HavenRequestError && error.status===429)Object.assign(headers,{'Retry-After':String(error.retryAfter||600)});
     return json({ ok: false, error: error instanceof HavenRequestError ? error.message : 'Purchase verification is temporarily unavailable.' }, error instanceof HavenRequestError ? error.status : 502);
   }
 });

@@ -7,6 +7,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { geminiModel } from '../_shared/haven-model.ts';
+import { authenticateAdmin, AdminAuthError, adminPasswordQuality } from '../_shared/admin-auth.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -53,7 +54,7 @@ function corsHeaders(origin: string | null) {
 function json(body: unknown, origin: string | null, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(status===429?{'Retry-After':'600'}:{}) },
   });
 }
 
@@ -127,15 +128,12 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const password = typeof body?.password === 'string' ? body.password : '';
 
-    if (password !== ADMIN_PASSWORD) {
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+    if (!await authenticateAdmin(supabase,req,SERVICE_ROLE_KEY,password,ADMIN_PASSWORD)) {
       return json({ ok: false, error: 'Unauthorised' }, origin, 401);
     }
 
     if (body.action === 'aiHealth') return json(await aiHealth(), origin);
-
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-      auth: { persistSession: false },
-    });
 
     if (body.action === 'transcript') {
       const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
@@ -254,7 +252,7 @@ serve(async (req) => {
 
     if (purchaseError) console.error('admin-fetch-leads: purchases query failed', purchaseError);
     const { data: bookings, error: bookingsError } = await supabase.from('strategy_call_bookings')
-      .select('id,email,full_name,event_name,start_time,end_time,timezone,status,source,review_id,service_id,provider_created_at,last_synced_at,created_at')
+      .select('id,email,full_name,event_name,start_time,end_time,timezone,status,source,review_id,service_id,confirmation_email_sent,provider_created_at,last_synced_at,created_at')
       .order('start_time', { ascending: false, nullsFirst: false }).limit(MAX_RECORDS);
     const purchases = (purchaseRows || []).map((purchase) => ({
       id: purchase.id, email: purchase.email, reference: purchase.reference,
@@ -272,7 +270,7 @@ serve(async (req) => {
     const followupValid = !followup.error && followup.data && followupKeys.every(key => Number.isSafeInteger(followup.data[key]) && followup.data[key] >= 0);
     const followupStats = followupValid ? Object.fromEntries(followupKeys.map(key => [key, followup.data[key]])) : null;
     return json({
-      ok: true, leads, count: leads.length, operations:operationsError?null:operations, operations_error:operationsError?'Operational counts are unavailable. Apply the reliability migration and refresh.':null, support_sessions: support.sessions, service_sessions: service.sessions, team_inquiries: team.sessions, team_inquiries_error: team.error,
+      ok: true, leads, count: leads.length, operations:operationsError?null:{...operations,adminSecurity:adminPasswordQuality(ADMIN_PASSWORD)}, operations_error:operationsError?'Operational counts are unavailable. Apply the reliability migration and refresh.':null, support_sessions: support.sessions, service_sessions: service.sessions, team_inquiries: team.sessions, team_inquiries_error: team.error,
       followupStats, followup_stats_error: followupStats ? null : 'Purchase follow-up counts are unavailable. Apply the follow-up migration and refresh.',
       purchases, playbook_purchases: purchases, records_limit: MAX_RECORDS, transcript_limit: MAX_TRANSCRIPT_MESSAGES,
       bookings: bookings || [], bookings_error: bookingsError ? 'Could not load bookings. Apply the strategy call bookings migration and refresh.' : null,
@@ -281,6 +279,7 @@ serve(async (req) => {
       purchases_error: purchaseError ? 'Could not load purchases. Check the purchase migrations and server logs, then refresh.' : null,
     }, origin);
   } catch (err) {
+    if(err instanceof AdminAuthError)return json({ok:false,error:err.message},origin,err.status);
     console.error('admin-fetch-leads error:', err);
     return json({ ok: false, error: String(err) }, origin, 500);
   }

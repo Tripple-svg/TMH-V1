@@ -18,4 +18,7 @@ export async function saveCalendlyBooking(supabase: any, event: Record<string, a
     service_id: intent?.service_id || null, provider_created_at: date(invitee.created_at) || date(event.created_at),
   } });
   if (error) throw new Error('Unable to save booking');
+  const {data:confirmation,error:confirmationError}=await supabase.rpc('strategy_booking_confirmation',{p_invitee_uri:inviteeUri});
+  if(confirmationError)throw new Error('Unable to read booking confirmation state');
+  return confirmation;
 }

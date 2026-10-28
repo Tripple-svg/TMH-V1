@@ -3,6 +3,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { hashReviewToken, validReviewCredentials, verifyReviewAccess, ReviewAccessError } from '../_shared/review-access.ts';
 import { readBoundedJson, HavenRequestError } from '../_shared/haven-request.ts';
+import { publicRequestLimit } from '../_shared/abuse-limits.ts';
 
 const ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz'];
 function headers(origin: string | null) {
@@ -17,7 +18,7 @@ const boundedInt = (value: unknown, min: number, max: number) => Math.min(max, M
 
 serve(async (req) => {
   const origin = req.headers.get('origin');
-  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: headers(origin) });
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers(origin),...(status===429?{'Retry-After':'600'}:{})} });
   if (req.method === 'OPTIONS') return new Response('ok', { headers: headers(origin) });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   if (origin && !ORIGINS.includes(origin) && !/^http:\/\/localhost:\d+$/.test(origin)) return json({ ok: false, error: 'Origin not allowed' }, 403);
@@ -58,6 +59,7 @@ serve(async (req) => {
         return json({ ok: false, error: 'Retry the original submission or contact the team' }, 409);
       }
     } else {
+      await publicRequestLimit(supabase,req,key,'review-submit');
       const token = text(body.hcaptchaToken, 10000);
       if (!token) return json({ ok: false, error: 'Please complete the verification check' }, 400);
       const captcha = await fetch('https://api.hcaptcha.com/siteverify', {

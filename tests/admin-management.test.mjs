@@ -1,9 +1,11 @@
+import { webcrypto } from 'node:crypto';
+import { withSecurityRpc } from './helpers/security-fixture.mjs';
 import * as workspace from '../src/lib/adminWorkspace.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { transformSync } from 'esbuild';
+import { transformSync, buildSync } from 'esbuild';
 
 const ENV = { SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-test', ADMIN_PASSWORD: 'admin-test' };
 const request = (body) => new Request('https://project.supabase.co/functions/v1/admin', {
@@ -12,9 +14,9 @@ const request = (body) => new Request('https://project.supabase.co/functions/v1/
 
 function handler(name, client) {
   let handle;
-  const code = transformSync(readFileSync(new URL(`../supabase/functions/${name}/index.ts`, import.meta.url), 'utf8'), { loader: 'ts', format: 'cjs' }).code;
-  vm.runInNewContext(code, {
-    require: (name) => name.includes('server.ts') ? { serve: (fn) => { handle = fn; } } : { createClient: () => client },
+  const code = buildSync({entryPoints:[`supabase/functions/${name}/index.ts`],bundle:true,write:false,format:'cjs',platform:'node',external:['https://*']}).outputFiles[0].text;
+  vm.runInNewContext(code, { crypto:webcrypto,TextEncoder,Uint8Array,
+    require: (name) => name.includes('server.ts') ? { serve: (fn) => { handle = fn; } } : { createClient: () => withSecurityRpc(client) },
     Deno: { env: { get: (key) => ENV[key] } }, Request, Response,
     console: { error() {}, warn() {} },
   });

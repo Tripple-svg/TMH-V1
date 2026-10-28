@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { applyAutomaticFlag, drainModerationNotifications, ModerationError } from '../_shared/haven-moderation.ts';
+import { authenticateAdmin, AdminAuthError } from '../_shared/admin-auth.ts';
 
 const ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz', 'http://localhost:5173', 'http://localhost:5175', 'http://localhost:3000'];
 const STATUSES = ['white', 'yellow', 'red'];
@@ -13,7 +14,7 @@ serve(async (req) => {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
   if (origin && ORIGINS.includes(origin)) headers['Access-Control-Allow-Origin'] = origin;
-  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers,...(status===429?{'Retry-After':'600'}:{})} });
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   if (origin && !ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, 403);
@@ -27,8 +28,8 @@ serve(async (req) => {
     const authorization = req.headers.get('authorization') || '';
     const supabase = createClient(url, key, { auth: { persistSession: false } });
     const serviceCaller = authorization === `Bearer ${key}`;
-    let allowed = serviceCaller
-      || Boolean(adminPassword && typeof body?.password === 'string' && body.password === adminPassword);
+    let allowed = serviceCaller;
+    if(!allowed && typeof body?.password==='string' && adminPassword)allowed=await authenticateAdmin(supabase,req,key,body.password,adminPassword);
     if (!allowed && authorization.startsWith('Bearer ')) {
       // Only server-verified Auth users with an administrator-controlled claim qualify.
       const { data, error } = await supabase.auth.getUser(authorization.slice(7));
@@ -77,6 +78,7 @@ serve(async (req) => {
     if (delivery.deliveryPending) return json({ ok: false, ...saved, error: `Flag saved, but notifications are pending (${delivery.deliveryErrors?.join(', ') || 'delivery diagnostic unavailable'}). Review Resend Logs, then retry.` }, 502);
     return json({ ok: true, ...saved });
   } catch (error) {
+    if(error instanceof AdminAuthError)return json({ok:false,error:error.message},error.status);
     if (error instanceof ModerationError) return json({ ok: false, error: error.message }, error.status);
     console.error('flag-user: request failed');
     return json({ ok: false, error: 'Unable to update flag' }, 500);

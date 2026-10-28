@@ -22,7 +22,7 @@ test('story video: transparent preview controls start the same inline player wit
   for(const label of ['Play story video with sound',null]){
     const f=fixture(),tree=f.render();const trigger=label?button(tree,label):nodes(tree).find(node=>node.type==='button'&&!node.props['aria-label']);
     trigger.props.onClick();assert.equal(f.video.currentTime,0);assert.equal(f.video.muted,false);assert.equal(f.video.loop,false);assert.equal(f.video.plays,1);
-    const active=f.render();assert.equal(nodes(active).find(node=>node.type==='video').props.controls,true);assert.ok(button(active,'Close story playback'));assert.ok(!button(active,'Play story video with sound'));assert.ok(!nodes(active).some(node=>node.props.role==='dialog'));
+    const active=f.render();assert.equal(nodes(active).find(node=>node.type==='video').props.controls,undefined);assert.ok(button(active,'Close story playback'));assert.ok(!button(active,'Play story video with sound'));assert.ok(!nodes(active).some(node=>node.props.role==='dialog'));
   }
 });
 
@@ -30,10 +30,22 @@ test('story video: tap pauses/resumes and close returns to the muted loop withou
   const f=fixture();button(f.render(),'Play story video with sound').props.onClick();let tree=f.render();nodes(tree).find(node=>node.type==='video').props.onPlay();tree=f.render();
   button(tree,'Pause story video').props.onClick();assert.equal(f.video.paused,true);nodes(tree).find(node=>node.type==='video').props.onPause();
   tree=f.render();button(tree,'Resume story video').props.onClick();assert.equal(f.video.paused,false);
-  button(f.render(),'Close story playback').props.onClick();tree=f.render();assert.equal(f.video.muted,true);assert.equal(f.video.loop,true);assert.equal(f.video.currentTime,0);assert.equal(nodes(tree).find(node=>node.type==='video').props.controls,false);assert.ok(button(tree,'Play story video with sound'));
+  button(f.render(),'Close story playback').props.onClick();tree=f.render();assert.equal(f.video.muted,true);assert.equal(f.video.loop,true);assert.equal(f.video.currentTime,0);assert.equal(nodes(tree).find(node=>node.type==='video').props.controls,undefined);assert.ok(button(tree,'Play story video with sound'));
 });
 
 test('story video: reduced motion suppresses the background preview while explicit playback stays available',()=>{
   const f=fixture(true);f.effects[1]();assert.equal(f.video.plays,0);assert.equal(f.video.paused,true);
   button(f.render(),'Play story video with sound').props.onClick();assert.equal(f.video.plays,1);
+});
+
+test('story video: one custom play/pause control retains seeking and mute without native controls',()=>{
+  const f=fixture();button(f.render(),'Play story video with sound').props.onClick();
+  let tree=f.render();let media=nodes(tree).find(node=>node.type==='video');
+  media.props.onLoadedMetadata({currentTarget:{duration:120}});media.props.onPlay();
+  tree=f.render();assert.equal(nodes(tree).find(node=>node.type==='video').props.controls,undefined);
+  assert.equal(nodes(tree).filter(node=>node.type==='button'&&/^(Pause|Resume) story video$/.test(node.props['aria-label']||'')).length,1);
+  const seek=nodes(tree).find(node=>node.props['aria-label']==='Seek story video');assert.equal(seek.props.max,120);
+  seek.props.onChange({target:{value:'45'}});assert.equal(f.video.currentTime,45);
+  button(f.render(),'Mute story video').props.onClick();assert.equal(f.video.muted,true);
+  button(f.render(),'Unmute story video').props.onClick();assert.equal(f.video.muted,false);
 });

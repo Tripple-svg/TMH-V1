@@ -46,3 +46,30 @@ export function purchaseEmail(reference = '', version = 'editorial-v3') {
       details: reference ? [['Your Paystack reference', reference]] : [],
       button: { label: 'Access Your Playbook', href: 'https://themarketinghaven.xyz/#shop' } }) };
 }
+
+/** @param {{name?: string | null, service?: string | null, version?: string}} options */
+export function bookingEmail({ name, service, version = 'editorial-v3' } = {}) {
+  const subject = 'Your strategy call with The Marketing Haven';
+  if (version === 'legacy-v1') return { subject, text: `Hi there,
+
+We're glad you set up a meeting with us to discuss ${service ? `our ${service} services` : 'our services'}.
+
+Take this as confirmation of your spot. We're looking forward to seeing you on the date and time you selected on Calendly.
+
+Two quick things to keep this smooth:
+— Please join on time. If you can't make it, send us an email at info@themarketinghaven.xyz so we can free the slot for someone else.
+— Check your inbox for the Calendly confirmation too — that's the one with the meeting link.
+
+Looking forward to speaking with you.
+
+Team Haven` };
+  const cleanName = typeof name === 'string' ? name.trim().slice(0,200) : '';
+  const paragraphs = [`Hi ${cleanName || 'there'},`,
+    `We're glad you set up a meeting with us${service ? ` to discuss ${service}` : ''}. We're looking forward to seeing you on the date and time you selected on Calendly.`,
+    "Please join on time. If you can't make it, reply to this email or contact info@themarketinghaven.xyz so we can free the slot.",
+    "Check your inbox for the Calendly confirmation too. That email contains your meeting link and the options to reschedule or cancel.",
+    'Looking forward to speaking with you.'];
+  return { subject, text: paragraphs.join('\n\n')+'\n\nContact Team Haven: info@themarketinghaven.xyz\n\nYour friends over at Team Haven\nBuilding with intention.',
+    html: editorialEmail({label:'YOUR STRATEGY CALL',title:'Your conversation is booked.',paragraphs,
+      button:{label:'Contact Team Haven',href:'mailto:info@themarketinghaven.xyz'}}) };
+}

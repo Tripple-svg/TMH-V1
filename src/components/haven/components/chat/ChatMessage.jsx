@@ -77,7 +77,7 @@ function ChipBar({ chips, onChipSelect }) {
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-semibold transition-colors cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>Book a Strategy Call</span>
+              <span>Book a Free Strategy Call</span>
             </button>
           );
         }

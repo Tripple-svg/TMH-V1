@@ -136,14 +136,15 @@ serve(async (req) => {
           if (intentError) throw intentError;
           // Persist every invitee, including unmatched, processed and canceled
           // bookings. The email retry marker is not the bookings source of truth.
-          await saveCalendlyBooking(supabase, { ...event, uri: event.uri || `https://api.calendly.com/scheduled_events/${uuid}` }, invitee, review, intent);
+          const savedBooking = await saveCalendlyBooking(supabase, { ...event, uri: event.uri || `https://api.calendly.com/scheduled_events/${uuid}` }, invitee, review, intent);
           if (event.status === 'canceled' || invitee.status === 'canceled' || processed) continue;
           if (review || intent) matched++;
-          if (intent && intent.confirmation_sent !== true) {
+          const modern = savedBooking?.booking_email_version === 'editorial-v3';
+          if (modern ? (review || intent) && savedBooking.confirmation_email_sent !== true : intent && intent.confirmation_sent !== true) {
             try {
               const { data, error } = await supabase.functions.invoke('send-tmh-booking-confirmation', {
                 headers: internalHeaders(serviceKey),
-                body: { email, name, serviceId: intent.service_id ?? null, bookingIntentId: intent.id },
+                body: { email, name, serviceId: intent?.service_id ?? null, bookingIntentId: intent?.id ?? null, reviewId:review?.id ?? null, inviteeUri:invitee.uri },
               });
               if (error || data?.ok !== true) throw new Error('Booking confirmation failed');
             } catch {
@@ -151,7 +152,7 @@ serve(async (req) => {
               if (!retryExpired) hadFailure = true;
               console.error('calendly-poll-bookings: booking confirmation failed', retryExpired ? 'retry window expired' : 'will retry');
             }
-          } else if (review && !intent && review.booking_confirmation_sent !== true) {
+          } else if (!modern && review && !intent && review.booking_confirmation_sent !== true) {
             // The browser can save its booking intent a few seconds after Calendly.
             // A review match alone must not permanently hide that late intent.
             allInviteesComplete = false;

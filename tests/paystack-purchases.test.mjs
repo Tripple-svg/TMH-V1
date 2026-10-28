@@ -1,3 +1,4 @@
+import { withSecurityRpc } from './helpers/security-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac, webcrypto } from 'node:crypto';
@@ -77,7 +78,7 @@ function load(name, { db = database(), env = {}, logs = [], fetch = () => { thro
     bundle: true, write: false, platform: 'node', format: 'cjs', external: ['https://*'], logLevel: 'silent' }).outputFiles[0].text;
   vm.runInNewContext(code, {
     require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: (url, key) => {
-      assert.equal(url, ENV.SUPABASE_URL); assert.equal(key, ENV.SUPABASE_SERVICE_ROLE_KEY); return db.client;
+      assert.equal(url, ENV.SUPABASE_URL); assert.equal(key, ENV.SUPABASE_SERVICE_ROLE_KEY); return withSecurityRpc(db.client);
     } },
     Deno: { env: { get: (key) => ({ ...ENV, ...env })[key] } },
     fetch, Request, Response, Headers, URL, AbortSignal, TextEncoder, TextDecoder, Uint8Array, crypto: webcrypto,

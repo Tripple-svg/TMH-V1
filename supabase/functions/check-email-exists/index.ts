@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { publicRequestLimit } from '../_shared/abuse-limits.ts';
+import { HavenRequestError } from '../_shared/haven-request.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -50,6 +52,7 @@ serve(async (req) => {
   }
 
   let includeFlag = false;
+  if (origin && !ALLOWED_ORIGINS.includes(origin)) return response(false,origin,undefined,403);
   try {
     const payload = await req.json().catch(() => null);
     const email = typeof payload?.email === 'string' ? payload.email.trim() : '';
@@ -62,6 +65,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
     });
+    await publicRequestLimit(supabase,req,SUPABASE_SERVICE_ROLE_KEY,'email-lookup');
 
     // ILIKE with escaped wildcards is an exact case-insensitive comparison:
     // lower(email) = lower(trimmed input).
@@ -76,9 +80,13 @@ serve(async (req) => {
       return response(false, origin, undefined, includeFlag ? 503 : 200);
     }
 
-    const flagStatus = includeFlag ? reviews?.[0]?.flag_status || 'white' : undefined;
+    // The SDK parser cannot infer this conditional projection; the select above
+    // still limits the actual response to id and the optional public status.
+    const matched = reviews as unknown as Array<{id:string;flag_status?:string}> | null;
+    const flagStatus = includeFlag ? matched?.[0]?.flag_status || 'white' : undefined;
     return response(Boolean(reviews?.length), origin, flagStatus);
   } catch (error) {
+    if(error instanceof HavenRequestError)return new Response(JSON.stringify({exists:false,error:error.message}),{status:error.status,headers:{...corsHeaders(origin),'Content-Type':'application/json','Cache-Control':'no-store',...(error.status===429?{'Retry-After':'600'}:{})}});
     console.error('check-email-exists failed:', error);
     return response(false, origin, undefined, includeFlag ? 503 : 200);
   }

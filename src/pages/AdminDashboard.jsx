@@ -1,4 +1,6 @@
 import InquiryWorkflow from '../components/admin/InquiryWorkflow';
+import TeamAssignment from '../components/admin/TeamAssignment';
+import { SERVICE_NAMES } from '../../supabase/functions/_shared/team-assignment-public.js';
 import { INQUIRY_STATUSES, lagosDate, inquiryDue, csvCell, splitSupportSessions, workspaceMetrics } from '../lib/adminWorkspace';
 // src/pages/AdminDashboard.jsx
 // Admin workspace. Password-gated. Data flows through
@@ -13,6 +15,7 @@ const FETCH_URL = `${SUPABASE_URL}/functions/v1/admin-fetch-leads`;
 const UPDATE_URL = `${SUPABASE_URL}/functions/v1/admin-update-lead`;
 const FLAG_URL = `${SUPABASE_URL}/functions/v1/flag-user`;
 const RETRY_PURCHASE_URL = `${SUPABASE_URL}/functions/v1/admin-retry-purchase-email`;
+const ASSIGNMENT_URL = `${SUPABASE_URL}/functions/v1/admin-team-assignment`;
 const PASSWORD_KEY = 'tmh_admin_password';
 const PAGE_SIZE = 25;
 const transcriptCache = new Map();
@@ -1002,24 +1005,30 @@ function PurchasesPanel({ purchases, error, password, onAuthLost, onPurchaseChan
   );
 }
 
-function BookingsPanel({ bookings, error, now = 0 }) {
+function BookingsPanel({ bookings, error, now = 0, password, onAuthLost }) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [page, setPage] = useState(1);
+  const [serviceFilter, setServiceFilter] = useState('all');
   const upcoming = bookings.filter((booking) => ['active','confirmed'].includes(booking.status) && Date.parse(booking.start_time) >= now);
-  const filtered = bookings.filter((booking) => (status === 'all' || (status === 'upcoming' ? ['active','confirmed'].includes(booking.status) && Date.parse(booking.start_time) >= now : (status === 'active' ? ['active','confirmed'].includes(booking.status) : ['canceled','cancelled'].includes(booking.status)))) &&
-    `${booking.full_name || ''} ${booking.email || ''} ${booking.service_id || ''} ${booking.source || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const filtered = bookings.filter((booking) => (serviceFilter==='all'||booking.service_id===serviceFilter||(serviceFilter==='unspecified'&&!booking.service_id)) && (status === 'all' || (status === 'upcoming' ? ['active','confirmed'].includes(booking.status) && Date.parse(booking.start_time) >= now : (status === 'active' ? ['active','confirmed'].includes(booking.status) : ['canceled','cancelled'].includes(booking.status)))) &&
+    `${booking.full_name || ''} ${booking.email || ''} ${SERVICE_NAMES[booking.service_id] || ''} ${booking.service_id || ''} ${booking.source || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)), current = Math.min(page, pages);
   return <section aria-label="Strategy call bookings" className="space-y-4">
     <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-semibold">Bookings</h2><p className="mt-2 text-xs leading-relaxed text-zinc-400">Synced Calendly records and historical onsite bookings, including cancellations. Opening a booking link alone does not create a booking.</p></div><p className="text-xs text-zinc-400">{upcoming.length} upcoming · {bookings.length} loaded / 500 maximum</p></div>
       <div className="mt-5 flex flex-col gap-3 sm:flex-row"><input aria-label="Search bookings" placeholder="Search name, email or service" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm outline-none focus:border-white/30" /><select aria-label="Filter bookings" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="rounded-xl border border-white/10 bg-zinc-950 p-3 text-xs"><option value="all">All bookings</option><option value="upcoming">Upcoming</option><option value="active">Active (including past)</option><option value="canceled">Canceled</option></select></div>
     </div>
-    {error ? <p role="alert" className="rounded-xl border border-red-500/20 p-5 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">{query || status !== 'all' ? 'No bookings match these filters.' : 'No bookings have synced yet. Calendly polling imports meetings from the last 3 hours through the next 60 days; older meetings are not backfilled.'}</p> : <div className="grid gap-4 lg:grid-cols-2">{filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map((booking) => <article key={booking.id} className="min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5">
+    <label className="block text-xs text-zinc-400">Service<select aria-label="Filter booking service" value={serviceFilter} onChange={event=>{setServiceFilter(event.target.value);setPage(1);}} className="mt-2 block w-full rounded-xl border border-white/10 bg-zinc-950 p-3 sm:max-w-sm"><option value="all">All services</option>{Object.entries(SERVICE_NAMES).map(([id,name])=><option key={id} value={id}>{name}</option>)}<option value="unspecified">Not specified / direct booking</option></select></label>
+    {error ? <p role="alert" className="rounded-xl border border-red-500/20 p-5 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">{query || status !== 'all' || serviceFilter!=='all' ? 'No bookings match these filters.' : 'No bookings have synced yet. Calendly polling imports meetings from the last 3 hours through the next 60 days; older meetings are not backfilled.'}</p> : <div className="grid gap-4 lg:grid-cols-2">{filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map((booking) => <article key={booking.id} className="min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5">
       <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="font-medium text-zinc-100">{booking.full_name || 'Name not provided'}</h3><a href={`mailto:${booking.email}`} className="mt-1 block break-all text-sm text-zinc-400 underline-offset-4 hover:underline">{booking.email}</a></div><span className={`rounded border px-2 py-1 text-[10px] uppercase tracking-wider ${['canceled','cancelled'].includes(booking.status) ? 'border-red-400/25 text-red-300' : 'border-white/15 text-zinc-300'}`}>{booking.status}</span></div>
       <p className="mt-5 text-lg font-medium tracking-tight">{booking.start_time ? formatDate(booking.start_time) : 'Time not recorded'}</p><p className="mt-1 text-xs text-zinc-400">Displayed in your device timezone · Invitee timezone: {booking.timezone || 'Not recorded'}</p>
       <dl className="mt-5 space-y-2 text-xs text-zinc-400"><div><dt className="inline text-zinc-400">Meeting: </dt><dd className="inline">{booking.event_name || 'Strategy call'}</dd></div><div><dt className="inline text-zinc-400">Source: </dt><dd className="inline">{booking.source === 'lead' ? 'Brand review' : booking.source === 'service' ? `Services${booking.service_id ? ` / ${booking.service_id}` : ''}` : booking.source === 'legacy' ? 'Legacy onsite booking' : 'Direct Calendly'}</dd></div><div><dt className="inline text-zinc-400">Last synced: </dt><dd className="inline">{formatDate(booking.last_synced_at)}</dd></div></dl>
       {booking.review_id && <p className="mt-4 break-all font-mono text-[10px] text-zinc-400">Linked lead: {booking.review_id}</p>}
+      <p className="mt-3 text-xs text-zinc-300">Service: {SERVICE_NAMES[booking.service_id] || 'Not specified / direct booking'}</p>
+      <p className="mt-2 text-xs text-zinc-400">TMH confirmation: {booking.confirmation_email_sent ? 'Accepted by email provider' : booking.source==='calendly'?'No matching onsite review or intent':'Not recorded as accepted'} · Calendly sends the joining invitation separately.</p>
+      {booking.start_time && <p className="mt-2 text-xs text-zinc-400">Lagos: {new Intl.DateTimeFormat('en-NG',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Lagos'}).format(new Date(booking.start_time))} WAT{booking.end_time ? ` · Ends ${new Intl.DateTimeFormat('en-NG',{timeStyle:'short',timeZone:'Africa/Lagos'}).format(new Date(booking.end_time))}` : ''}</p>}
+      <TeamAssignment kind="booking" targetId={String(booking.id)} onAuthLost={onAuthLost} onRequest={payload=>apiRequest(ASSIGNMENT_URL,password,payload)} />
     </article>)}</div>}
     {pages > 1 && <nav aria-label="Booking pages" className="flex items-center justify-end gap-3 text-xs"><button disabled={current <= 1} onClick={() => setPage(current - 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Prev</button><span>{current} / {pages}</span><button disabled={current >= pages} onClick={() => setPage(current + 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Next</button></nav>}
   </section>;
@@ -1054,7 +1063,7 @@ function StandaloneSessionRow({ session, password, onAuthLost, onVisitorChange, 
       <div className="space-y-2 text-right"><FlagSelect lead={session} onChange={changeFlag} disabled={saving || Boolean(session.flag_error)} />{session.flag_error && <p className="max-w-xs text-xs text-amber-300">{session.flag_error}</p>}</div>
     </div>
     {session.service_id === 'team-inquiry' && <div className="flex flex-wrap gap-3 border-t border-white/[0.04] px-5 py-3 text-[11px] text-zinc-400"><span className="capitalize">{session.inquiry_status || 'new'}</span><span>{session.inquiry_owner || 'Unassigned'}</span>{session.inquiry_next_followup_on && <span className={inquiryDue(session,lagosDate()) ? 'text-amber-200' : ''}>Follow up {session.inquiry_next_followup_on}{inquiryDue(session,lagosDate()) ? ' · due' : ''}</span>}</div>}
-    {expanded && <div id={`transcript-${session.id}`} className="border-t border-white/[0.06] p-4 sm:p-5">{session.service_id === 'team-inquiry' && <InquiryWorkflow session={session} onSessionChange={onSessionChange} onSave={async payload => { const result=await apiRequest(UPDATE_URL,password,payload); if(result.code==='unauthorised')onAuthLost(); if(result.ok)showToast('success','Inquiry follow-up saved.'); return result; }} />}<TranscriptPanel key={`${session.id}:${session.updated_at || ''}`} session={session} password={password} onAuthLost={onAuthLost} /></div>}
+    {expanded && <div id={`transcript-${session.id}`} className="border-t border-white/[0.06] p-4 sm:p-5">{session.service_id === 'team-inquiry' && <InquiryWorkflow session={session} onSessionChange={onSessionChange} onSave={async payload => { const result=await apiRequest(UPDATE_URL,password,payload); if(result.code==='unauthorised')onAuthLost(); if(result.ok)showToast('success','Inquiry follow-up saved.'); return result; }} />}{session.service_id === 'team-inquiry' && <TeamAssignment kind="inquiry" targetId={session.id} onAuthLost={onAuthLost} onRequest={payload=>apiRequest(ASSIGNMENT_URL,password,payload)} onSaved={assignment=>onSessionChange?.({...session,inquiry_owner:assignment.assignee_name,inquiry_revision:(session.inquiry_revision||0)+1})} />}<TranscriptPanel key={`${session.id}:${session.updated_at || ''}`} session={session} password={password} onAuthLost={onAuthLost} /></div>}
   </article>;
 }
 
@@ -1386,10 +1395,11 @@ export default function AdminDashboard() {
             : <p role="status" className="mt-3 text-amber-200">{followupStatsError || 'Queue counts are unavailable. Refresh to retry.'}</p>}
         </section>}
         {flagEmailError && <p role="alert" className="mb-4 text-xs text-amber-200">{flagEmailError}</p>}
+        {operations?.adminSecurity?.strong===false&&<p role="alert" className="mb-4 rounded-xl border border-amber-300/20 p-4 text-xs leading-relaxed text-amber-100">Admin password check: {operations.adminSecurity.recommendation}</p>}
         <p className="mb-5 text-[11px] leading-relaxed text-zinc-500">Work queue counts cover loaded records, not lifetime totals. Provider counts are completed replies, not token usage or billing. Flag events cover the saved delivery queue. Inquiry status is maintained by the team; confirmed bookings appear in Bookings.</p>
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-200">{error}</p>}
         <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
-        {activeTab === 'bookings' && <BookingsPanel bookings={bookings} error={bookingsError} now={lastRefreshed || 0} />}
+        {activeTab === 'bookings' && <BookingsPanel bookings={bookings} error={bookingsError} now={lastRefreshed || 0} password={password} onAuthLost={handleAuthLost} />}
         {activeTab === 'purchases' && <PurchasesPanel purchases={purchases} error={purchasesError} password={password} onAuthLost={handleAuthLost} onPurchaseChange={updatePurchase} showToast={showToast} />}
         {['team','support','service'].includes(activeTab) && <SessionsPanel key={activeTab} scope={activeTab} sessions={activeTab==='team'?teamInquiries:activeTab === 'support' ? supportSessions : serviceSessions} error={chatErrors[activeTab]} password={password} onAuthLost={handleAuthLost} onVisitorChange={updateVisitor} showToast={showToast} onSessionChange={updateInquiry} />}
         {activeTab === 'leads' && <>

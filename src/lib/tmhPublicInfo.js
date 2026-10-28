@@ -5,5 +5,5 @@ export const TMH_CONTACT = {
   location: 'Lagos, Nigeria',
 };
 
-// Public assignment labels are not permissions or automatic email notifications.
+// Public labels only. Assignment permissions and explicit mail actions are server-owned.
 export const TMH_TEAM_NAMES = ['Francis Fadeyi', 'Paschal Ikiriko', 'Great Jordan', 'Obabi Babalola', 'Yakubu Dalil'];

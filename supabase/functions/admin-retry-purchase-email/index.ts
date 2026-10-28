@@ -3,6 +3,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 
 import { invocationFailure } from '../_shared/resend-delivery.js';
+import { authenticateAdmin, AdminAuthError } from '../_shared/admin-auth.ts';
 
 const PURCHASE_FIELDS = 'id,email,reference,amount,created_at,thankyou_sent,thankyou_sent_at,thankyou_attempted_at,thankyou_last_error,thankyou_email_id';
 const ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz'];
@@ -16,7 +17,7 @@ serve(async (req) => {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
-  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers,...(status===429?{'Retry-After':'600'}:{})} });
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   if (origin && !allowed) return json({ ok: false, error: 'Origin not allowed' }, 403);
@@ -26,7 +27,7 @@ serve(async (req) => {
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (!password || !url || !serviceKey) return json({ ok: false, error: 'Server misconfigured' }, 500);
     const body = await req.json().catch(() => null);
-    if (body?.password !== password) return json({ ok: false, error: 'Unauthorised' }, 401);
+    if (!await authenticateAdmin(createClient(url,serviceKey,{auth:{persistSession:false}}),req,serviceKey,body?.password,password)) return json({ ok: false, error: 'Unauthorised' }, 401);
     if (body?.action === 'checkConfiguration') {
       const { data, error } = await createClient(url, serviceKey, { auth: { persistSession: false } }).functions.invoke('send-purchase-thankyou', {
         body: { action: 'checkConfiguration' }, headers: internalHeaders(serviceKey),
@@ -59,7 +60,8 @@ serve(async (req) => {
       return json({ ok: false, ...diagnostic, purchase: updated }, 502);
     }
     return json({ ok: true, purchase: updated });
-  } catch {
+  } catch (error) {
+    if(error instanceof AdminAuthError)return json({ok:false,error:error.message},error.status);
     console.error('admin-retry-purchase-email: processing_failed');
     return json({ ok: false, error: 'Unable to retry the purchase email' }, 500);
   }

@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { isInternalRequest } from '../_shared/internal-auth.js';
+import { bookingEmail } from '../_shared/email-template.js';
+import { deliverEmail, mailConfiguration, MailDeliveryError } from '../_shared/resend-delivery.js';
 
 const SERVICES: Record<string, string> = {
   web: 'Brand & Web Engineering',
@@ -22,8 +24,7 @@ serve(async (req) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   const url = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const resendKey = Deno.env.get('RESEND_API_KEY');
-  if (!url || !serviceKey || !resendKey) return json({ ok: false, error: 'Server misconfigured' }, 500);
+  if (!url || !serviceKey) return json({ ok: false, error: 'Server misconfigured' }, 500);
   // This endpoint is called by the webhook only; browser anon keys cannot send mail.
   if (!isInternalRequest(req, serviceKey)) return json({ ok: false, error: 'Unauthorised' }, 401);
   try {
@@ -35,57 +36,70 @@ serve(async (req) => {
     }
     const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
     const pattern = email.replace(/[\\%_]/g, '\\$&');
-    let intentQuery = supabase.from('booking_intents').select('id, confirmation_sent, service_id').ilike('email', pattern);
+    let intentQuery = supabase.from('booking_intents').select('id, confirmation_sent, service_id, booking_email_version').ilike('email', pattern);
     if (body.bookingIntentId) intentQuery = intentQuery.eq('id', body.bookingIntentId);
     const { data: intent, error: intentError } = await intentQuery.order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (intentError) throw intentError;
     let table = 'booking_intents';
-    let record: { id: string; confirmation_sent?: boolean; booking_confirmation_sent?: boolean } | null = intent;
+    let record: { id: string; confirmation_sent?: boolean; booking_confirmation_sent?: boolean; booking_email_version?: string; full_name?: string } | null = intent;
+    let name: string | null = null;
     let flag = 'confirmation_sent';
+    let bookedService: string | null = null;
     if (!intent) {
-      let reviewQuery = supabase.from('brand_reviews').select('id, booking_confirmation_sent, call_booked_at').ilike('email', pattern);
+      let reviewQuery = supabase.from('brand_reviews').select('id, full_name, booking_confirmation_sent, call_booked_at, booking_email_version').ilike('email', pattern);
       if (body.reviewId) reviewQuery = reviewQuery.eq('id', body.reviewId);
       const { data: review, error } = await reviewQuery.maybeSingle();
       if (error) throw error;
       if (!review?.call_booked_at) return json({ ok: false, error: 'No matched booking' }, 404);
       table = 'brand_reviews'; record = review; flag = 'booking_confirmation_sent';
+      name = review.full_name || null;
+    }
+    // A review name is used only for the linked review flow, never a name supplied
+    // by the request body or an unrelated historical review with the same email.
+    if (intent && !intent.service_id && typeof body.reviewId === 'string') {
+      const { data: linkedReview, error } = await supabase.from('brand_reviews').select('full_name')
+        .eq('id', body.reviewId).ilike('email', pattern).maybeSingle();
+      if (error) throw error;
+      name = linkedReview?.full_name || null;
+    }
+    // Confirmation is per Calendly invitee for new bookings. An older meeting's
+    // review/intent flag must not suppress confirmation of a later appointment.
+    if(typeof body.inviteeUri === 'string'){
+      if(!/^https:\/\/api\.calendly\.com\/scheduled_events\/[A-Za-z0-9_-]+\/invitees\/[A-Za-z0-9_-]+$/.test(body.inviteeUri))return json({ok:false,error:'Invalid booking identity'},400);
+      const {data:booking,error}=await supabase.from('strategy_call_bookings').select('id,full_name,service_id,status,confirmation_email_sent,booking_email_version')
+        .eq('invitee_uri',body.inviteeUri).ilike('email',pattern).maybeSingle();
+      if(error)throw error;
+      if(!booking || !['active','confirmed'].includes(booking.status))return json({ok:false,error:'Active booking not found'},404);
+      if(booking.booking_email_version==='editorial-v3'){
+        table='strategy_call_bookings';record={id:String(booking.id),booking_confirmation_sent:booking.confirmation_email_sent,booking_email_version:'editorial-v3'};
+        flag='confirmation_email_sent';name=booking.full_name||name;bookedService=booking.service_id||null;
+      }
     }
     if (!record) return json({ ok: false, error: 'No matched booking' }, 404);
     if ((flag === 'confirmation_sent' ? record.confirmation_sent : record.booking_confirmation_sent) === true) return json({ ok: true, skipped: 'already sent' });
     // Use the stored intent as the source of truth for the email's service copy.
-    const friendly = intent?.service_id ? SERVICES[intent.service_id] : null;
-    const text = `Hi there,
-
-We're glad you set up a meeting with us to discuss ${friendly ? `our ${friendly} services` : 'our services'}.
-
-Take this as confirmation of your spot. We're looking forward to seeing you on the date and time you selected on Calendly.
-
-Two quick things to keep this smooth:
-— Please join on time. If you can't make it, send us an email at info@themarketinghaven.xyz so we can free the slot for someone else.
-— Check your inbox for the Calendly confirmation too — that's the one with the meeting link.
-
-Looking forward to speaking with you.
-
-Team Haven`;
-    const sent = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json',
-        // Covers concurrent webhook deliveries and retries after a failed flag update.
-        'Idempotency-Key': `tmh-booking-confirmation/${table}/${record.id}`,
-      },
-      body: JSON.stringify({
-        from: 'The Marketing Haven <info@themarketinghaven.xyz>', to: [email],
-        reply_to: 'info@themarketinghaven.xyz', subject: 'Your strategy call with The Marketing Haven', text,
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!sent.ok) return json({ ok: false, error: 'Email delivery failed' }, 502);
+    const friendly = bookedService ? SERVICES[bookedService] : intent?.service_id ? SERVICES[intent.service_id] : null;
+    const configuration = mailConfiguration(Deno.env);
+    const version = record.booking_email_version === 'editorial-v3' ? 'editorial-v3' : 'legacy-v1';
+    const id = `tmh-booking-confirmation/${table}/${record.id}${version === 'editorial-v3' ? '/editorial-v3' : ''}`;
+    const proposed = { from:configuration.from,to:[email],reply_to:'info@themarketinghaven.xyz',...bookingEmail({name,service:friendly,version}) };
+    const {data:notification,error:prepareError}=await supabase.rpc('prepare_booking_confirmation',{p_id:id,p_payload:proposed});
+    if(prepareError || !notification?.payload) throw new MailDeliveryError('booking_email_tracking_unavailable','Apply the booking email migration before retrying.',503);
+    let acceptedId = notification.provider_email_id;
+    try {
+      if(!acceptedId) acceptedId = await deliverEmail({key:configuration.key,from:notification.payload.from},notification.payload,id);
+      const {error:acceptanceError}=await supabase.from('booking_confirmation_emails').update({provider_email_id:acceptedId,sent_at:new Date().toISOString(),last_error:null}).eq('id',id);
+      if(acceptanceError) throw new MailDeliveryError('booking_email_marker_failed','Provider acceptance needs repair.',503);
+    } catch(error) {
+      await supabase.from('booking_confirmation_emails').update({last_error:error instanceof MailDeliveryError?error.code:'booking_email_failed',...(acceptedId?{provider_email_id:acceptedId}:{})}).eq('id',id);
+      throw error;
+    }
     const { error } = await supabase.from(table).update({ [flag]: true }).eq('id', record.id);
     if (error) throw error;
     return json({ ok: true });
-  } catch {
-    console.error('send-tmh-booking-confirmation: delivery or flag update failed');
-    return json({ ok: false, error: 'Unable to send confirmation' }, 500);
+  } catch (error) {
+    const code = error instanceof MailDeliveryError ? error.code : 'booking_confirmation_failed';
+    console.error('send-tmh-booking-confirmation: '+code);
+    return json({ ok: false, code, error: error instanceof MailDeliveryError ? error.message : 'Unable to send confirmation' }, error instanceof MailDeliveryError ? error.status : 500);
   }
 });

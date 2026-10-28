@@ -1,3 +1,4 @@
+import { withSecurityRpc, securityGlobals } from './helpers/security-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -39,8 +40,8 @@ function load({ flag = 'white', rpcError = null, deliveryFailure = null, pending
           : { data: notifications.filter((row) => filters.every((filter) => filter(row)) && (!row.sent_at || (row.customer_required && !row.customer_sent_at))), error: null }).then(resolve,reject); } };
     },
   };
-  vm.runInNewContext(source, {
-    require(name) { return name.includes('server.ts') ? { serve(fn) { handler = fn; } } : { createClient: () => client }; },
+  vm.runInNewContext(source, { ...securityGlobals,
+    require(name) { return name.includes('server.ts') ? { serve(fn) { handler = fn; } } : { createClient: () => withSecurityRpc(client) }; },
     Deno: { env: { get(name) { return ({ SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-test', ADMIN_PASSWORD: 'admin-test', ...env })[name]; } } },
     Request, Response, Headers, console: { error() {} },
   });

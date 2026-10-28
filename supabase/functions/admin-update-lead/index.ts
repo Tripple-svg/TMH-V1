@@ -6,6 +6,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { internalHeaders } from '../_shared/internal-auth.js';
 import { invocationFailure } from '../_shared/resend-delivery.js';
+import { authenticateAdmin, AdminAuthError } from '../_shared/admin-auth.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -34,7 +35,7 @@ function corsHeaders(origin: string | null) {
 function json(body: unknown, origin: string | null, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(status===429?{'Retry-After':'600'}:{}) },
   });
 }
 
@@ -54,10 +55,10 @@ serve(async (req) => {
     const password = typeof body?.password === 'string' ? body.password : '';
     const reviewId = typeof body?.reviewId === 'string' ? body.reviewId : '';
 
-    if (password !== ADMIN_PASSWORD) {
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+    if (!await authenticateAdmin(supabase,req,SERVICE_ROLE_KEY,password,ADMIN_PASSWORD)) {
       return json({ ok: false, error: 'Unauthorised' }, origin, 401);
     }
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
     if (body.action === 'updateInquiry') {
       const allowed = ['action','password','sessionId','expectedRevision','status','owner','notes','followupOn'];
       const followup = body.followupOn;
@@ -182,6 +183,7 @@ serve(async (req) => {
 
     return json({ ok: true, review: data }, origin);
   } catch (err) {
+    if(err instanceof AdminAuthError)return json({ok:false,error:err.message},origin,err.status);
     console.error('admin-update-lead error:', err);
     return json({ ok: false, error: String(err) }, origin, 500);
   }

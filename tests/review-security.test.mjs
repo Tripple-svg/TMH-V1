@@ -1,3 +1,4 @@
+import { withSecurityRpc } from './helpers/security-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -57,7 +58,7 @@ function load(name, db, options = {}) {
   });
   const code=buildSync({entryPoints:[new URL('../supabase/functions/'+name+'/index.ts',import.meta.url).pathname.replace(/^\/(\w:)/,'$1')],bundle:true,write:false,format:'cjs',platform:'node',external:['https://*'],logLevel:'silent'}).outputFiles[0].text;
   vm.runInNewContext(code,{
-    require: specifier=>specifier.includes('server.ts')?{serve:fn=>{handler=fn;}}:{createClient:()=>db.client},
+    require: specifier=>specifier.includes('server.ts')?{serve:fn=>{handler=fn;}}:{createClient:()=>withSecurityRpc(db.client)},
     Deno:{serve:fn=>{handler=fn;},env:{get:key=>env[key]}},Response,Request,Headers,TextEncoder,TextDecoder,Uint8Array,
     crypto:webcrypto,URL,URLSearchParams,AbortSignal,atob,
     fetch:options.fetch||(async()=>new Response(JSON.stringify({success:true}))),

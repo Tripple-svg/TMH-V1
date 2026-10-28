@@ -75,19 +75,20 @@ serve(async (req) => {
       .select('id, service_id, confirmation_sent').ilike('email', pattern)
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (intentError) throw intentError;
-    await saveCalendlyBooking(supabase, { ...scheduled, uri: scheduled?.uri || (typeof payload.event === 'string' ? payload.event : null), status: canceled ? 'canceled' : 'active' }, { ...payload, status: canceled ? 'canceled' : 'active' }, review, intent);
+    const savedBooking = await saveCalendlyBooking(supabase, { ...scheduled, uri: scheduled?.uri || (typeof payload.event === 'string' ? payload.event : null), status: canceled ? 'canceled' : 'active' }, { ...payload, status: canceled ? 'canceled' : 'active' }, review, intent);
     if (canceled) return json({ ok: true, canceled: true });
     if (!review && !intent) {
       console.log('calendly-webhook: no matching review or booking intent');
       return json({ ok: true, matched: false });
     }
     // Reviews without a services intent still receive one generic confirmation.
-    const sent = intent ? intent.confirmation_sent === true : review?.booking_confirmation_sent === true;
+    const sent = savedBooking?.booking_email_version === 'editorial-v3' ? savedBooking.confirmation_email_sent === true : intent ? intent.confirmation_sent === true : review?.booking_confirmation_sent === true;
     if (!sent) {
       const { data, error } = await supabase.functions.invoke('send-tmh-booking-confirmation', {
         headers: internalHeaders(serviceKey),
         body: {
           email, name, serviceId: intent?.service_id ?? null,
+          inviteeUri: payload.uri,
           bookingIntentId: intent?.id ?? null, reviewId: review?.id ?? null,
         },
       });
