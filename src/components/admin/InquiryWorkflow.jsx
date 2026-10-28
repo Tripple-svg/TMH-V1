@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { INQUIRY_STATUSES } from '../../lib/adminWorkspace';
+import { TMH_TEAM_NAMES } from '../../lib/tmhPublicInfo';
 
 const draftFor = session => ({ status: session.inquiry_status || 'new', owner: session.inquiry_owner || '', notes: session.inquiry_notes || '', followupOn: session.inquiry_next_followup_on || '' });
 export default function InquiryWorkflow({ session, onSave, onSessionChange }) {
@@ -29,7 +30,7 @@ export default function InquiryWorkflow({ session, onSave, onSessionChange }) {
     <div><h3 className="text-sm font-medium text-zinc-200">Internal follow-up</h3><p className="mt-1 text-xs leading-relaxed text-zinc-500">Assign responsibility and record the next action. These edits do not contact the visitor or book a call.</p></div>
     <div className="grid gap-4 sm:grid-cols-3">
       <label className="text-xs text-zinc-400">Inquiry status<select value={draft.status} onChange={field('status')} disabled={saving} className="mt-2 block w-full rounded-lg border border-zinc-700 bg-zinc-950 p-2.5 text-sm text-zinc-200">{INQUIRY_STATUSES.map(status => <option key={status} value={status}>{status[0].toUpperCase() + status.slice(1)}</option>)}</select></label>
-      <label className="text-xs text-zinc-400">Assigned to<input value={draft.owner} onChange={field('owner')} disabled={saving} maxLength={80} placeholder="Team member's name" className="mt-2 block w-full rounded-lg border border-zinc-700 bg-zinc-950 p-2.5 text-sm text-zinc-200" /></label>
+      <label className="text-xs text-zinc-400">Assigned to<select value={draft.owner} onChange={field('owner')} disabled={saving} className="mt-2 block w-full rounded-lg border border-zinc-700 bg-zinc-950 p-2.5 text-sm text-zinc-200"><option value="">Unassigned</option>{draft.owner && !TMH_TEAM_NAMES.includes(draft.owner) && <option value={draft.owner}>{draft.owner} · saved assignment</option>}{TMH_TEAM_NAMES.map(name => <option key={name} value={name}>{name}</option>)}</select></label>
       <label className="text-xs text-zinc-400">Follow up on · Lagos date<input type="date" value={draft.followupOn} onChange={field('followupOn')} disabled={saving} className="mt-2 block w-full min-w-0 rounded-lg border border-zinc-700 bg-zinc-950 p-2.5 text-sm text-zinc-200" /></label>
     </div>
     <label className="block text-xs text-zinc-400">Next action and internal notes<textarea value={draft.notes} onChange={field('notes')} disabled={saving} maxLength={4000} rows={3} placeholder="What should happen next, and who needs to act?" className="mt-2 block w-full resize-y rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-sm leading-relaxed text-zinc-200" /></label>

@@ -42,6 +42,7 @@ export default function ShopSection() {
   const reduceMotion = useReducedMotion();
   const [isPreviewOpen, setIsPreviewOpen]       = useState(false);
   const [email, setEmail]                       = useState('');
+  const [followupOptIn, setFollowupOptIn]         = useState(false);
   const [loading, setLoading]                   = useState(false);
   const [paymentSuccess, setPaymentSuccess]     = useState(false);
   const [verificationPending, setVerificationPending] = useState(false);
@@ -268,6 +269,8 @@ export default function ShopSection() {
       currency: 'NGN',
       ref: checkout.reference,
       metadata: {
+        playbook_followup_opt_in: followupOptIn,
+        playbook_followup_consent_version: '2026-10-27',
         custom_fields: [
           {
             display_name: "Product Name",
@@ -681,6 +684,10 @@ export default function ShopSection() {
                       <p className="text-xs text-zinc-400">
                         Use an email you can access for your receipt. Your download opens here after payment is verified.
                       </p>
+                      <label className="flex items-start gap-3 text-xs leading-relaxed text-zinc-400">
+                        <input type="checkbox" checked={followupOptIn} onChange={event => setFollowupOptIn(event.target.checked)} className="mt-0.5 accent-zinc-400" />
+                        <span>Send me one follow-up email in about 24 hours with help applying the Playbook and an introduction to TMH services. Optional.</span>
+                      </label>
                     </form>}
 
                     <div className="flex items-center gap-2 text-zinc-400 text-xs">

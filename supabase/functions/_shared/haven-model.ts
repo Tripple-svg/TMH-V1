@@ -1,10 +1,10 @@
 // Gemini is primary for free-tier testing and paid production. Billing changes
 // the account tier, not the model ID. Free-tier testing was explicitly enabled.
 export function geminiProcessingEnabled() {
-  return Deno.env.get('GEMINI_ENABLED') !== 'false' && Boolean(Deno.env.get('GEMINI_API_KEY')?.trim());
+  return Deno.env.get('GEMINI_ENABLED')?.trim().toLowerCase() !== 'false' && Boolean(Deno.env.get('GEMINI_API_KEY')?.trim());
 }
 export function geminiModel() {
-  const model = Deno.env.get('GEMINI_MODEL')?.trim() || 'gemini-3.8-flash';
+  const model = Deno.env.get('GEMINI_MODEL')?.trim().replace(/^models\//,'') || 'gemini-3.8-flash';
   if (!/^[a-z0-9.-]+$/.test(model)) throw new Error('Invalid Gemini model configuration.');
   return model;
 }

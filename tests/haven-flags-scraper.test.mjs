@@ -20,8 +20,9 @@ const code = [
     .replaceAll('import.meta.env.VITE_SUPABASE_URL', "'https://project.supabase.co'")
     .replaceAll('import.meta.env.VITE_SUPABASE_ANON_KEY', "'public-anon-key'"),
   extract('  const runScraper = useCallback(', '  const retryScrape = useCallback('),
+  extract('  const stopResponse = useCallback(', '  const sendNavChipIntent = useCallback('),
   extract('  const sendMessage = useCallback(', '  const clearChat = useCallback('),
-  'globalThis.callbacks = { runScraper, runSocialScorer, sendMessage, matchingAuditSession };',
+  'globalThis.callbacks = { runScraper, runSocialScorer, sendMessage, stopResponse, dismissFailedTurn, matchingAuditSession };',
 ].join('\n');
 const ACCESS = { reviewId: '7e4d80fa-a528-4d23-a13c-578240e3ba83', sessionId: 'c9727d76-8754-49ad-aa20-b56243badc31', accessToken: 'a'.repeat(64) };
 const IDENTITY = { visitorId: 'fc40998d-e854-4d7a-910a-bad281db7c15', visitorToken: 'b'.repeat(64) };
@@ -41,7 +42,7 @@ function harness({ scoring = VALID, profile = {}, scope = 'audit', history = [],
     useCallback: (fn) => fn, userProfile: currentProfile,
     setUserProfile: (updater) => { currentProfile = updater(currentProfile); },
     setAuditPreflight: (updater) => { currentPreflight = updater(currentPreflight); },
-    setIsThinking: (value) => thinking.push(value), setViewState() {},
+    setIsThinking: (value) => thinking.push(value), setViewState() {}, triggerToast() {},
     fetch: async (url, options) => {
       requests.push({ url, ...options, payload: JSON.parse(options.body) });
       if (fetchImpl) return fetchImpl(url, options);
@@ -51,7 +52,7 @@ function harness({ scoring = VALID, profile = {}, scope = 'audit', history = [],
     currentSession: { id: ACCESS.sessionId, messages: history },
     getSessionsForScope: () => [{ id: ACCESS.sessionId }],
     createSession() { throw new Error('Unexpected session creation'); }, addMessage: (...args) => messages.push(args),
-    abortControllerRef: { current: null },
+    abortControllerRef: { current: null }, activeRequestRef: { current: null },
     scoringRequestRef: { current: 0 }, setSessionsForScope(scope, updater) { currentSessionState = updater([currentSessionState])[0]; },
     inFlightTurnsRef: { current: new Set() }, publicSessionIdsRef: { current: new Map() }, pendingTurnsRef: { current: new Map() },
   };
@@ -69,7 +70,7 @@ test('website scoring: a valid low score remains visible and uses private review
 test('website scoring: bad extraction never reuses a stale score or becomes a network error', async () => {
   const ui = harness({ scoring: { ok: true, state: 'bad_data', summary: 'Privacy policy' }, profile: { auditScore: 99 } });
   await ui.runScraper('https://example.com');
-  assert.equal(ui.preflight.status, 'bad_data'); assert.equal(ui.preflight.score, null);
+  assert.equal(ui.preflight.status, 'insufficient_evidence'); assert.equal(ui.preflight.score, null);
   assert.equal(ui.profile.auditScore, null); assert.equal(ui.profile.scrapeState, 'bad_data');
   assert.equal(ui.profile.scrapeFailed, false);
 });
@@ -106,7 +107,7 @@ test('website scoring: legacy missing-token access is actionable instead of an e
 test('social scoring: valid and unreadable screenshot states remain distinct', async () => {
   for (const state of ['valid', 'bad_data']) {
     const ui = harness({ scoring: { ...VALID, state } }); await ui.runSocialScorer('data:image/png;base64,YQ==');
-    assert.equal(ui.preflight.status, state === 'valid' ? 'ready' : 'bad_data');
+    assert.equal(ui.preflight.status, state === 'valid' ? 'ready' : 'insufficient_evidence');
     assert.equal(ui.preflight.score, state === 'valid' ? 20 : null);
     assert.deepEqual(ui.requests[0].payload.context, ACCESS);
   }
@@ -253,4 +254,38 @@ test('chat retry: a missing legacy capability releases thinking and shows recove
   const ui = harness({ profile: { accessToken: null } }); await ui.sendMessage('Please help');
   assert.equal(ui.requests.length, 0); assert.deepEqual(ui.thinking, [true, false]);
   assert.match(ui.session.failedTurn.error, /access recovery/);
+});
+
+test('chat stop: deliberate stop cancels the owned server turn and suppresses late replies and retry notices', async () => {
+  let release;
+  const ui = harness({ fetchImpl: async (_url, options) => JSON.parse(options.body).action === 'cancel'
+    ? Response.json({ ok: true, cancelled: true }) : new Promise(resolve => { release = resolve; }) });
+  const pending = ui.sendMessage('Please inspect this offer.');
+  ui.stopResponse();
+  release(Response.json({ ok: true, text: 'A reply completed after the stop.' }));
+  await pending;
+  assert.equal(ui.requests[0].signal.aborted, true);
+  assert.equal(ui.requests[1].payload.action, 'cancel');
+  assert.equal(ui.requests[1].payload.requestId, ui.requests[0].payload.requestId);
+  assert.deepEqual(ui.requests[1].payload.context, ui.requests[0].payload.context);
+  assert.equal(ui.messages.filter(([role]) => role === 'agent').length, 0);
+  assert.equal(ui.session.failedTurn, null);
+});
+
+test('chat retry: server cooldown blocks rapid retry without duplicating a saved message', async () => {
+  const ui = harness({ fetchImpl: async () => Response.json({ ok: false, error: 'Busy', retryAfter: 60 }, { status: 503 }) });
+  await ui.sendMessage('Help with this offer.');
+  assert.ok(ui.session.failedTurn.retryAt > Date.now());
+  await ui.sendMessage('Help with this offer.');
+  assert.equal(ui.requests.length, 1);
+  assert.equal(ui.messages.filter(([role]) => role === 'user').length, 1);
+  ui.dismissFailedTurn();
+  assert.equal(ui.session.failedTurn, null);
+  assert.equal(ui.requests[1].payload.action, 'cancel');
+});
+
+test('social scoring can retry the saved private screenshot after a reload without a browser image', async () => {
+  const ui = harness(); await ui.runSocialScorer(null);
+  assert.equal(ui.requests.length, 1); assert.equal(ui.preflight.status, 'ready');
+  assert.deepEqual(ui.requests[0].payload.context, ACCESS);
 });

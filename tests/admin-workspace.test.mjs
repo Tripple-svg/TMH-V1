@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
 import * as workspace from '../src/lib/adminWorkspace.js';
+import * as publicInfo from '../src/lib/tmhPublicInfo.js';
 
 test('team inquiries are separate from support in both old and upgraded API responses', () => {
   const regular={id:'support',service_id:null}, team={id:'team',service_id:'team-inquiry'};
@@ -28,7 +29,7 @@ function workflow(onSave) {
   const states=[],refs=[],changes=[];let cursor=0,refCursor=0;
   const session={id:'team',inquiry_status:'new',inquiry_revision:0,inquiry_notes:''};
   const react={useState(initial){const index=cursor++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return[states[index],value=>{states[index]=typeof value==='function'?value(states[index]):value;}];},useRef(initial){return refs[refCursor++]||=( {current:initial} );}};
-  const context={module:{exports:{}},require:name=>name==='react'?react:workspace,React:{createElement:(type,props,...children)=>({type,props:{...props,children}})}};
+  const context={module:{exports:{}},require:name=>name==='react'?react:name.includes('tmhPublicInfo')?publicInfo:workspace,React:{createElement:(type,props,...children)=>({type,props:{...props,children}})}};
   vm.runInNewContext(transformSync(readFileSync(new URL('../src/components/admin/InquiryWorkflow.jsx',import.meta.url),'utf8'),{loader:'jsx',format:'cjs'}).code,context);
   const render=()=>{cursor=refCursor=0;const tree=context.module.exports.default({session,onSave,onSessionChange:value=>changes.push(value)});const nodes=[];const walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(!node||typeof node!=='object')return;nodes.push(node);walk(node.props.children);};walk(tree);return nodes;};
   return {render,changes};

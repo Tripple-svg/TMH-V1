@@ -4,12 +4,15 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { internalHeaders } from '../_shared/internal-auth.js';
+import { invocationFailure } from '../_shared/resend-delivery.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const ADMIN_PASSWORD = Deno.env.get('ADMIN_PASSWORD');
 
 const ALLOWED_FOLLOWUP_STATUS = ['pending', 'contacted', 'booked', 'closed', 'lost'];
+const WELCOME_FIELDS = 'id,email,welcome_email_sent,welcome_email_id,welcome_email_attempted_at,welcome_email_last_error';
 
 const ALLOWED_ORIGINS = [
   'https://themarketinghaven.xyz',
@@ -75,6 +78,32 @@ serve(async (req) => {
       return data?.session ? json({ok:true,session:data.session},origin) : json({ok:false,error:'Inquiry update could not be confirmed.'},origin,503);
     }
     if (!reviewId || reviewId.length > 200) return json({ ok: false, error: 'Missing reviewId' }, origin, 400);
+
+    if (body.action === 'retryWelcome') {
+      if (Object.keys(body).some(key => !['action', 'password', 'reviewId'].includes(key))) {
+        return json({ ok: false, error: 'Select a saved review to retry its email.' }, origin, 400);
+      }
+      const { data: review, error: readError } = await supabase.from('brand_reviews').select(WELCOME_FIELDS).eq('id', reviewId).maybeSingle();
+      if (readError) return json({ ok: false, error: 'Could not load the saved review email status. Check the email migration and retry.' }, origin, 503);
+      if (!review) return json({ ok: false, error: 'Review not found' }, origin, 404);
+      if (review.welcome_email_sent === true) return json({ ok: true, skipped: 'already accepted', review }, origin);
+      // The sender reloads the stored name, source and email by ID. A browser
+      // cannot change the recipient or choose an earlier template on retry.
+      const { data: delivery, error: sendError } = await supabase.functions.invoke('send-welcome-email', {
+        body: { record: { id: review.id } }, headers: internalHeaders(SERVICE_ROLE_KEY),
+      });
+      const { data: updated, error: statusError } = await supabase.from('brand_reviews').select(WELCOME_FIELDS).eq('id', reviewId).maybeSingle();
+      if (statusError || !updated) return json({ ok: false, error: 'Could not confirm the saved review email status. Refresh before retrying.' }, origin, 503);
+      if (sendError || delivery?.ok !== true || updated.welcome_email_sent !== true) {
+        const diagnostic = await invocationFailure(delivery, sendError);
+        if (!updated.welcome_email_last_error && updated.welcome_email_sent !== true) {
+          await supabase.from('brand_reviews').update({ welcome_email_last_error: diagnostic.code }).eq('id', reviewId).eq('welcome_email_sent', false);
+          updated.welcome_email_last_error = diagnostic.code;
+        }
+        return json({ ok: false, ...diagnostic, review: updated }, origin, 502);
+      }
+      return json({ ok: true, review: updated }, origin);
+    }
 
     if (body.action === 'delete') {
       if (body.confirmation !== reviewId) {

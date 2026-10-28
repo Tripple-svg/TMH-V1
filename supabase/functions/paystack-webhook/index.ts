@@ -6,8 +6,19 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 
 const REFERENCE_PATTERN = /^UNSEEN_[A-Za-z0-9_-]{1,120}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// Paystack amounts are in kobo: retain the current NGN 100 test checkout.
+// Paystack amounts are in kobo. The shared cutoff policy preserves genuine old
+// NGN 100 purchases; new checkout charges NGN 9,639.
 const PLAYBOOK_AMOUNTS = [10000, 963900];
+
+function followupConsent(metadata: unknown) {
+  let value = metadata;
+  if (typeof value === 'string' && value.length <= 8192) {
+    try { value = JSON.parse(value); } catch { return false; }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const fields = value as Record<string, unknown>;
+  return fields.playbook_followup_opt_in === true && fields.playbook_followup_consent_version === '2026-10-27';
+}
 
 serve(async (req) => {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
@@ -57,8 +68,15 @@ serve(async (req) => {
     if (!url || !serviceKey) return failure('missing_database_configuration', 'Server misconfigured', 500);
     const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
     if (!await acceptedPaymentAmount(supabase, payment.amount, payment.paid_at || payment.paidAt)) return json({ ok: true, ignored: true });
+    const paidTimestamp = typeof (payment.paid_at || payment.paidAt) === 'string' ? Date.parse(payment.paid_at || payment.paidAt) : NaN;
+    const optedIn = followupConsent(payment.metadata) && Number.isFinite(paidTimestamp);
+    const firstName = typeof payment.customer?.first_name === 'string'
+      ? payment.customer.first_name.replace(/[\u0000-\u001f\u007f]/g, '').trim().split(/\s+/)[0].slice(0, 60) || null : null;
     console.log('Inserting into playbook_purchases');
-    const { error: insertError } = await supabase.from('playbook_purchases').insert({ email, reference, amount: payment.amount });
+    const { error: insertError } = await supabase.from('playbook_purchases').insert({ email, reference, amount: payment.amount,
+      buyer_first_name: firstName, paid_at: Number.isFinite(paidTimestamp) ? new Date(paidTimestamp).toISOString() : null,
+      followup_opt_in: optedIn, followup_consent_version: optedIn ? '2026-10-27' : null,
+    });
     // Replays must preserve the original buyer and amount, including during races.
     if (insertError && insertError.code !== '23505') return failure('purchase_insert_failed', 'Unable to process purchase', 500);
     const { data: purchase, error: purchaseError } = await supabase.from('playbook_purchases')

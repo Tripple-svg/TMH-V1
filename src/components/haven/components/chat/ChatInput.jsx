@@ -10,6 +10,14 @@ const SpeechRecognitionAPI =
     ? (window.SpeechRecognition || window.webkitSpeechRecognition)
     : null;
 
+function releaseRecognition(recognition) {
+  if (!recognition) return;
+  recognition.onresult = null;
+  recognition.onend = null;
+  recognition.onerror = null;
+  try { recognition.abort(); } catch { /* Recognition may already have ended. */ }
+}
+
 const ChatInput = forwardRef(function ChatInput(
   { onSend, onStop, isThinking = false, disabled = false, size = 'full', onTypingChange },
   ref
@@ -55,68 +63,83 @@ const ChatInput = forwardRef(function ChatInput(
 
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.abort(); } catch { /* noop */ }
-        recognitionRef.current = null;
-      }
+      const recognition = recognitionRef.current;
+      recognitionRef.current = null;
+      releaseRecognition(recognition);
     };
   }, []);
 
   const stopRecording = useCallback((resetIdle = true) => {
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch { /* noop */ }
-      recognitionRef.current = null;
-    }
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    // Freeze the visible draft. Late final events cannot duplicate or replace it.
+    releaseRecognition(recognition);
     if (resetIdle) setIsRecording(false);
   }, []);
 
+  useEffect(() => {
+    if (disabled || isThinking) stopRecording();
+  }, [disabled, isThinking, stopRecording]);
+
   const handleMicClick = useCallback(() => {
-    if (!SpeechRecognitionAPI) return;
-    if (isRecording) { stopRecording(); return; }
+    if (!SpeechRecognitionAPI || disabled || isThinking) return;
+    if (recognitionRef.current) { stopRecording(); return; }
+    if (inputValue.length >= MAX_MESSAGE_LENGTH) { setInputError('Messages can contain up to 4,000 characters. Please shorten your message before recording.'); return; }
 
     const recognition = new SpeechRecognitionAPI();
     recognition.continuous = true;
     recognition.interimResults = true;
     try { recognition.lang = 'en-NG'; } catch { recognition.lang = 'en-US'; }
-
     baseTextRef.current = inputValue;
     transcriptRef.current = '';
+    setInputError('');
 
-    recognition.onresult = (event) => {
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          transcriptRef.current = (transcriptRef.current + ' ' + result[0].transcript).trim();
-        } else {
-          interim += result[0].transcript;
-        }
+    recognition.onresult = event => {
+      if (recognitionRef.current !== recognition) return;
+      const final = [], interim = [];
+      // results contains the full session. Reconstruct by index rather than
+      // appending resultIndex again when a browser repeats final results.
+      for (let index = 0; index < event.results.length; index++) {
+        const result = event.results[index];
+        const text = result[0]?.transcript?.trim();
+        if (text) (result.isFinal ? final : interim).push(text);
       }
-      const combined = [baseTextRef.current, transcriptRef.current, interim]
-        .filter(Boolean).join(' ');
+      transcriptRef.current = final.join(' ');
+      const combined = [baseTextRef.current, transcriptRef.current, interim.join(' ')].filter(Boolean).join(' ');
       setInputValue(combined.slice(0, MAX_MESSAGE_LENGTH));
       setInputError(combined.length > MAX_MESSAGE_LENGTH ? 'Messages can contain up to 4,000 characters. Please shorten your message.' : '');
+      if (combined.length >= MAX_MESSAGE_LENGTH) stopRecording();
     };
-
-    recognition.onend = () => { setIsRecording(false); recognitionRef.current = null; };
-    recognition.onerror = (event) => {
-      if (event.error === 'not-allowed') {
+    recognition.onend = () => {
+      if (recognitionRef.current !== recognition) return;
+      setInputValue([baseTextRef.current, transcriptRef.current].filter(Boolean).join(' ').slice(0, MAX_MESSAGE_LENGTH));
+      recognitionRef.current = null;
+      setIsRecording(false);
+      releaseRecognition(recognition);
+    };
+    recognition.onerror = event => {
+      if (recognitionRef.current !== recognition) return;
+      // Keep confirmed words and typed prefix; discard provisional guesses.
+      setInputValue([baseTextRef.current, transcriptRef.current].filter(Boolean).join(' ').slice(0, MAX_MESSAGE_LENGTH));
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         setInputError('Microphone access was blocked. You can type your message instead.');
       } else {
-        console.warn('ChatInput: Speech recognition error:', event.error);
+        setInputError(event.error === 'no-speech' ? 'No speech was captured. Try again or type your message.' : 'Voice input stopped. Your confirmed words are saved; you can type or try again.');
       }
-      setIsRecording(false);
       recognitionRef.current = null;
+      setIsRecording(false);
+      releaseRecognition(recognition);
     };
 
     recognitionRef.current = recognition;
     setIsRecording(true);
-    try { recognition.start(); } catch (err) {
-      console.warn('ChatInput: Failed to start speech recognition:', err);
-      setIsRecording(false);
+    try { recognition.start(); } catch {
       recognitionRef.current = null;
+      setIsRecording(false);
+      setInputError('Voice input could not start. You can type your message instead.');
+      releaseRecognition(recognition);
     }
-  }, [isRecording, inputValue, stopRecording]);
+  }, [disabled, isThinking, inputValue, stopRecording]);
 
   const handleImageSelect = useCallback((e) => {
     if (disabled || isThinking) return;
@@ -229,6 +252,7 @@ const ChatInput = forwardRef(function ChatInput(
             ref={inputRef}
             value={inputValue}
             onChange={(e) => {
+              if (recognitionRef.current) stopRecording();
               const text = e.target.value;
               setInputValue(text.slice(0, MAX_MESSAGE_LENGTH));
               setInputError(text.length >= MAX_MESSAGE_LENGTH ? 'Messages can contain up to 4,000 characters. Please shorten your message if needed.' : '');
@@ -302,8 +326,8 @@ const ChatInput = forwardRef(function ChatInput(
         )}
       </form>
       <div className={`${inputError || imagePreview || inputValue.length > 3500 ? "mt-2 flex items-start justify-between gap-3" : "sr-only"} text-[11px] leading-relaxed text-zinc-500`}>
-        {inputError ? <p id="haven-message-error" role="alert" className="text-amber-200/90">{inputError}</p> : <span>PNG, JPEG or WebP · up to 5 MB</span>}
-        <span id="haven-message-count" className="shrink-0 tabular-nums">{inputValue.length.toLocaleString()} / 4,000</span>
+        {inputError && <p id="haven-message-error" role="alert" className="text-amber-200/90">{inputError}</p>}
+        <span id="haven-message-count" className={inputError || inputValue.length >= 3600 ? 'shrink-0 tabular-nums' : 'sr-only'}>{inputValue.length.toLocaleString()} / 4,000</span>
       </div>
     </div>
   );

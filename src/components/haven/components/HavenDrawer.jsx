@@ -307,9 +307,9 @@ export default function HavenDrawer() {
     createNewSession, switchSession, togglePinSession, deleteSession,
     sendMessage, sendNavChipIntent, isThinking, userProfile = {},
     updateUserProfile, recheckHavenAccess,
-    showToast, toastMessage, clearChat, stopResponse,
+    showToast, toastMessage, clearChat, stopResponse, dismissFailedTurn,
     bookingNoticeOpen, setBookingNoticeOpen,
-    auditPreflight, proceedFromPreflight, retryScrape,
+    auditPreflight, proceedFromPreflight, reopenReviewSource, retryScrape, correctReviewSource,
     sessionSaveState,
   } = useHaven();
 
@@ -322,6 +322,12 @@ export default function HavenDrawer() {
 
   const [autoFollow, setAutoFollow] = useState(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [retryNow, setRetryNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!currentSession?.failedTurn?.retryAt) return;
+    const timer = setInterval(() => setRetryNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [currentSession?.failedTurn?.retryAt]);
 
   const viewportFollowRef = useRef(null);
   const viewportRef = useDrawerViewport(isOpen, viewportFollowRef);
@@ -349,6 +355,7 @@ export default function HavenDrawer() {
     && (auditPreflight.status === 'scraping'
      || auditPreflight.status === 'ready'
      || auditPreflight.status === 'bad_data'
+     || auditPreflight.status === 'insufficient_evidence'
      || auditPreflight.status === 'failed');
 
   const hasUserMessage = messages.some((m) => m.role === 'user');
@@ -699,6 +706,7 @@ export default function HavenDrawer() {
                     className="px-5 py-2.5 bg-zinc-900/60 border-b border-white/[0.04] flex items-center gap-2 flex-wrap overflow-hidden flex-shrink-0">
                     {userProfile.name && <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-zinc-300">{userProfile.name}</span>}
                     {userProfile.businessDomain && <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-zinc-300">{userProfile.businessDomain}</span>}
+                    {activeScope === 'audit' && userProfile.businessDomain !== 'none' && !showPreflight && !needsReviewRecovery && <button type="button" onClick={() => { reopenReviewSource(); requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' })); }} disabled={isThinking || isRestricted} className="rounded-md border border-white/10 px-2 py-0.5 text-[11px] text-zinc-400 hover:text-white disabled:opacity-40">Review source</button>}
                     {userProfile.auditScore != null && (
                       <span className={`text-[11px] px-2 py-0.5 rounded-md border font-medium ${
                         userProfile.auditScore >= 80 ? 'bg-white/[0.06] border-white/[0.12] text-zinc-100'
@@ -763,6 +771,7 @@ export default function HavenDrawer() {
                       brandName={userProfile?.brandName}
                       onProceed={proceedFromPreflight}
                       onRetry={retryScrape}
+                      onCorrect={correctReviewSource}
                     />
                   ) : viewState === 'landing' ? (
                     <QuickPromptCards onSelectPrompt={handleQuickPrompt} />
@@ -780,10 +789,11 @@ export default function HavenDrawer() {
                     ))
                   )}
                   {currentSession?.failedTurn && !isThinking && (
-                    <div role="alert" className="rounded-xl border border-amber-200/15 bg-amber-200/[0.04] p-4 text-xs leading-relaxed text-zinc-300">
+                    <div role="alert" className="relative rounded-xl border border-amber-200/15 bg-amber-200/[0.04] p-4 pr-10 text-xs leading-relaxed text-zinc-300">
+                      <button type="button" onClick={dismissFailedTurn} aria-label="Dismiss saved message retry" className="absolute right-2 top-2 rounded p-1 text-zinc-400 hover:text-white"><X className="h-4 w-4" /></button>
                       <p>{currentSession.failedTurn.error}</p>
-                      <button type="button" disabled={isRestricted || needsReviewRecovery} className="mt-2 rounded-lg border border-white/15 px-3 py-2 text-zinc-100 disabled:opacity-50"
-                        onClick={() => sendMessage(currentSession.failedTurn.content, currentSession.failedTurn.image)}>Retry saved message</button>
+                      <button type="button" disabled={isRestricted || needsReviewRecovery || currentSession.failedTurn.retryAt > retryNow} className="mt-2 rounded-lg border border-white/15 px-3 py-2 text-zinc-100 disabled:opacity-50"
+                        onClick={() => sendMessage(currentSession.failedTurn.content, currentSession.failedTurn.image)}>{currentSession.failedTurn.retryAt > retryNow ? `Retry in ${Math.ceil((currentSession.failedTurn.retryAt - retryNow) / 1000)}s` : 'Retry saved message'}</button>
                     </div>
                   )}
                   {isThinking && <ThinkingIndicator />}

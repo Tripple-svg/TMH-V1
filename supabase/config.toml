@@ -53,3 +53,12 @@ verify_jwt = false
 
 [functions.verify-playbook-recovery]
 verify_jwt = false
+
+[functions.update-review-source]
+verify_jwt = false
+
+[functions.send-purchase-followup]
+verify_jwt = false
+
+[functions.playbook-followup-unsubscribe]
+verify_jwt = false

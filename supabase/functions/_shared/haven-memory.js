@@ -34,7 +34,7 @@ export function captureConversationMemory(text, previous, latestUserText, turnId
   }
   return {
     // Even malformed metadata must never become a visible chat message.
-    text: String(text).replace(/\[\[MEMORY:[^\r\n]*(?:\]\]|$)/g, '').trim(),
+    text: String(text).replace(/\[\[MEMORY:[\s\S]*?(?:\]\]|$)/g, '').trim(),
     memory,
   };
 }

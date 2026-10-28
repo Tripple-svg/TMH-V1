@@ -45,13 +45,25 @@ const SORTS = [
 ];
 
 const WEBSITE_CATEGORIES = [
+  { key: 'clarity', label: 'Clarity', max: 25 },
+  { key: 'trust', label: 'Trust signals', max: 25 },
+  { key: 'positioning', label: 'Positioning', max: 25 },
+  { key: 'conversion', label: 'Conversion path', max: 25 },
+];
+const SOCIAL_CATEGORIES = [
+  { key: 'profile', label: 'Profile setup', max: 25 },
+  { key: 'direction', label: 'Visible content direction', max: 25 },
+  { key: 'value', label: 'Value proposition', max: 25 },
+  { key: 'readiness', label: 'Conversion readiness', max: 25 },
+];
+const LEGACY_WEBSITE_CATEGORIES = [
   { key: 'clarity',    label: 'Clarity',    max: 20 },
   { key: 'trust',      label: 'Trust',      max: 20 },
   { key: 'conversion', label: 'Conversion', max: 20 },
   { key: 'technical',  label: 'Technical',  max: 20 },
   { key: 'content',    label: 'Content',    max: 20 },
 ];
-const SOCIAL_CATEGORIES = [
+const LEGACY_SOCIAL_CATEGORIES = [
   { key: 'profile',     label: 'Profile',     max: 25 },
   { key: 'consistency', label: 'Consistency', max: 25 },
   { key: 'engagement',  label: 'Engagement',  max: 25 },
@@ -398,7 +410,8 @@ function ScoreBreakdown({ lead }) {
   if (!breakdown) return null;
 
   const isSocial = lead.platform_type === 'social';
-  const categories = isSocial ? SOCIAL_CATEGORIES : WEBSITE_CATEGORIES;
+  const currentRubric = lead.rubric_version === '2026-10-27';
+  const categories = currentRubric ? (isSocial ? SOCIAL_CATEGORIES : WEBSITE_CATEGORIES) : (isSocial ? LEGACY_SOCIAL_CATEGORIES : LEGACY_WEBSITE_CATEGORIES);
 
   const getScore = (key) => {
     if (Array.isArray(breakdown)) {
@@ -413,7 +426,8 @@ function ScoreBreakdown({ lead }) {
 
   return (
     <div className="rounded-lg border border-zinc-700/50 bg-zinc-950/40 p-3">
-      <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-2">Score breakdown</p>
+      <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-2">{currentRubric ? 'Visible material review' : 'Previous review method'}</p>
+      <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">{currentRubric ? `Based on the ${isSocial ? 'profile screenshot' : 'website text'} supplied. This is not a technical test or a sales forecast.` : 'Saved under the earlier rubric. These numbers have not been relabelled or recalculated.'}</p>
       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
         {categories.map((cat) => {
           const score = getScore(cat.key);
@@ -486,6 +500,50 @@ function LeadDetails({ lead, onDelete, saving, password, onAuthLost }) {
     </div>
     </div>
   );
+}
+
+function WelcomeEmailStatus({ lead, retrying, onRetry }) {
+  const accepted = lead.welcome_email_sent === true;
+  const recordedAcceptance = Boolean(lead.welcome_email_id);
+  const label = accepted ? 'Provider accepted' : recordedAcceptance ? 'Acceptance saved · status pending' : lead.welcome_email_last_error ? 'Needs retry' : lead.welcome_email_attempted_at ? 'Pending acceptance' : 'Not recorded';
+  return <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px]" aria-label={`Review email for ${lead.email || lead.full_name || 'lead'}`}>
+    <span className="text-zinc-500">Review email</span>
+    <span title={accepted || recordedAcceptance ? 'Accepted by the email provider. Inbox delivery is not confirmed here.' : lead.welcome_email_last_error || 'No provider acceptance has been recorded.'}
+      className={`rounded border px-1.5 py-0.5 ${accepted ? 'border-white/10 text-zinc-300' : 'border-amber-400/20 text-amber-200'}`}>{label}</span>
+    {!accepted && lead.email && onRetry && <button type="button" disabled={retrying} onClick={onRetry} aria-label={`${recordedAcceptance ? 'Repair review email status' : 'Retry review email'} for ${lead.email}`}
+      className="rounded border border-white/15 px-2 py-1 text-zinc-300 hover:bg-white/[0.06] disabled:opacity-50">{retrying ? 'Checking…' : recordedAcceptance ? 'Repair status' : 'Retry email'}</button>}
+  </div>;
+}
+
+function AISetupPanel({ password, onAuthLost }) {
+  const [checking, setChecking] = useState(false);
+  const [report, setReport] = useState(null);
+  const [error, setError] = useState('');
+  const requestLock = useRef(false);
+  const checkSetup = async () => {
+    if (requestLock.current) return;
+    requestLock.current = true; setChecking(true); setError('');
+    try {
+      const result = await apiRequest(FETCH_URL, password, { action: 'aiHealth' });
+      if (result.ok) setReport(result);
+      else if (result.code === 'unauthorised') onAuthLost();
+      else setError(result.error || 'The AI setup check could not finish. Try again shortly.');
+    } finally { requestLock.current = false; setChecking(false); }
+  };
+  return <section aria-label="AI provider setup" className="mb-4 rounded-xl border border-white/[0.06] px-4 py-3 text-xs text-zinc-400">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><p className="font-medium text-zinc-300">AI provider setup</p><p className="mt-1 leading-relaxed text-zinc-500">Checks configuration and model access without generating a reply or sending chat content.</p></div>
+      <button type="button" onClick={checkSetup} disabled={checking} className="shrink-0 rounded-lg border border-white/15 px-3 py-2 text-zinc-200 hover:bg-white/[0.04] disabled:opacity-50">{checking ? 'Checking AI setup…' : 'Check AI setup'}</button>
+    </div>
+    {error && <p role="alert" className="mt-3 text-amber-200">{error}</p>}
+    {report && <div role="status" className="mt-4 space-y-3 border-t border-white/[0.06] pt-3">
+      <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <div className="min-w-0"><dt className="text-zinc-500">Gemini · primary</dt><dd className="mt-1 break-words font-medium text-zinc-200">{report.gemini?.model || 'No model reported'}</dd><dd className="mt-1 leading-relaxed">{report.gemini?.configured ? 'Key configured' : 'Key missing'} · {report.gemini?.enabled ? 'Enabled' : 'Disabled'}{report.gemini?.status != null && ` · ${report.gemini.status}`}</dd>{report.gemini?.code && <dd className="mt-1 break-all text-amber-200">{report.gemini.code}</dd>}</div>
+        <div className="min-w-0"><dt className="text-zinc-500">Groq · fallback</dt><dd className="mt-1 break-words font-medium text-zinc-200">{report.groq?.model || 'No model reported'}</dd><dd className="mt-1">{report.groq?.configured ? 'Key configured' : 'Key missing'}</dd></div>
+      </dl>
+      <p className="leading-relaxed text-zinc-500">{report.note || 'A successful model check does not guarantee generation capacity. A 503 means temporary provider unavailability; it does not prove your token budget is exhausted.'}</p>
+    </div>}
+  </section>;
 }
 
 function StatusSelect({ value, onChange, disabled }) {
@@ -561,7 +619,9 @@ function BookedBadge() {
 function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showToast }) {
   const [saving, setSaving] = useState(false);
   const [notes, setNotes] = useState(lead.followup_notes || '');
+  const [retryingWelcome, setRetryingWelcome] = useState(false);
   const notesRef = useRef(lead.followup_notes || '');
+  const welcomeLock = useRef(false);
 
   useEffect(() => {
     setNotes(lead.followup_notes || '');
@@ -629,6 +689,17 @@ function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost
       return save({ followupNotes: notes });
     }
   };
+  const onRetryWelcome = async () => {
+    if (welcomeLock.current) return;
+    welcomeLock.current = true; setRetryingWelcome(true);
+    try {
+      const result = await apiRequest(UPDATE_URL, password, { action: 'retryWelcome', reviewId: lead.id });
+      if (result.review) onLeadChange({ id: lead.id, ...result.review });
+      if (result.ok) showToast('success', 'Review email accepted by the provider. Inbox delivery is not confirmed here.');
+      else if (result.code === 'unauthorised') onAuthLost();
+      else showToast('error', result.error || 'The review email is still pending. Check its saved diagnostic and retry.');
+    } finally { welcomeLock.current = false; setRetryingWelcome(false); }
+  };
   const handleCopy = async (text, label) => {
     if (!text) return;
     await copyText(text, (success) => {
@@ -636,14 +707,14 @@ function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost
     });
   };
 
-  return { saving, notes, setNotes, onStatusChange, onFlagChange, onDeleteLead, onNotesBlur, handleCopy };
+  return { saving, notes, setNotes, onStatusChange, onFlagChange, onDeleteLead, onNotesBlur, handleCopy, retryingWelcome, onRetryWelcome };
 }
 
 // ─── Desktop table row ─────────────────────────────────────────
 
 function LeadRow({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showToast }) {
   const [expanded, setExpanded] = useState(false);
-  const { saving, notes, setNotes, onStatusChange, onFlagChange, onDeleteLead, onNotesBlur, handleCopy } =
+  const { saving, notes, setNotes, onStatusChange, onFlagChange, onDeleteLead, onNotesBlur, handleCopy, retryingWelcome, onRetryWelcome } =
     useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showToast });
 
   const toggleExpanded = () => setExpanded((v) => !v);
@@ -702,6 +773,7 @@ function LeadRow({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showT
               </button>
             )}
           </div>
+          <WelcomeEmailStatus lead={lead} retrying={retryingWelcome} onRetry={onRetryWelcome} />
         </td>
         <td className="p-4 align-top text-xs text-zinc-300">
           {lead.platform_type || '—'}
@@ -751,7 +823,7 @@ function LeadRow({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showT
 
 function LeadCard({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showToast }) {
   const [expanded, setExpanded] = useState(false);
-  const { saving, notes, setNotes, onStatusChange, onFlagChange, onDeleteLead, onNotesBlur, handleCopy } =
+  const { saving, notes, setNotes, onStatusChange, onFlagChange, onDeleteLead, onNotesBlur, handleCopy, retryingWelcome, onRetryWelcome } =
     useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showToast });
 
   const toggleExpanded = () => setExpanded((v) => !v);
@@ -796,6 +868,8 @@ function LeadCard({ lead, password, onLeadChange, onLeadDelete, onAuthLost, show
           {relativeTime(lead.created_at)}
         </span>
       </div>
+
+      <WelcomeEmailStatus lead={lead} retrying={retryingWelcome} onRetry={onRetryWelcome} />
 
       {lead.biggest_leak && (
         <p className="mt-2 text-xs text-zinc-300">
@@ -1039,6 +1113,8 @@ export default function AdminDashboard() {
   const [teamInquiries,setTeamInquiries]=useState([]);
   const [operations,setOperations]=useState(null);
   const [operationsError,setOperationsError]=useState('');
+  const [followupStats, setFollowupStats] = useState(null);
+  const [followupStatsError, setFollowupStatsError] = useState('');
   const [chatErrors, setChatErrors] = useState({});
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [linkedSessionsTruncated, setLinkedSessionsTruncated] = useState(false);
@@ -1072,6 +1148,7 @@ export default function AdminDashboard() {
     setPurchasesError('');
     setSupportSessions([]);
     setServiceSessions([]); setTeamInquiries([]); setOperations(null);setOperationsError('');
+    setFollowupStats(null); setFollowupStatsError('');
     transcriptCache.clear();
     transcriptRequests.clear();
   }, []);
@@ -1105,6 +1182,7 @@ export default function AdminDashboard() {
       setPurchases(result.purchases);
       setPurchasesError(result.purchases_error || '');
       setSupportSessions(result.support_sessions); setTeamInquiries(result.team_inquiries);setOperations(result.operations||null);setOperationsError(result.operations_error||'');
+      setFollowupStats(result.followupStats || null); setFollowupStatsError(result.followup_stats_error || '');
       setServiceSessions(result.service_sessions);
       setChatErrors({ team:result.team_inquiries_error || result.support_sessions_error, support: result.support_sessions_error, service: result.service_sessions_error, linked: result.linked_sessions_error });
       setLinkedSessionsTruncated(result.linked_sessions_truncated === true);
@@ -1295,11 +1373,18 @@ export default function AdminDashboard() {
         <section aria-label="Agency work queue" className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <QueueCard title="Open team inquiries" value={chatErrors.team?'Unavailable':metrics.openInquiries} detail={`${metrics.unassignedInquiries} unassigned · ${metrics.dueInquiries} follow-ups due`} onClick={()=>setActiveTab('team')} />
           <QueueCard title="Hot leads awaiting follow-up" value={metrics.hotLeads} detail="Hot reviews still marked pending" onClick={()=>{setFilters(previous=>({...previous,temperature:'Hot',followup:'pending'}));setActiveTab('leads');}} />
-          <QueueCard title="Emails awaiting delivery" value={purchasesError?'Unavailable':metrics.purchaseEmails+metrics.reviewEmails} detail={`${metrics.purchaseEmails} purchases · ${metrics.reviewEmails} reviews · provider acceptance`} onClick={()=>setActiveTab('purchases')} />
+          <QueueCard title="Emails awaiting acceptance" value={purchasesError?'Unavailable':metrics.purchaseEmails+metrics.reviewEmails} detail={`${metrics.purchaseEmails} purchases · ${metrics.reviewEmails} reviews · email provider`} onClick={()=>setActiveTab(metrics.reviewEmails > 0 ? 'leads' : 'purchases')} />
           <QueueCard title="Calls in the next 7 days" value={bookingsError?'Unavailable':metrics.upcomingBookings} detail="Active bookings · Africa/Lagos" onClick={()=>setActiveTab('bookings')} />
         </section>
-        {operations && <section aria-label="Haven operational health" className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-3 rounded-xl border border-white/[0.06] px-4 py-3 text-xs text-zinc-400"><span className="text-zinc-500">Past 24 hours</span><span>Gemini replies <strong className="font-medium text-zinc-200">{operations.gemini_replies}</strong></span><span>Groq replies <strong className="font-medium text-zinc-200">{operations.groq_replies}</strong></span><span>Failed turns <strong className={operations.failed_turns?'text-amber-200':'text-zinc-200'}>{operations.failed_turns}</strong></span><span>Stalled turns <strong className={operations.stale_turns?'text-amber-200':'text-zinc-200'}>{operations.stale_turns}</strong></span><button type="button" disabled={retryingFlagEmails} onClick={retryFlagEmails} className="rounded-lg border border-white/10 px-3 py-2 text-zinc-300 disabled:opacity-40">{retryingFlagEmails?'Retrying flag notices…':`${operations.pending_flag_events} flag events awaiting delivery · Retry`}</button></section>}
+        {operations && <section aria-label="Haven operational health" className="mb-4 rounded-xl border border-white/[0.06] px-4 py-3 text-xs text-zinc-400"><p className="mb-3 text-zinc-500">Past 24 hours</p><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><span>Gemini replies <strong className="ml-1 font-medium text-zinc-200">{operations.gemini_replies}</strong></span><span>Groq replies <strong className="ml-1 font-medium text-zinc-200">{operations.groq_replies}</strong></span><span>Failed turns <strong className={`ml-1 ${operations.failed_turns?'text-amber-200':'text-zinc-200'}`}>{operations.failed_turns}</strong></span><span>Stalled turns <strong className={`ml-1 ${operations.stale_turns?'text-amber-200':'text-zinc-200'}`}>{operations.stale_turns}</strong></span></div><button type="button" disabled={retryingFlagEmails} onClick={retryFlagEmails} className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-zinc-300 disabled:opacity-40">{retryingFlagEmails?'Retrying flag notices…':`${operations.pending_flag_events} flag events awaiting acceptance · Retry`}</button></section>}
+        <AISetupPanel password={password} onAuthLost={handleAuthLost} />
         {operationsError && <p role="alert" className="mb-4 text-xs text-amber-200">{operationsError}</p>}
+        {activeTab === 'purchases' && <section aria-label="Playbook follow-up queue" className="mb-5 rounded-xl border border-white/10 p-4 text-xs text-zinc-400">
+          <h2 className="font-medium text-zinc-200">One-time Playbook check-in</h2>
+          <p className="mt-2 leading-relaxed">Only buyers who opt in at checkout enter this queue. Due 24 hours after payment; accepted means the email provider accepted it.</p>
+          {followupStats ? <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-5">{[['queued', 'Scheduled'], ['due', 'Due / retrying'], ['accepted', 'Accepted'], ['cancelled', 'Cancelled'], ['needsReview', 'Needs review']].map(([key, label]) => <div key={key}><dt>{label}</dt><dd className="mt-1 text-base text-zinc-200">{followupStats[key]}</dd></div>)}</dl>
+            : <p role="status" className="mt-3 text-amber-200">{followupStatsError || 'Queue counts are unavailable. Refresh to retry.'}</p>}
+        </section>}
         {flagEmailError && <p role="alert" className="mb-4 text-xs text-amber-200">{flagEmailError}</p>}
         <p className="mb-5 text-[11px] leading-relaxed text-zinc-500">Work queue counts cover loaded records, not lifetime totals. Provider counts are completed replies, not token usage or billing. Flag events cover the saved delivery queue. Inquiry status is maintained by the team; confirmed bookings appear in Bookings.</p>
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-200">{error}</p>}

@@ -45,3 +45,16 @@ export async function verifyReviewAccess(supabase: any, sessionId: unknown, revi
   if (!review) throw new ReviewAccessError('Review access denied.');
   return { session, review };
 }
+
+export async function storedReviewScreenshot(supabase: any, review: Record<string, any>) {
+  const path=review.screenshot_url;
+  if(typeof path!=='string'||!path.startsWith(review.id+'/')||path.includes('..')) throw new ReviewAccessError('The saved screenshot is unavailable. Upload a replacement.',409);
+  const {data,error}=await supabase.storage.from('tmh-screenshots').download(path);
+  if(error||!data) throw new ReviewAccessError('The saved screenshot could not be read. Try again or upload a replacement.',503);
+  const mime=String(data.type||'').split(';')[0].toLowerCase();
+  if(!['image/png','image/jpeg','image/webp'].includes(mime)||data.size>5*1024*1024) throw new ReviewAccessError('Upload a PNG, JPEG or WebP screenshot smaller than 5 MB.',400);
+  const bytes=new Uint8Array(await data.arrayBuffer());
+  let binary='';
+  for(let index=0;index<bytes.length;index+=4096) binary+=String.fromCharCode(...bytes.subarray(index,index+4096));
+  return 'data:'+mime+';base64,'+btoa(binary);
+}

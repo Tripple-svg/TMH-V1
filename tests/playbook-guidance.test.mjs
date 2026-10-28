@@ -38,7 +38,7 @@ test('book prompt: verified readers get the actual nine chapters and focused hel
   assert.match(prompt, /do not re-sell their book/);
 });
 
-test('book routing: verified application help stays conversational; calls still require qualification', () => {
+test('book routing: verified application help stays conversational; an unspecified call still needs a scope', () => {
   const text = 'For your bakery, clarity starts with the buyer and the reason the bread matters. Which product are you focusing on?';
   const result = resolveHavenRouting(text, { playbookVerified: true, latestUserText: 'I read the Playbook and need help starting', scope: 'support', questionsAsked: 0, diagnosticAnswers: 0 });
   assert.equal(result.text, text);

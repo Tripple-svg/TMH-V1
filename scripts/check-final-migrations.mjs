@@ -10,7 +10,7 @@ const { PGlite } = await import(pathToFileURL(process.argv[2]).href);
 const db = new PGlite();
 const query = async (sql, args = []) => (await db.query(sql, args)).rows;
 const scalar = async (sql, args = []) => Object.values((await query(sql, args))[0])[0];
-const rpc = async (name, args) => scalar(`select public.${name}(${args.map((_, i) => `$${i + 1}`).join(',')})`, args);
+const rpc = async (name, args = []) => scalar(`select public.${name}(${args.map((_, i) => `$${i + 1}`).join(',')})`, args);
 const count = (table, where = 'true', args = []) => scalar(`select count(*)::int from public.${table} where ${where}`, args);
 const hash = 'a'.repeat(64);
 let passed = 0;
@@ -49,6 +49,9 @@ try {
     '20261025000001_strategy_call_bookings.sql',
     '20261026000000_playbook_recovery.sql',
     '20261026000001_haven_reliability.sql',
+    '20261027000000_strategic_scoring.sql',
+    '20261027000001_haven_turn_reliability.sql',
+    '20261027000002_purchase_followup.sql',
   ].map((name) => `migrations/${name}`)]) {
     await db.exec(await readFile(new URL(`../supabase/${file}`, import.meta.url), 'utf8'));
     if (file === 'schema.sql') await db.exec("insert into strategy_call_bookings(full_name,email,whatsapp,booked_date,booked_time) values('Legacy Client','legacy@example.com','+2340000000000','2026-10-26','5:00 PM');");
@@ -91,7 +94,9 @@ try {
   });
   const turn = randomUUID();
   const begin = (id = turn, text = 'My website checkout is losing sales', requestHash = hash) => rpc('begin_haven_turn', [support, id, text, false, true, true, requestHash]);
-  const complete = (id = turn, step = 'CUSTOMER_SUPPORT_OPEN') => rpc('complete_haven_turn', [support, id, JSON.stringify({ ok: true, text: 'Which step fails?', leadTemperature: null }), true, step]);
+  const finish = async (sessionId, id, response, question, step) => rpc('finish_haven_turn', [sessionId, id,
+    await scalar('select processing_attempt from haven_chat_turns where id=$1', [id]), JSON.stringify(response), question, step]);
+  const complete = (id = turn, step = 'CUSTOMER_SUPPORT_OPEN') => finish(support, id, { ok: true, text: 'Which step fails?', leadTemperature: null }, true, step);
   await check('turns save answers once, serialize active requests and replay completed replies', async () => {
     const first = await begin(); assert.equal(first.session.diagnostic_answers, 1); assert.equal(first.session.message_count, 2);
     assert.equal((await begin()).busy, true); assert.equal((await begin(randomUUID())).busy, true);
@@ -228,6 +233,67 @@ try {
     for(const key of ['gemini_replies','groq_replies','failed_turns','stale_turns','pending_flag_events'])assert.equal(typeof stats[key],'number');
     assert.ok(!JSON.stringify(stats).includes('owner@example.com'));assert.ok(stats.observed_at);
   });
+  await check('review source corrections clear only derived analysis and use optimistic revisions', async () => {
+    await query("update brand_reviews set platform_type='website',website_url='https://old.example.com',scrape_state='valid',haven_score=60,score_breakdown='{}',score_evidence='{}',rubric_version='old',biggest_leak='Old observation',scraped_summary='Old text',score_reason=null,score_observed_at=now() where id=$1", [review]);
+    await query("update haven_sessions set routing_state='{\"problemType\":\"foundational\",\"permission\":\"granted\"}',conversation_memory='{\"version\":1,\"facts\":{\"business\":{\"quote\":\"old description\"},\"problem\":{\"quote\":\"old source issue\"}}}',diagnostic_answers=2,diagnostic_questions_asked=2 where id=$1", [audit]);
+    const transcript = await scalar('select messages from haven_sessions where id=$1', [audit]);
+    const proofBefore = await scalar('select token_hash from review_access_tokens where review_id=$1', [review]);
+    const result = await rpc('correct_haven_review_source', [review, 0, 'https://new.example.com', null, hash]);
+    assert.equal(result.revision, 1); assert.equal(result.conflict, false);
+    const [row] = await query('select * from brand_reviews where id=$1', [review]);
+    for (const field of ['haven_score','score_breakdown','score_evidence','rubric_version','biggest_leak','scraped_summary','score_reason','score_observed_at','scrape_state']) assert.equal(row[field], null, field);
+    assert.equal(row.website_url, 'https://new.example.com'); assert.equal(row.score_source_hash, hash);
+    const [saved] = await query('select * from haven_sessions where id=$1', [audit]);
+    assert.deepEqual(saved.messages, transcript); assert.deepEqual(saved.routing_state, {problemType:'unknown',permission:'none'});
+    assert.deepEqual(saved.conversation_memory, {version:1,facts:{business:{quote:'old description'}}}); assert.equal(saved.diagnostic_answers, 0);
+    assert.equal(saved.current_step, 'AWAITING_DIAGNOSTIC_Q1');
+    assert.equal(await scalar('select token_hash from review_access_tokens where review_id=$1', [review]), proofBefore);
+    const stale = await rpc('correct_haven_review_source', [review, 0, 'https://stale.example.com', null, hash]);
+    assert.equal(stale.conflict, true); assert.equal(stale.revision, 1);
+    assert.equal(await scalar('select website_url from brand_reviews where id=$1', [review]), 'https://new.example.com');
+  });
+  await check('source corrections reject active work, restricted reviews, wrong object scope and public roles', async () => {
+    const active = randomUUID(); await rpc('begin_haven_turn', [audit, active, 'An active audit question', false, true, false, hash]);
+    await denied(() => rpc('correct_haven_review_source', [review, 1, 'https://busy.example.com', null, hash]), '55000');
+    await rpc('cancel_haven_turn', [audit, active]);
+    await query("update brand_reviews set flag_status='red' where id=$1", [review]);
+    await denied(() => rpc('correct_haven_review_source', [review, 1, 'https://restricted.example.com', null, hash]), '42501');
+    await query("update brand_reviews set flag_status='white',platform_type='social',website_url=null,screenshot_url=$2 where id=$1", [review, review + '/old.png']);
+    await denied(() => rpc('correct_haven_review_source', [review, 1, null, randomUUID() + '/source-new.png', hash]), '22023');
+    const replaced = await rpc('correct_haven_review_source', [review, 1, null, review + '/source-new.png', hash]);
+    assert.equal(replaced.oldScreenshotPath, review + '/old.png'); assert.equal(replaced.revision, 2);
+    await db.exec("set role anon; select set_config('request.jwt.claim.role','anon',false);");
+    await denied(() => rpc('correct_haven_review_source', [review, 2, null, review + '/source-forged.png', hash]), '42501');
+    await db.exec("reset role; select set_config('request.jwt.claim.role','service_role',false);");
+    assert.equal(await scalar('select scoring_revision from brand_reviews where id=$1', [review]), 2);
+  });
+  await check('turn cancellation and fresh retry fence late replies without duplicating the question', async () => {
+    const id=randomUUID(); const first=await begin(id, 'Please inspect this checkout');
+    assert.match(first.attemptId, /^[a-f0-9-]{36}$/); const before=await scalar('select message_count from haven_sessions where id=$1',[support]);
+    assert.equal(await rpc('cancel_haven_turn',[support,id]),true);
+    await denied(()=>rpc('finish_haven_turn',[support,id,first.attemptId,JSON.stringify({ok:true,text:'Late reply'}),false,'CUSTOMER_SUPPORT_OPEN']),'55000');
+    const retry=await begin(id, 'Please inspect this checkout'); assert.notEqual(retry.attemptId,first.attemptId);
+    await rpc('fail_haven_turn',[support,id,first.attemptId,'stale_failure','[]',0]);
+    assert.equal(await scalar('select status from haven_chat_turns where id=$1',[id]),'processing');
+    await denied(()=>rpc('finish_haven_turn',[support,id,first.attemptId,JSON.stringify({ok:true,text:'Stale replacement'}),false,'CUSTOMER_SUPPORT_OPEN']),'55000');
+    await rpc('finish_haven_turn',[support,id,retry.attemptId,JSON.stringify({ok:true,text:'The current response',providerDiagnostics:[{provider:'gemini',code:'http_503'}]}),false,'CUSTOMER_SUPPORT_OPEN']);
+    assert.equal(await scalar('select message_count from haven_sessions where id=$1',[support]),before+1);
+    assert.equal(await scalar("select count(*)::int from haven_sessions s,jsonb_array_elements(s.messages) m where s.id=$1 and m->>'id'=$2",[support,id]),1);
+    assert.equal((await begin(id, 'Please inspect this checkout')).cached.text,'The current response');
+    assert.deepEqual(await scalar('select provider_diagnostics from haven_chat_turns where id=$1',[id]),[{provider:'gemini',code:'http_503'}]);
+  });
+  await check('failed turns expose a bounded cooldown, and retries get a new attempt capability', async () => {
+    const id=randomUUID();const first=await begin(id);
+    await rpc('fail_haven_turn',[support,id,first.attemptId,'provider_unavailable',JSON.stringify([{provider:'gemini',code:'http_429'}]),60]);
+    const cooling=await begin(id);assert.equal(cooling.busy,true);assert.ok(cooling.retryAfter>=1&&cooling.retryAfter<=60);
+    await query("update haven_chat_turns set retry_after=now()-interval '1 second' where id=$1",[id]);
+    const retry=await begin(id);assert.notEqual(retry.attemptId,first.attemptId);
+    await rpc('finish_haven_turn',[support,id,retry.attemptId,JSON.stringify({ok:true,text:'Recovered'}),false,'CUSTOMER_SUPPORT_OPEN']);
+    assert.equal(await rpc('cancel_haven_turn',[support,id]),false);
+    await db.exec("set role anon; select set_config('request.jwt.claim.role','anon',false);");
+    for(const [name,args] of [['begin_haven_turn',[support,randomUUID(),'Forged',false,false,false,hash]],['finish_haven_turn',[support,id,retry.attemptId,'{}',false,'CUSTOMER_SUPPORT_OPEN']],['fail_haven_turn',[support,id,retry.attemptId,'forged','[]',0]],['cancel_haven_turn',[support,id]]]) await denied(()=>rpc(name,args),'42501');
+    await db.exec("reset role; select set_config('request.jwt.claim.role','service_role',false);");
+  });
   await check('lead deletion removes linked sessions, turns and proofs while retaining purchases', async () => {
     await query('insert into playbook_purchases(email,reference,amount) values($1,$2,100)', ['owner@example.com', 'UNSEEN_offline']);
     assert.equal((await rpc('admin_delete_lead', [review])).deleted, true);
@@ -270,5 +336,20 @@ try {
     await denied(()=>rpc('reserve_playbook_recovery',[randomUUID(),'UNSEEN_forged','buyer@example.com','a'.repeat(64)]),'42501');
     await db.exec("reset role; select set_config('request.jwt.claim.role','service_role',false);");
   });
+  {
+  const q=query, call=rpc;
+const createFollowup=async(ref,{opt=true,version='2026-10-27',paid='25 hours'}={})=>q("insert into playbook_purchases(reference,email,followup_opt_in,followup_consent_version,paid_at,buyer_first_name) values($1,'owner@example.com',$2,$3,now()-$4::interval,'Ada') returning id",[ref,opt,version,paid]);
+await check('new defaults v3 and no automatic legacy enrolment',async()=>{await createFollowup('UNSEEN_legacy',{opt:false});assert.equal(await scalar('select count(*)::int from playbook_purchase_followups'),0);assert.equal(await scalar("select email_template_version from playbook_purchases where reference='UNSEEN_legacy'"),'editorial-v3');await createFollowup('UNSEEN_oldversion',{version:'old'});assert.equal(await scalar('select count(*)::int from playbook_purchase_followups'),0)});
+await createFollowup('UNSEEN_due');const job=(await q('select * from playbook_purchase_followups'))[0];
+await check('24h due time uses paid_at and upcoming jobs are not claimed',async()=>{assert.equal(await scalar('select f.due_at=p.paid_at+interval \'24 hours\' from playbook_purchase_followups f join playbook_purchases p on p.id=f.purchase_id where f.id=$1',[job.id]),true);await createFollowup('UNSEEN_future',{paid:'1 hour'});});
+let lease;
+await check('queue claims once under a lease and rejects invalid batch size',async()=>{lease=(await q('select * from claim_playbook_followups(5)'))[0];assert.equal(lease.id,job.id);assert.equal(lease.attempts,1);assert.equal((await q('select * from claim_playbook_followups(5)')).length,0);await assert.rejects(()=>call('claim_playbook_followups',[0]));});
+const payload={to:['owner@example.com'],subject:'Did you get a chance to read The Playbook?',text:'Plain',html:'<p>Body</p>',from:'Team Haven <info@themarketinghaven.xyz>'};
+await check('wrong recipients are rejected; saved payload never changes on retry',async()=>{await assert.rejects(()=>call('save_playbook_followup_payload',[job.id,lease.claim_id,JSON.stringify({...payload,to:['attacker@example.com']})]));assert.deepEqual(await call('save_playbook_followup_payload',[job.id,lease.claim_id,JSON.stringify(payload)]),payload);assert.deepEqual(await call('save_playbook_followup_payload',[job.id,lease.claim_id,JSON.stringify({...payload,text:'Changed'})]),payload);assert.equal(await call('complete_playbook_followup',[job.id,randomUUID(),'accepted',null]),false);});
+await check('failed sends remain pending and provider acceptance ends further attempts',async()=>{assert.equal(await call('complete_playbook_followup',[job.id,lease.claim_id,null,'resend_network_error']),true);assert.equal(await scalar('select sent_at is null from playbook_purchase_followups where id=$1',[job.id]),true);await q("update playbook_purchase_followups set next_attempt_at=now()-interval '1 second' where id=$1",[job.id]);lease=(await q('select * from claim_playbook_followups(5)'))[0];assert.equal(lease.attempts,2);assert.equal(await call('complete_playbook_followup',[job.id,lease.claim_id,'provider_accepted',null]),true);assert.equal((await q('select * from claim_playbook_followups(5)')).length,0);});
+await check('cancelled, old and retry-expired work never sends',async()=>{await createFollowup('UNSEEN_cancel');let id=await scalar("select id from playbook_purchase_followups where reference='UNSEEN_cancel'");await call('cancel_playbook_followup',[id]);await createFollowup('UNSEEN_old',{paid:'9 days'});await createFollowup('UNSEEN_retryexpired');await q("update playbook_purchase_followups set first_attempt_at=now()-interval '24 hours' where reference='UNSEEN_retryexpired'");assert.equal((await q('select * from claim_playbook_followups(5)')).length,0);const stats=await call('playbook_followup_stats');assert.equal(stats.accepted,1);assert.equal(stats.cancelled,1);assert.equal(stats.needsReview,2);});
+await check('public roles cannot read queue, claim jobs or cancel emails',async()=>{await db.exec("set role anon;select set_config('request.jwt.claim.role','anon',false)");await assert.rejects(()=>q('select * from playbook_purchase_followups'),e=>e.code==='42501');await assert.rejects(()=>call('claim_playbook_followups',[1]),e=>e.code==='42501');await assert.rejects(()=>call('cancel_playbook_followup',[job.id]),e=>e.code==='42501');await assert.rejects(()=>call('playbook_followup_stats'),e=>e.code==='42501');});
+
+  }
   console.log(`PostgreSQL checks: ${passed} passed, 0 failed`);
 } finally { await db.close(); }

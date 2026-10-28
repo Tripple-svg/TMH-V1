@@ -1,284 +1,85 @@
-import { scoreFailureCopy } from '../../../../supabase/functions/_shared/scoring-copy.js';
-// src/components/haven/components/HavenScoreCard.jsx
-// V3.2 — Loading state aware of website vs social path.
-
-import React from 'react';
-import { motion } from 'framer-motion';
+import { useState } from 'react';
 import { ArrowRight, AlertCircle, Loader2, RotateCcw } from 'lucide-react';
-import { SCORING_COPY } from '../config/prompts';
+import { scoreFailureCopy } from '../../../../supabase/functions/_shared/scoring-copy.js';
+import { RUBRIC_VERSION, WEBSITE_RUBRIC, SOCIAL_RUBRIC, WEBSITE_SCORE_EXPLANATION, SOCIAL_SCORE_EXPLANATION } from '../../../../supabase/functions/_shared/scoring-rubric.js';
+import { reviewScreenshotFileError } from '../../../lib/reviewScreenshot.js';
 
-const WEBSITE_LABELS = {
-  clarity:    'Clarity & Positioning',
-  trust:      'Trust Signals',
-  conversion: 'Conversion Path',
-  technical:  'Technical & Experience',
-  content:    'Content Quality',
-};
+const LEGACY_WEBSITE = { clarity: 'Clarity & positioning', trust: 'Trust signals', conversion: 'Conversion path', technical: 'Technical experience (previous rubric)', content: 'Content quality (previous rubric)' };
+const LEGACY_SOCIAL = { profile: 'Profile & bio', consistency: 'Content consistency (previous rubric)', engagement: 'Engagement quality (previous rubric)', readiness: 'Conversion readiness' };
+const buttonClass = 'flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-5 py-3 text-sm font-medium text-white hover:bg-white/10 disabled:opacity-50';
 
-const SOCIAL_LABELS = {
-  profile:     'Profile & Bio',
-  consistency: 'Content Consistency',
-  engagement:  'Engagement Quality',
-  readiness:   'Conversion Readiness',
-};
-
-function detectKind(breakdown) {
-  if (!breakdown) return null;
-  if (breakdown.profile !== undefined || breakdown.readiness !== undefined) return 'social';
-  return 'website';
+function SourceCorrection({ kind, url, onCorrect }) {
+  const [open, setOpen] = useState(false);
+  const [newUrl, setNewUrl] = useState(url || '');
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async (event) => {
+    event.preventDefault(); setError('');
+    if (kind === 'social') {
+      const problem = reviewScreenshotFileError(file);
+      if (problem) { setError(problem); return; }
+    }
+    setBusy(true);
+    try {
+      const source = kind === 'website' ? { url: newUrl.trim() } : { screenshot: await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('This screenshot could not be read. Choose it again.'));
+        reader.readAsDataURL(file);
+      }) };
+      await onCorrect(source);
+      setOpen(false);
+    } catch (failure) { setError(failure.message || 'Could not update this review. Please try again.'); }
+    finally { setBusy(false); }
+  };
+  if (!onCorrect) return null;
+  return <div className="w-full">
+    <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="w-full py-2 text-xs text-zinc-400 underline decoration-zinc-700 underline-offset-4 hover:text-zinc-200">Wrong website/screenshot? Try Again</button>
+    {open && <form onSubmit={submit} className="mt-3 space-y-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 text-left">
+      <p className="text-xs leading-relaxed text-zinc-400">Replace the source for this review. Your saved conversation stays available; the previous score will be replaced.</p>
+      {kind === 'website' ? <label className="block text-xs text-zinc-300">Website address
+        <input required type="url" value={newUrl} onChange={event => setNewUrl(event.target.value)} placeholder="https://yourwebsite.com" disabled={busy} className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 p-3 text-base text-white" />
+      </label> : <label className="block text-xs text-zinc-300">New profile screenshot
+        <input required type="file" accept="image/png,image/jpeg,image/webp" onChange={event => setFile(event.target.files?.[0] || null)} disabled={busy} className="mt-2 block w-full text-xs text-zinc-400" />
+        <span className="mt-2 block text-zinc-500">Include a readable bio and visible posts. PNG, JPEG or WebP, up to 5 MB.</span>
+      </label>}
+      {error && <p role="alert" className="text-xs leading-relaxed text-amber-200">{error}</p>}
+      <button type="submit" disabled={busy} className={buttonClass}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}{busy ? 'Updating review…' : 'Review this source'}</button>
+    </form>}
+  </div>;
 }
 
-function ScoreBar({ value, max = 20 }) {
-  const pct = Math.min(100, Math.round((value / max) * 100));
-  return (
-    <div className="h-[3px] w-full rounded-full bg-white/[0.04] overflow-hidden">
-      <motion.div
-        className="h-full bg-zinc-500"
-        initial={{ width: 0 }}
-        animate={{ width: `${pct}%` }}
-        transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-      />
-    </div>
-  );
-}
-
-function FailedState({ error, onProceed, onRetry, retryCount = 0, kindLabel }) {
-  const maxRetries = 2;
+export default function HavenScoreCard({ preflight, kind = 'website', onProceed, onRetry, onCorrect }) {
+  const { status, score, breakdown, biggestIssue, url, error, reason, rubricVersion, evidence } = preflight || {};
   const needsRecovery = /access recovery/.test(error || '');
-  const canRetry = !needsRecovery && retryCount < maxRetries;
-
-  return (
-    <div className="flex flex-col items-center justify-center flex-1 min-h-full text-center px-6 py-12 space-y-6">
-      <div className="w-12 h-12 rounded-full flex items-center justify-center bg-white/[0.03] border border-white/[0.08]">
-        <AlertCircle className="w-5 h-5 text-zinc-400" />
-      </div>
-      <div className="space-y-2 max-w-xs">
-        <h3 className="text-base font-semibold text-white">
-          {needsRecovery ? 'This saved review needs access recovery'
-            : canRetry ? `Couldn't read your ${kindLabel}` : `Still can't read your ${kindLabel}`}
-        </h3>
-        <p className="text-[13px] text-zinc-400 leading-relaxed">
-            {error || SCORING_COPY.failed}
-        </p>
-        {retryCount > 0 && (
-          <p className="text-[11px] text-zinc-500 pt-1">
-            Attempt {retryCount + 1} failed
-          </p>
-        )}
-      </div>
-
-      {canRetry ? (
-        <>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-zinc-600 hover:bg-zinc-500 text-white text-sm font-semibold transition-all shadow-lg shadow-zinc-600/20 cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Try again
-          </button>
-          <button
-            type="button"
-            onClick={onProceed}
-            className="text-[12px] text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
-          >
-            Skip and continue to chat
-          </button>
-        </>
-      ) : (
-        <button
-          type="button"
-          onClick={onProceed}
-          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-zinc-600 hover:bg-zinc-500 text-white text-sm font-semibold transition-all shadow-lg shadow-zinc-600/20 cursor-pointer"
-        >
-          Continue to Chat <ArrowRight className="w-4 h-4" />
-        </button>
-      )}
+  const currentRubric = rubricVersion === RUBRIC_VERSION;
+  const labels = currentRubric ? (kind === 'social' ? SOCIAL_RUBRIC : WEBSITE_RUBRIC) : (kind === 'social' ? LEGACY_SOCIAL : LEGACY_WEBSITE);
+  const hasScore = status === 'ready' && Number.isInteger(score);
+  const loading = status === 'scraping';
+  return <div className="flex min-h-full flex-col gap-6 px-3 py-8 sm:px-6">
+    <div className="space-y-3 text-center">
+      {loading ? <Loader2 className="mx-auto h-6 w-6 animate-spin text-zinc-400" /> : !hasScore && <AlertCircle className="mx-auto h-6 w-6 text-zinc-400" />}
+      <h3 className="text-base font-semibold tracking-tight text-white">{loading ? (kind === 'social' ? 'Reading your screenshot' : 'Reading your website')
+        : needsRecovery ? 'This saved review needs access recovery' : hasScore ? 'Your Haven score' : status === 'failed' ? 'Review unavailable' : 'Not enough evidence to score'}</h3>
+      {hasScore && <p className="text-[56px] font-semibold leading-none tracking-tight text-white tabular-nums">{score}<span className="ml-2 text-lg font-medium text-zinc-500">/ 100</span></p>}
+      <p className="mx-auto max-w-sm text-[13px] leading-relaxed text-zinc-400">{needsRecovery ? error : status === 'failed' ? error || scoreFailureCopy(reason || 'provider_unavailable', kind)
+        : !hasScore && !loading ? scoreFailureCopy(reason, kind)
+        : kind === 'social' ? SOCIAL_SCORE_EXPLANATION : WEBSITE_SCORE_EXPLANATION}</p>
+      {hasScore && <p className="text-[11px] leading-relaxed text-zinc-500">{currentRubric ? 'A review of visible communication, not a prediction of sales or a test of technical performance.' : 'Saved under the previous rubric. Review your source again for the current evidence-based assessment.'}</p>}
     </div>
-  );
-}
-
-export default function HavenScoreCard({ preflight, kind: kindProp, userName, brandName, onProceed, onRetry }) {
-  const { status, score, breakdown, biggestIssue, url, error, reason, retryCount = 0 } = preflight || {};
-
-  // Prefer the kind from the breakdown (accurate) — fall back to the prop passed by the drawer (needed during loading)
-  const kind = detectKind(breakdown) || kindProp || 'website';
-  const labels = kind === 'social' ? SOCIAL_LABELS : WEBSITE_LABELS;
-  const kindLabel = kind === 'social' ? 'profile' : 'site';
-
-  // ─── Loading ───
-  if (status === 'scraping') {
-    return (
-      <div className="flex flex-col items-center justify-center flex-1 min-h-full text-center px-6 py-12 space-y-7">
-        <div className="relative w-14 h-14">
-          <motion.div
-            className="absolute inset-0 rounded-full border border-zinc-500/20"
-            animate={{ scale: [1, 1.2, 1], opacity: [0.4, 0.1, 0.4] }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-          />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Loader2 className="w-5 h-5 text-zinc-400 animate-spin" />
-          </div>
-        </div>
-        <div className="space-y-2.5 max-w-xs">
-          <h3 className="text-base font-semibold text-white tracking-tight">
-            {retryCount > 0 ? 'Retrying' : (kind === 'social' ? 'Reading your profile' : 'Reading your site')}
-          </h3>
-          <p className="text-[13px] text-zinc-400 leading-relaxed">
-            {kind === 'social'
-              ? 'Haven is going through the screenshot — bio, content, engagement, conversion.'
-              : (url
-                  ? <>Haven is going through <span className="text-zinc-200">{url}</span> — clarity, trust, conversion path.</>
-                  : 'Haven is going through your website.')}
-          </p>
-        </div>
-        <p className="text-[11px] text-zinc-600">Takes a few seconds</p>
-      </div>
-    );
-  }
-
-  // ─── Failed ───
-  if (status === 'failed') {
-    return (
-      <FailedState
-        error={error}
-        onProceed={onProceed}
-        onRetry={onRetry}
-        retryCount={retryCount}
-        kindLabel={kindLabel}
-      />
-    );
-  }
-
-  // ─── Score unavailable ───
-  if (status === 'bad_data') {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-full px-6 py-10 space-y-6 text-center">
-        <AlertCircle className="w-6 h-6 text-zinc-400" />
-        <div className="space-y-3 max-w-sm">
-          <h3 className="text-base font-semibold text-white">Not enough readable content to score</h3>
-          <p className="text-[13px] leading-relaxed text-zinc-400">
-            {scoreFailureCopy(reason, kind)}
-          </p>
-        </div>
-        <button type="button" onClick={onProceed}
-          className="flex items-center gap-2 rounded-xl bg-zinc-600 px-5 py-3 text-sm font-semibold text-white hover:bg-zinc-500 transition-colors">
-          Continue to Chat <ArrowRight className="w-4 h-4" />
-        </button>
-      </div>
-    );
-  }
-  if (score == null) {
-    return (
-      <div className="flex flex-col items-center justify-center flex-1 min-h-full text-center px-6 py-12 space-y-6">
-        <div className="w-12 h-12 rounded-full flex items-center justify-center bg-white/[0.03] border border-white/[0.08]">
-          <AlertCircle className="w-5 h-5 text-zinc-400" />
-        </div>
-        <div className="space-y-2 max-w-xs">
-          <h3 className="text-base font-semibold text-white">Score unavailable</h3>
-          <p className="text-[13px] text-zinc-400 leading-relaxed">
-            We could not generate a score. No assessment of the site is available; you can continue in chat.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onProceed}
-          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-zinc-600 hover:bg-zinc-500 text-white text-sm font-semibold transition-all shadow-lg shadow-zinc-600/20 cursor-pointer"
-        >
-          Continue to Chat <ArrowRight className="w-4 h-4" />
-        </button>
-      </div>
-    );
-  }
-
-  // ─── Score ready ───
-  const passed = score >= 60;
-  const maxPerCategory = kind === 'social' ? 25 : 20;
-
-  return (
-    <div className="flex flex-col flex-1 min-h-full px-6 py-8 space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="flex flex-col items-center text-center space-y-3 pt-2"
-      >
-        <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">
-          {kind === 'social' ? 'Profile Score' : 'Website Score'}
-        </span>
-        <div className="flex items-baseline gap-1.5">
-          <motion.span
-            className="text-[56px] leading-none font-semibold text-white tracking-tight tabular-nums"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.15, type: 'spring', stiffness: 180, damping: 20 }}
-          >
-            {score}
-          </motion.span>
-          <span className="text-lg text-zinc-500 font-medium">/ 100</span>
-        </div>
-        <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full border ${
-          passed
-            ? 'bg-zinc-500/10 text-zinc-300 border-zinc-500/25'
-            : 'bg-white/[0.03] text-zinc-400 border-white/[0.08]'
-        }`}>
-          {passed ? 'Above pass mark' : 'Below pass mark (60)'}
-        </span>
-      </motion.div>
-
-      {breakdown && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          className="space-y-4 pt-2"
-        >
-          {Object.entries(labels).map(([key, label], idx) => {
-            const val = breakdown[key] ?? 0;
-            return (
-              <motion.div
-                key={key}
-                initial={{ opacity: 0, x: -6 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.35 + idx * 0.06 }}
-                className="space-y-2"
-              >
-                <div className="flex items-center justify-between text-[12px]">
-                  <span className="text-zinc-400">{label}</span>
-                  <span className="text-zinc-200 font-medium tabular-nums">{val}/{maxPerCategory}</span>
-                </div>
-                <ScoreBar value={val} max={maxPerCategory} />
-              </motion.div>
-            );
-          })}
-        </motion.div>
-      )}
-
-      {biggestIssue && (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.7 }}
-          className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-2"
-        >
-          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.15em] text-zinc-500 font-medium">
-            <AlertCircle className="w-3 h-3" />
-            Biggest issue
-          </div>
-          <p className="text-[13px] text-zinc-300 leading-relaxed">{biggestIssue}</p>
-        </motion.div>
-      )}
-
-      <motion.button
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.9 }}
-        type="button"
-        onClick={onProceed}
-        className="mt-auto flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-zinc-600 hover:bg-zinc-500 text-white text-sm font-semibold transition-all cursor-pointer"
-      >
-        Proceed to Chat <ArrowRight className="w-4 h-4" />
-      </motion.button>
-    </div>
-  );
+    {hasScore && biggestIssue && <div className="space-y-2 rounded-xl border border-white/[0.08] bg-white/[0.025] p-4"><p className="text-[10px] uppercase tracking-[0.15em] text-zinc-500">First thing to review</p><p className="text-[13px] leading-relaxed text-zinc-300">{biggestIssue}</p></div>}
+    {hasScore && breakdown && <details className="rounded-xl border border-white/[0.08] p-4 text-xs text-zinc-300">
+      <summary className="cursor-pointer font-medium">How this score was reached</summary>
+      <div className="mt-5 space-y-5">{Object.entries(labels).filter(([key]) => Number.isInteger(breakdown[key])).map(([key, label]) => <div key={key} className="space-y-2">
+        <div className="flex justify-between gap-4"><span>{label}</span><span className="shrink-0 tabular-nums text-zinc-400">{breakdown[key]}/{currentRubric || kind === 'social' ? 25 : 20}</span></div>
+        {evidence?.[key] && <><p className="leading-relaxed text-zinc-400">{evidence[key].observation}</p>{evidence[key].quote && <blockquote className="border-l border-zinc-700 pl-3 leading-relaxed text-zinc-500">{evidence[key].quote}</blockquote>}<p className="leading-relaxed text-zinc-300">{evidence[key].improvement}</p></>}
+      </div>)}</div>
+    </details>}
+    {!loading && <div className="mt-auto space-y-3">
+      {!needsRecovery && status === 'failed' && <button type="button" onClick={onRetry} className={`${buttonClass} w-full`}><RotateCcw className="h-4 w-4" />Retry this source</button>}
+      <button type="button" onClick={onProceed} className={`${buttonClass} w-full`}>Continue to Chat <ArrowRight className="h-4 w-4" /></button>
+      {!needsRecovery && <SourceCorrection key={`${kind}/${url || ''}`} kind={kind} url={url} onCorrect={onCorrect} />}
+    </div>}
+  </div>;
 }

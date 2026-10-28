@@ -50,15 +50,15 @@ serve(async (req) => {
     if (!notification) return json({ ok: false, error: 'Flag notification not found' }, 404);
     if (notification.sent_at) return json({ ok: true, skipped: 'already sent' });
 
-    const sourceLabel = notification.email_template_version === 'editorial-v2' && notification.entry_point === 'team_inquiry' ? 'Team inquiry (Talk to Our Team)' : SOURCE_LABELS[notification.source] || 'Admin action / legacy record';
+    const sourceLabel = ['editorial-v2', 'editorial-v3'].includes(notification.email_template_version) && notification.entry_point === 'team_inquiry' ? 'Team inquiry (Talk to Our Team)' : SOURCE_LABELS[notification.source] || 'Admin action / legacy record';
     await deliverFlagNotification(supabase, notification, 'team', {
           to: TEAM_RECIPIENTS,
           reply_to: 'info@themarketinghaven.xyz',
           subject: `URGENT: User Flagged - ${notification.status}`,
-          ...(notification.email_template_version === 'legacy' ? {} : { html: editorialEmail({ label: 'PLATFORM SAFETY', title: `User flagged: ${notification.status}`, paragraphs: ['A saved moderation event needs your review. Open the Admin Dashboard to inspect the conversation and manage access.'], details: [
+          ...(notification.email_template_version === 'legacy' ? {} : { html: editorialEmail({ version: notification.email_template_version || 'editorial-v2', label: 'PLATFORM SAFETY', title: `User flagged: ${notification.status}`, paragraphs: ['A saved moderation event needs your review. Open the Admin Dashboard to inspect the conversation and manage access.'], details: [
             ['Name', notification.full_name || 'Not recorded (guest if no email)'], ['Email', notification.email || 'Not provided'], ['Status', notification.status], ['Reason', notification.reason || 'Not provided'], ['Source', sourceLabel], ['Session ID', notification.session_id || 'Not recorded'], ['Visitor ID', notification.visitor_id || 'Linked saved review'],
           ], button: { label: 'Review in Admin', href: 'https://themarketinghaven.xyz/admin' } }) }),
-          text: `User ${notification.email || `visitor ${notification.visitor_id}`} has been flagged as ${notification.status}. Reason Haven flagged them: ${notification.reason || 'Not provided'}. Please review in the Admin Dashboard.\n\nName: ${notification.full_name || (notification.email ? 'Not recorded' : 'Not provided (guest)')}\nSource: ${sourceLabel}\nSession ID: ${notification.session_id || 'Not recorded'}\nVisitor ID: ${notification.visitor_id || 'Linked saved review'}\nAdmin Dashboard: https://themarketinghaven.xyz/admin`,
+          text: `User ${notification.email || `visitor ${notification.visitor_id}`} has been flagged as ${notification.status}. Reason Haven flagged them: ${notification.reason || 'Not provided'}. Please review in the Admin Dashboard.\n\nName: ${notification.full_name || (notification.email ? 'Not recorded' : 'Not provided (guest)')}\nSource: ${sourceLabel}\nSession ID: ${notification.session_id || 'Not recorded'}\nVisitor ID: ${notification.visitor_id || 'Linked saved review'}\nAdmin Dashboard: https://themarketinghaven.xyz/admin` + (notification.email_template_version === 'editorial-v3' ? '\n\nYour friends over at Team Haven\nBuilding with intention.' : ''),
     }, Deno.env);
     return json({ ok: true });
   } catch (error) {

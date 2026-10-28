@@ -123,6 +123,7 @@ export default function PrivacyPage() {
                     <li>Monitor for abuse, misuse, harassment, or violations of our Terms of Service</li>
                     <li>Improve the accuracy and usefulness of Haven AI over time</li>
                     <li>Contact you with follow-up information relevant to your review</li>
+                    <li>If you opt in at Playbook checkout, send one check-in email about 24 hours after payment with application guidance and a link to our services. You can decline at checkout or cancel using the link in that email.</li>
                   </ul>
                   <p>We do not sell your personal information. We do not share it with advertising networks.</p>
                   <p>

@@ -28,6 +28,7 @@ const DEFAULT_USER_PROFILE = {
   screenshot: null, screenshotFileName: null, websiteUrl: null,
   scrapedWebSummary: null, scrapeFailed: false, scrapeState: null,
   auditScore: null, scoreBreakdown: null, biggestIssue: null,
+  rubricVersion: null, scoreEvidence: null, scoringRevision: 0,
   assessmentSummary: null, biggestLeak: null,
   biggestProblems: [], silentAccountId: null, exchangeCount: 0,
   currentStep: STEPS.GREETING, isReturningUser: false,
@@ -42,6 +43,7 @@ const DEFAULT_PREFLIGHT = {
   status: 'idle', url: null, score: null, breakdown: null,
   biggestIssue: null, summary: null, error: null, reason: null,
   dismissed: false, retryCount: 0,
+  rubricVersion: null, evidence: null,
 };
 
 const NAV_ACTION_RULES = [
@@ -173,6 +175,9 @@ async function readHavenResponse(response) {
     const error = new Error(data.error || 'Haven could not complete the request. Please try again.');
     error.status = response.status;
     error.reason = data.reason;
+    error.code = data.code;
+    error.currentRevision = data.revision;
+    error.retryAfter = Number(data.retryAfter || response.headers.get('Retry-After')) || 0;
     throw error;
   }
   return data;
@@ -233,6 +238,16 @@ async function callScoreSocial(screenshot, access, force = false) {
   return readHavenResponse(response);
 }
 
+async function callCorrectSource(source, access, revision) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !key) throw new Error('Supabase is not configured.');
+  return readHavenResponse(await fetch(`${supabaseUrl}/functions/v1/update-review-source`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, apikey: key },
+    body: JSON.stringify({ ...source, context: access, revision }),
+  }));
+}
+
 export function HavenProvider({ children }) {
   const [isOpen, setIsOpen]               = useState(false);
   const [mode, setMode]                   = useState('support');
@@ -257,6 +272,7 @@ export function HavenProvider({ children }) {
   const [sessionSaveState, setSessionSaveState] = useState('saved');
 
   const abortControllerRef = useRef(null);
+  const activeRequestRef = useRef(null);
   const publicSessionIdsRef = useRef(new Map());
   const pendingTurnsRef = useRef(new Map());
   const inFlightTurnsRef = useRef(new Set());
@@ -408,11 +424,12 @@ export function HavenProvider({ children }) {
       const result = await callScrapeWebsite(url, reviewAccess(access), force);
       if (requestId !== scoringRequestRef.current) return;
       if (!result.ok) throw new Error(result.error || 'Scraper returned ok: false');
-      if (!['valid', 'bad_data'].includes(result.state)) throw new Error(SCORING_COPY.failed);
+      if (!['valid', 'bad_data', 'insufficient_evidence'].includes(result.state)) throw new Error(SCORING_COPY.failed);
       const valid = result.state === 'valid' && Number.isInteger(result.score);
 
       setAuditPreflight(prev => ({
-        status: valid ? 'ready' : 'bad_data', url, reason: result.reason || null,
+        status: valid ? 'ready' : 'insufficient_evidence', url, reason: result.reason || null,
+        rubricVersion: result.rubricVersion, evidence: result.evidence || null,
         score: valid ? result.score : null, breakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null, summary: result.summary || '',
         error: null, dismissed: false, retryCount: prev.retryCount || 0,
@@ -422,6 +439,7 @@ export function HavenProvider({ children }) {
         scrapedWebSummary: result.summary || null, scrapeFailed: false, scrapeState: result.state,
         auditScore: valid ? result.score : null, scoreBreakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null,
+        rubricVersion: result.rubricVersion, scoreEvidence: result.evidence || null, scoringRevision: result.revision ?? prev.scoringRevision ?? 0,
       }));
 
     } catch (err) {
@@ -430,7 +448,7 @@ export function HavenProvider({ children }) {
       setAuditPreflight(prev => ({
         status: 'failed', url, score: null, breakdown: null, biggestIssue: null,
         summary: null,
-        reason: err.reason || null, error: err instanceof Error && /access recovery/.test(err.message) ? err.message : scoreFailureCopy(err.reason || 'provider_unavailable'),
+        reason: err.reason || null, error: err instanceof Error && (/access recovery/.test(err.message) || err.status === 409) ? err.message : scoreFailureCopy(err.reason || 'provider_unavailable'),
         dismissed: false, retryCount: (prev.retryCount || 0) + 1,
       }));
       setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true, scrapeState: 'failed', auditScore: null, scoreBreakdown: null, biggestIssue: null }));
@@ -438,7 +456,7 @@ export function HavenProvider({ children }) {
   }, [userProfile]);
 
   const runSocialScorer = useCallback(async (screenshot, { force = false, access = userProfile } = {}) => {
-    if (!screenshot) return;
+    if (!access.reviewId) return;
     const requestId = ++scoringRequestRef.current;
 
     setAuditPreflight(prev => ({
@@ -452,11 +470,12 @@ export function HavenProvider({ children }) {
       const result = await callScoreSocial(screenshot, reviewAccess(access), force);
       if (requestId !== scoringRequestRef.current) return;
       if (!result.ok) throw new Error(result.error || 'Social scorer returned ok: false');
-      if (!['valid', 'bad_data'].includes(result.state)) throw new Error('Social scoring failed.');
+      if (!['valid', 'bad_data', 'insufficient_evidence'].includes(result.state)) throw new Error('Social scoring failed.');
       const valid = result.state === 'valid' && Number.isInteger(result.score);
 
       setAuditPreflight(prev => ({
-        status: valid ? 'ready' : 'bad_data', url: null, reason: result.reason || null,
+        status: valid ? 'ready' : 'insufficient_evidence', url: null, reason: result.reason || null,
+        rubricVersion: result.rubricVersion, evidence: result.evidence || null,
         score: valid ? result.score : null, breakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null, summary: null,
         error: null, dismissed: false, retryCount: prev.retryCount || 0,
@@ -465,6 +484,7 @@ export function HavenProvider({ children }) {
         ...prev,
         auditScore: valid ? result.score : null, scoreBreakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null,
+        rubricVersion: result.rubricVersion, scoreEvidence: result.evidence || null, scoringRevision: result.revision ?? prev.scoringRevision ?? 0,
         scrapedWebSummary: null,
         scrapeFailed: false, scrapeState: result.state,
       }));
@@ -482,16 +502,49 @@ export function HavenProvider({ children }) {
   }, [userProfile]);
 
   const retryScrape = useCallback(() => {
-    if (userProfile.businessDomain === 'social' && userProfile.screenshot) {
+    if (userProfile.businessDomain === 'social') {
       runSocialScorer(userProfile.screenshot, { force: true });
     } else if (userProfile.websiteUrl) {
       runScraper(userProfile.websiteUrl, { force: true });
     }
   }, [userProfile.businessDomain, userProfile.screenshot, userProfile.websiteUrl, runScraper, runSocialScorer]);
 
+  const correctReviewSource = useCallback(async (source) => {
+    if (!userProfile.reviewId || !userProfile.sessionId || !userProfile.accessToken) throw new Error(REVIEW_RECOVERY_MESSAGE);
+    let result;
+    try {
+      result = await callCorrectSource(source, reviewAccess(userProfile), userProfile.scoringRevision || 0);
+    } catch (error) {
+      // A second tab may have corrected this review. Show the conflict before a
+      // deliberate re-submit; do not silently overwrite the other tab's input.
+      if (error.code === 'source_changed' && Number.isSafeInteger(error.currentRevision)) {
+        setUserProfile(previous => ({ ...previous, scoringRevision: error.currentRevision }));
+        throw new Error('This review was changed in another tab. Check your replacement carefully, then submit it again if you want to replace that newer source.', { cause: error });
+      }
+      throw error;
+    }
+    scoringRequestRef.current += 1;
+    const access = { ...userProfile, websiteUrl: result.review.website_url || null,
+      screenshot: source.screenshot || null, scoringRevision: result.revision,
+      auditScore: null, scoreBreakdown: null, scoreEvidence: null, rubricVersion: null, biggestIssue: null,
+      scrapedWebSummary: null, scrapeState: null, scrapeFailed: false };
+    setUserProfile(access);
+    const key = `audit/${userProfile.sessionId}`;
+    pendingTurnsRef.current.delete(key);
+    setSessionsForScope('audit', previous => previous.map(session => session.id === userProfile.sessionId
+      ? { ...session, failedTurn: null, currentStep: STEPS.AWAITING_DIAGNOSTIC_Q1 } : session));
+    if (access.businessDomain === 'social') await runSocialScorer(source.screenshot, { force: true, access });
+    else await runScraper(access.websiteUrl, { force: true, access });
+  }, [userProfile, runScraper, runSocialScorer, setSessionsForScope]);
+
   const proceedFromPreflight = useCallback(() => {
     setAuditPreflight(prev => ({ ...prev, dismissed: true }));
   }, []);
+
+  const reopenReviewSource = useCallback(() => {
+    if (auditPreflight.status === 'idle') retryScrape();
+    else setAuditPreflight(previous => ({ ...previous, dismissed: false }));
+  }, [auditPreflight.status, retryScrape]);
 
   const resetPreflight = useCallback(() => {
     scoringRequestRef.current += 1;
@@ -568,7 +621,7 @@ export function HavenProvider({ children }) {
 
       if (businessDomain === 'website' && websiteUrl) {
         runScraper(websiteUrl, { access });
-      } else if (businessDomain === 'social' && screenshot) {
+      } else if (businessDomain === 'social') {
         runSocialScorer(screenshot, { access });
       }
 
@@ -710,13 +763,28 @@ export function HavenProvider({ children }) {
   }, [activeScope, activeSessionId, setSessionsForScope, supportSessions, triggerToast]);
 
   const stopResponse = useCallback(() => {
+    const active = activeRequestRef.current;
+    if (active) {
+      active.stopped = true;
+      pendingTurnsRef.current.delete(active.turnKey);
+      setSessionsForScope(active.scope, previous => previous.map(session => session.id === active.sessionId ? { ...session, failedTurn: null } : session));
+      if (active.payload) void callHavenAPI({ ...active.payload, messages: undefined, screenshot: undefined, action: 'cancel' }).catch(() => triggerToast('Stopped on this device. The server may need a moment to release the request.'));
+    }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
     setIsThinking(false);
     triggerToast('Response stopped');
-  }, [triggerToast]);
+  }, [triggerToast, setSessionsForScope]);
+
+  const dismissFailedTurn = useCallback(() => {
+    const key = `${activeScope}/${activeSessionId}`;
+    const pending = pendingTurnsRef.current.get(key);
+    if (pending?.payload) void callHavenAPI({ ...pending.payload, messages: undefined, screenshot: undefined, action: 'cancel' }).catch(() => {});
+    pendingTurnsRef.current.delete(key);
+    setSessionsForScope(activeScope, previous => previous.map(session => session.id === activeSessionId ? { ...session, failedTurn: null } : session));
+  }, [activeScope, activeSessionId, setSessionsForScope]);
 
   const sendNavChipIntent = useCallback((text) => {
     if (!text) return;
@@ -739,6 +807,7 @@ export function HavenProvider({ children }) {
       content = pending.content; image = pending.image;
     }
     const retrying = pending?.content === content && pending?.image === image;
+    if (retrying && pending.retryAt > Date.now()) return;
     const requestId = retrying ? pending.requestId : crypto.randomUUID();
     pendingTurnsRef.current.set(turnKey, retrying ? { ...pending, failed: false } : { requestId, content, image });
     inFlightTurnsRef.current.add(turnKey);
@@ -748,7 +817,9 @@ export function HavenProvider({ children }) {
     setIsThinking(true);
 
     const controller = new AbortController();
-    const responseTimeout = setTimeout(() => controller.abort(), 45000);
+    const responseTimeout = setTimeout(() => controller.abort(), 65000);
+    const activeRequest = { turnKey, scope: activeScope, sessionId: activeSessionId, stopped: false, payload: null };
+    activeRequestRef.current = activeRequest;
     abortControllerRef.current = controller;
     const abort = () => controller.abort();
     if (options?.signal) {
@@ -800,7 +871,9 @@ export function HavenProvider({ children }) {
         screenshot: retrying && pending.screenshot !== undefined ? pending.screenshot : screenshotToSend, scope: activeScope,
       };
       pendingTurnsRef.current.set(turnKey, { requestId, content, image, payload });
+      activeRequest.payload = payload;
       const result = await callHavenAPI({ ...payload, signal: controller.signal });
+      if (activeRequest.stopped) return;
 
       pendingTurnsRef.current.delete(turnKey);
       if (result.flagStatus) setUserProfile(prev => ({ ...prev, flag_status: result.flagStatus }));
@@ -845,6 +918,7 @@ export function HavenProvider({ children }) {
 
       addMessage('agent', cleanedText, null, agentExtraProps);
     } catch (err) {
+      if (activeRequest.stopped) return;
       const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
       const error = err.name === 'AbortError' ? 'Response stopped. You can retry the same message.'
         : /access recovery/.test(err.message) || [400, 403, 413].includes(err.status) ? err.message
@@ -852,13 +926,15 @@ export function HavenProvider({ children }) {
         : err.status === 409 ? 'Haven is still finishing this message. Wait a moment, then retry.'
         : 'Haven could not finish this response. Retry your saved message to continue from the same point.';
       const saved = pendingTurnsRef.current.get(turnKey);
-      if (saved) pendingTurnsRef.current.set(turnKey, { ...saved, failed: true });
+      const retryAt = Date.now() + Math.min(300, Math.max(0, err.retryAfter || 0)) * 1000;
+      if (saved) pendingTurnsRef.current.set(turnKey, { ...saved, failed: true, retryAt });
       setSessionsForScope(activeScope, prev => prev.map(s => s.id === activeSessionId
-        ? { ...s, failedTurn: { content, image, requestId, screenshot: saved?.payload?.screenshot || null, error } } : s));
+        ? { ...s, failedTurn: { content, image, requestId, screenshot: saved?.payload?.screenshot || null, error, retryAt } } : s));
     } finally {
       clearTimeout(responseTimeout);
       options?.signal?.removeEventListener('abort', abort);
       inFlightTurnsRef.current.delete(turnKey);
+      if (activeRequestRef.current === activeRequest) activeRequestRef.current = null;
       if (abortControllerRef.current === controller) { setIsThinking(false); abortControllerRef.current = null; }
     }
   }, [activeScope, activeSessionId, currentSession, getSessionsForScope, setSessionsForScope, createSession, addMessage, userProfile, activeService]);
@@ -927,13 +1003,13 @@ export function HavenProvider({ children }) {
     activeScope, activeService, viewState,
     sessions, activeSessionId, currentSession, messages,
     createNewSession, switchSession, togglePinSession, deleteSession, clearChat,
-    addMessage, sendMessage, sendNavChipIntent, isThinking, setIsThinking, stopResponse,
+    addMessage, sendMessage, sendNavChipIntent, isThinking, setIsThinking, stopResponse, dismissFailedTurn,
     userProfile, updateUserProfile, recheckHavenAccess,
     bookingNoticeOpen, setBookingNoticeOpen, bookingContext,
     showToast, toastMessage, triggerToast,
     activeMenuSessionId, setActiveMenuSessionId,
     hasExistingReview, getSavedReviewFormData, clearExistingReview,
-    auditPreflight, proceedFromPreflight, resetPreflight, runScraper, runSocialScorer, retryScrape, sessionSaveState,
+    auditPreflight, proceedFromPreflight, reopenReviewSource, resetPreflight, runScraper, runSocialScorer, retryScrape, correctReviewSource, sessionSaveState,
   };
 
   return <HavenContext.Provider value={value}>{children}</HavenContext.Provider>;

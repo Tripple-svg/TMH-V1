@@ -24,11 +24,12 @@ serve(async (req) => {
     if (!['yellow', 'red'].includes(event.status) || typeof event.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(event.email)) return json({ ok: false, error: 'Notification has no valid email recipient' }, 500);
     const restricted = event.status === 'red';
     const subject = restricted ? 'Your Haven access has been restricted' : 'Warning regarding your usage of Haven.';
-    const text = restricted
+    const originalText = restricted
       ? 'Your access to Haven is currently restricted following a review of your use of the platform. You may not continue chatting while this restriction is active. If you believe this is a mistake, please reply to this email or contact info@themarketinghaven.xyz.\n\nTeam Haven'
       : 'Warning regarding your usage of Haven. Please keep conversations respectful and follow our terms. Your Haven usage has been marked for review; this warning does not automatically restrict your access. For questions, reply to this email or contact info@themarketinghaven.xyz.\n\nTeam Haven';
+    const text = event.email_template_version === 'editorial-v3' ? originalText.replace(/\n\nTeam Haven$/, '\n\nYour friends over at Team Haven\nBuilding with intention.') : originalText;
     await deliverFlagNotification(supabase, event, 'customer', { to: [event.email], reply_to: 'info@themarketinghaven.xyz', subject, text,
-      ...(event.email_template_version === 'legacy' ? {} : { html: editorialEmail({ label: 'YOUR HAVEN ACCESS', title: restricted ? 'Your access is restricted.' : 'A note about your usage.', paragraphs: text.replace(/\n\nTeam Haven$/, '').split('\n\n'), button: { label: 'Contact Team Haven', href: 'mailto:info@themarketinghaven.xyz' } }) }),
+      ...(event.email_template_version === 'legacy' ? {} : { html: editorialEmail({ version: event.email_template_version || 'editorial-v2', label: 'YOUR HAVEN ACCESS', title: restricted ? 'Your access is restricted.' : 'A note about your usage.', paragraphs: originalText.replace(/\n\nTeam Haven$/, '').split('\n\n'), button: { label: 'Contact Team Haven', href: 'mailto:info@themarketinghaven.xyz' } }) }),
     }, Deno.env);
     return json({ ok: true });
   } catch (error) {

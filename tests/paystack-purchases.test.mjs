@@ -127,7 +127,7 @@ test('accepts raw UTF-8 and whitespace signatures, records each supported NGN pr
     assert.equal(emails[0].payload.subject, 'Your copy of The Unseen Playbook');
     assert.deepEqual(emails[0].payload.to, ['buyer@example.com']);
     assert.equal(emails[0].payload.reply_to, 'info@themarketinghaven.xyz');
-    for (const text of ['https://themarketinghaven.xyz/#shop', 'Thank you for choosing The Unseen Playbook.', 'reply to this email', 'Team Haven.']) {
+    for (const text of ['https://themarketinghaven.xyz/#shop', 'Thank you for choosing The Unseen Playbook.', 'reply to this email', 'Your friends over at Team Haven']) {
       assert.ok(emails[0].payload.text.includes(text));
     }
     assert.equal(emails[0].headers.Authorization, `Bearer ${ENV.RESEND_API_KEY}`);
@@ -148,6 +148,29 @@ test('editorial purchase email: new purchases get the CTA; legacy pending sends 
       assert.doesNotMatch(emails[0].payload.text, /further stuff/);
     }
   }
+});
+
+test('signed checkout consent is explicit, versioned and immutable across webhook replays', async () => {
+  for (const metadata of [
+    { playbook_followup_opt_in: true, playbook_followup_consent_version: '2026-10-27' },
+    JSON.stringify({ playbook_followup_opt_in: true, playbook_followup_consent_version: '2026-10-27' }),
+  ]) {
+    const app = pipeline();
+    assert.equal((await app.webhook(webhookRequest(payment({ metadata })))).status, 200);
+    assert.equal(app.db.rows[0].followup_opt_in, true);
+    assert.equal(app.db.rows[0].followup_consent_version, '2026-10-27');
+    assert.equal(app.db.rows[0].buyer_first_name, 'Adéọlá');
+    assert.equal(app.db.rows[0].paid_at, '2026-10-25T12:00:00.000Z');
+    await app.webhook(webhookRequest(payment({ metadata: {}, customer: { email: 'changed@example.com', first_name: 'Changed' } })));
+    assert.equal(app.db.rows[0].followup_opt_in, true); assert.equal(app.db.rows[0].buyer_first_name, 'Adéọlá');
+  }
+  for (const metadata of [null, {}, { playbook_followup_opt_in: 'true', playbook_followup_consent_version: '2026-10-27' }, { playbook_followup_opt_in: true, playbook_followup_consent_version: 'old' }]) {
+    const app = pipeline(); await app.webhook(webhookRequest(payment({ metadata })));
+    assert.equal(app.db.rows[0].followup_opt_in, false); assert.equal(app.db.rows[0].followup_consent_version, null);
+  }
+  const app = pipeline(); await app.webhook(webhookRequest(payment({ metadata: {} })));
+  await app.webhook(webhookRequest(payment({ metadata: { playbook_followup_opt_in: true, playbook_followup_consent_version: '2026-10-27' } })));
+  assert.equal(app.db.rows[0].followup_opt_in, false);
 });
 
 test('ignores unrelated signed events, references, statuses, currencies, and amounts without writes or sends', async () => {

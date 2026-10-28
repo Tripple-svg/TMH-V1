@@ -16,8 +16,18 @@ const VISITOR_TOKEN = 'cd'.repeat(32);
 const ACCESS = { reviewId: REVIEW, sessionId: SESSION, accessToken: TOKEN, visitorId: VISITOR, visitorToken: VISITOR_TOKEN };
 const PUBLIC_ACCESS = { sessionId: PUBLIC_SESSION, visitorId: VISITOR, visitorToken: VISITOR_TOKEN };
 const GOOD_TEXT = `Ada Studio designs simple websites for independent Nigerian businesses. We help shop owners explain their services, show their work, and make it easier for customers to get in touch. Our projects begin with a conversation about the business and its audience. You can see selected projects below, read what our clients said, and request a website review. We are a small team in Lagos working with founders who want a clear first website. Tell us what you sell and the kind of customers you want to reach.`;
-const LOW_SCORE = { state: 'valid', score: 20, breakdown: { clarity: 4, trust: 4, conversion: 4, technical: 4, content: 4 }, biggestIssue: 'The opening section does not explain the service clearly.' };
-const SOCIAL_SCORE = { state: 'valid', score: 20, breakdown: { profile: 5, consistency: 5, engagement: 5, readiness: 5 }, biggestIssue: 'The visible bio does not identify the service.' };
+const scoreEvidence = (keys, quote) => Object.fromEntries(keys.map(key => [key, {
+  checks: [1, 1, 1, 1, 1], observation: 'The visible material provides only limited detail.',
+  quote, improvement: 'Make the buyer and the next step more specific.',
+}]));
+const LOW_SCORE = { state: 'valid', rubricVersion: '2026-10-27', score: 20,
+  breakdown: { clarity: 5, trust: 5, positioning: 5, conversion: 5 },
+  evidence: scoreEvidence(['clarity', 'trust', 'positioning', 'conversion'], 'Ada Studio designs simple websites'),
+  biggestIssue: 'The opening section does not explain the service clearly.' };
+const SOCIAL_SCORE = { state: 'valid', rubricVersion: '2026-10-27', score: 20,
+  breakdown: { profile: 5, direction: 5, value: 5, readiness: 5 },
+  evidence: scoreEvidence(['profile', 'direction', 'value', 'readiness'], 'Ada Studio'),
+  biggestIssue: 'The visible bio does not identify the service.' };
 const codes = new Map();
 function bundled(name) {
   if (!codes.has(name)) codes.set(name, buildSync({
@@ -28,9 +38,9 @@ function bundled(name) {
 }
 
 function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scoring = LOW_SCORE,
-  reader = GOOD_TEXT, readerStatus = 200, fetchImpl, writeError = null, env = {}, visitor = {}, modelText, rateAllowed = true } = {}) {
+  reader = GOOD_TEXT, readerStatus = 200, fetchImpl, writeError = null, env = {}, visitor = {}, modelText, rateAllowed = true, correctionError = null } = {}) {
   let handler;
-  const queries = [], writes = [], requests = [], rpcCalls = [], deliveries = [];
+  const queries = [], writes = [], requests = [], rpcCalls = [], deliveries = [], objectOperations = [];
   const rows = {
     haven_sessions: [{ id: SESSION, review_id: REVIEW, scope: 'audit', current_step: STEPS.AWAITING_DIAGNOSTIC_Q1,
       visitor_id: VISITOR, diagnostic_questions_asked: 1, diagnostic_answers: 0, explicit_call_requested: false, messages: [], message_count: 0, ...session }],
@@ -38,15 +48,32 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
     haven_chat_visitors: [{ id: VISITOR, token_hash: createHash('sha256').update(VISITOR_TOKEN).digest('hex'), review_id: null, flag_status: 'white', ...visitor }],
     haven_chat_turns: [], flag_alert_notifications: [],
     brand_reviews: [{ id: REVIEW, full_name: 'Ada', brand_name: 'Ada Studio', email: 'ada@example.com', flag_status: 'white',
-      platform_type: 'website', website_url: 'https://example.com', scrape_state: 'valid', haven_score: 20,
+      platform_type: 'website', website_url: 'https://example.com', screenshot_url: REVIEW + '/review.png',
+      scoring_revision: 0, rubric_version: '2026-10-27', score_evidence: LOW_SCORE.evidence,
+      scrape_state: 'valid', haven_score: 20,
       score_breakdown: LOW_SCORE.breakdown, biggest_leak: LOW_SCORE.biggestIssue, scraped_summary: GOOD_TEXT, ...review }],
   };
   const client = {
+    storage: { from(bucket) { assert.equal(bucket, 'tmh-screenshots'); return { async download(path) {
+      assert.equal(path, rows.brand_reviews[0].screenshot_url);
+      return { data: new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], { type: 'image/png' }), error: null };
+    }, async upload(path, bytes, options) { objectOperations.push({ action: 'upload', path, bytes: bytes.length, options }); return { error: null }; },
+    async remove(paths) { objectOperations.push({ action: 'remove', paths }); return { error: null }; } }; } },
     functions: { async invoke(name, { body }) { deliveries.push({ name, body }); const event = rows.flag_alert_notifications.find((row) => row.id === body.notificationId);
       if (event) event[name === 'send-flag-alert' ? 'sent_at' : 'customer_sent_at'] = new Date().toISOString(); return { data: { ok: true }, error: null }; } },
     async rpc(name, args) {
       rpcCalls.push({ name, args: structuredClone(args) });
       if (name === 'consume_playbook_limit') return { data:rateAllowed,error:null };
+      if (name === 'correct_haven_review_source') {
+        if (correctionError) return { error: { code: correctionError } };
+        const review = rows.brand_reviews.find(row => row.id === args.p_review_id);
+        if (review.scoring_revision !== args.p_revision) return { data: { conflict: true, revision: review.scoring_revision } };
+        const oldScreenshotPath = review.screenshot_url;
+        review.scoring_revision++;
+        if (args.p_screenshot_path) review.screenshot_url = args.p_screenshot_path;
+        if (args.p_url) review.website_url = args.p_url;
+        return { data: { revision: review.scoring_revision, oldScreenshotPath, review: { id: review.id, website_url: review.website_url, screenshot_url: review.screenshot_url } } };
+      }
       if (name === 'ensure_haven_conversation') {
         const identity = rows.haven_chat_visitors.find((row) => row.id === args.p_visitor_id);
         if (!identity || identity.token_hash !== args.p_token_hash) return { data: null, error: { code: '42501' } };
@@ -68,19 +95,37 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
         if (turn && turn.input_hash !== args.p_request_hash) return { data: null, error: { code: '22023' } };
         if (turn?.session_id !== undefined && turn.session_id !== saved.id) return { data: null, error: { code: '42501' } };
         if (turn?.status === 'complete') return { data: { cached: structuredClone(turn.response), session: structuredClone(saved) }, error: null };
-        if (turn?.status === 'processing') return { data: { busy: true }, error: null };
+        if (turn?.retry_after && new Date(turn.retry_after).getTime() > Date.now()) return { data: { busy: true, retryAfter: 60 }, error: null };
+        if (turn?.status === 'processing') return { data: { busy: true, retryAfter: 5 }, error: null };
         if (!turn) {
           turn = { id: args.p_turn_id, session_id: saved.id, status: 'processing', input_hash: args.p_request_hash }; rows.haven_chat_turns.push(turn);
           saved.messages.push({ id: args.p_turn_id, role: 'user', content: args.p_content }); saved.message_count++;
           saved.diagnostic_answers = Math.min(saved.diagnostic_questions_asked, saved.diagnostic_answers + (args.p_substantive ? 1 : 0));
           saved.explicit_call_requested ||= args.p_explicit_call;
         } else turn.status = 'processing';
-        return { data: { session: structuredClone(saved) }, error: null };
+        turn.processing_attempt = webcrypto.randomUUID();
+        turn.retry_after = null;
+        return { data: { session: structuredClone(saved), attemptId: turn.processing_attempt }, error: null };
       }
-      if (name === 'complete_haven_turn') {
+      if (name === 'fail_haven_turn') {
+        const turn = rows.haven_chat_turns.find(row => row.id === args.p_turn_id && row.session_id === args.p_session_id);
+        if (turn?.status === 'processing' && turn.processing_attempt === args.p_attempt_id) {
+          turn.status = 'failed'; turn.failure_code = args.p_error_code; turn.provider_diagnostics = structuredClone(args.p_diagnostics);
+          turn.retry_after = args.p_retry_seconds ? new Date(Date.now() + args.p_retry_seconds * 1000).toISOString() : null;
+        }
+        return { data: null, error: null };
+      }
+      if (name === 'cancel_haven_turn') {
+        const turn = rows.haven_chat_turns.find(row => row.id === args.p_turn_id && row.session_id === args.p_session_id);
+        const cancelled = !!turn && ['processing', 'failed'].includes(turn.status);
+        if (cancelled) { turn.status = 'cancelled'; turn.processing_attempt = null; turn.retry_after = null; }
+        return { data: cancelled, error: null };
+      }
+      if (name === 'finish_haven_turn') {
         if (writeError === 'haven_sessions') return { data: null, error: { message: 'Save failed' } };
         const saved = rows.haven_sessions.find((row) => row.id === args.p_session_id);
         const turn = rows.haven_chat_turns.find((row) => row.id === args.p_turn_id);
+        if (!turn || turn.status !== 'processing' || turn.processing_attempt !== args.p_attempt_id) return { data: null, error: { code: '55000' } };
         turn.status = 'complete'; turn.response = structuredClone(args.p_response); delete turn.response.conversationMemory;
         if(args.p_response.conversationMemory) saved.conversation_memory=structuredClone(args.p_response.conversationMemory);
         saved.messages.push({ role: 'agent', content: args.p_response.text }); saved.message_count++;
@@ -130,7 +175,7 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
         : JSON.stringify(scoring);
       return Response.json({ candidates: [{ content: { parts: [{ text }] } }], choices: [{ message: { content: text } }] });
     },
-    Request, Response, Headers, URL, AbortController, AbortSignal, TextEncoder, TextDecoder, Uint8Array,
+    Request, Response, Headers, URL, Blob, AbortController, AbortSignal, TextEncoder, TextDecoder, Uint8Array, btoa, atob,
     crypto: webcrypto, setTimeout, clearTimeout,
     console: { log() {}, warn() {}, error() {} },
   });
@@ -138,9 +183,89 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
     method: 'POST', headers: { 'Content-Type': 'application/json', origin: 'http://localhost:5173', ...options.headers },
     body: JSON.stringify(body),
   });
-  return { handler, rows, requests, writes, queries, request, rpcCalls, deliveries };
+  return { handler, rows, requests, writes, queries, request, rpcCalls, deliveries, objectOperations };
 }
 const chatBody = (extras = {}) => ({ scope: 'audit', requestId: REQUEST_ID, noticeVersion: '2026-10-26', context: ACCESS, messages: [{ role: 'user', content: 'I post but nothing happens.' }], ...extras });
+
+test('Gemini transient 503 retries once and succeeds before using the fallback', async () => {
+  let attempts = 0;
+  const app = load('haven-chat', { fetchImpl: async url => {
+    assert.ok(url.includes('googleapis'));
+    return ++attempts === 1 ? Response.json({ error: 'unavailable' }, { status: 503 })
+      : Response.json({ candidates: [{ content: { parts: [{ text: 'What are customers trying to buy from you?' }] } }] });
+  } });
+  const response = await app.handler(app.request(chatBody()));
+  assert.equal(response.status, 200); assert.equal((await response.json()).model, 'gemini');
+  assert.equal(attempts, 2); assert.equal(app.rows.haven_sessions[0].messages.filter(row => row.role === 'user').length, 1);
+});
+
+test('website scoring refuses invented evidence and incompatible category totals without saving a score', async () => {
+  for (const scoring of [
+    { ...LOW_SCORE, evidence: { ...LOW_SCORE.evidence, trust: { ...LOW_SCORE.evidence.trust, quote: 'A testimonial that does not exist in the page' } } },
+    { ...LOW_SCORE, evidence: { ...LOW_SCORE.evidence, clarity: { ...LOW_SCORE.evidence.clarity, checks: [5, 5, 5, 5, 5] } } },
+  ]) {
+    const app = load('scrape-website', { scoring });
+    const response = await app.handler(app.request({ context: ACCESS }));
+    assert.notEqual(response.status, 200); assert.equal(app.rows.brand_reviews[0].haven_score, null);
+    assert.equal(app.rows.brand_reviews[0].score_breakdown, null);
+  }
+});
+
+test('malformed multiline memory notes cannot appear in chat or become saved business facts', async () => {
+  const app = load('haven-chat', { modelText: 'What are you trying to improve?\n[[MEMORY:{\n"business":"Invented private note"\n}]]' });
+  const response = await app.handler(app.request(chatBody()));
+  assert.equal(response.status, 200); const body = await response.json();
+  assert.doesNotMatch(body.text, /MEMORY|Invented private note/);
+  assert.ok(!JSON.stringify(app.rows.haven_sessions[0].conversation_memory).includes('Invented private note'));
+});
+
+test('provider outages record safe diagnostics and cooldown without tight-loop retries', async () => {
+  const app = load('haven-chat', { fetchImpl: async () => Response.json({ error: 'sensitive provider details' }, { status: 503 }) });
+  const response = await app.handler(app.request(chatBody())); const body = await response.json();
+  assert.equal(response.status, 503); assert.equal(app.requests.length, 3);
+  assert.equal(response.headers.get('Retry-After'), '5');
+  assert.equal(body.code, 'ai_temporarily_unavailable'); assert.ok(!JSON.stringify(body).includes('sensitive'));
+  const turn = app.rows.haven_chat_turns[0]; assert.equal(turn.status, 'failed');
+  assert.equal(turn.provider_diagnostics[0].code, 'gemini_http_503');
+  const next = await app.handler(app.request(chatBody())); assert.equal(next.status, 409);
+  assert.equal(app.requests.length, 3); assert.equal(app.rows.haven_sessions[0].messages.filter(row => row.role === 'user').length, 1);
+});
+
+test('Gemini 429 respects provider Retry-After and immediately tries the configured fallback', async () => {
+  const app = load('haven-chat', { fetchImpl: async url => url.includes('googleapis')
+    ? Response.json({}, { status: 429, headers: { 'Retry-After': '80' } })
+    : Response.json({ choices: [{ finish_reason: 'stop', message: { content: 'What is the next step customers should take?' } }] }) });
+  const body = await (await app.handler(app.request(chatBody()))).json();
+  assert.equal(body.model, 'groq'); assert.equal(app.requests.length, 2);
+  assert.equal(body.providerDiagnostics[0].retryAfter, 80);
+});
+
+test('source correction requires ownership, validates public URLs and preserves the private source on a conflict', async () => {
+  const app = load('update-review-source');
+  const wrong = await app.handler(app.request({ context: { ...ACCESS, accessToken: 'ff'.repeat(32) }, revision: 0, url: 'https://new.example.com' }));
+  assert.equal(wrong.status, 403); assert.equal(app.rpcCalls.length, 0);
+  const internal = await app.handler(app.request({ context: ACCESS, revision: 0, url: 'http://127.0.0.1' }));
+  assert.equal(internal.status, 400); assert.ok(!app.rpcCalls.some(row => row.name === 'correct_haven_review_source'));
+  const success = await app.handler(app.request({ context: ACCESS, revision: 0, url: 'https://new.example.com' }));
+  assert.equal(success.status, 200); const updated = await success.json(); assert.equal(updated.revision, 1);
+  assert.equal(updated.review.website_url, 'https://new.example.com/'); assert.ok(!JSON.stringify(updated).includes(TOKEN));
+  const stale = await app.handler(app.request({ context: ACCESS, revision: 0, url: 'https://stale.example.com' }));
+  assert.equal(stale.status, 409); assert.equal(app.rows.brand_reviews[0].website_url, 'https://new.example.com/');
+});
+
+test('screenshot corrections upload privately and clean the appropriate object only after a confirmed save', async () => {
+  for (const conflict of [false, true]) {
+    const app = load('update-review-source', { review: { platform_type: 'social', scoring_revision: conflict ? 1 : 0 } });
+    const response = await app.handler(app.request({ context: ACCESS, revision: 0, screenshot: 'data:image/png;base64,iVBORw0KGgo=' }));
+    assert.equal(response.status, conflict ? 409 : 200);
+    const upload = app.objectOperations[0]; assert.equal(upload.action, 'upload'); assert.ok(upload.path.startsWith(REVIEW + '/source-'));
+    assert.equal(upload.options.upsert, false); assert.equal(upload.options.contentType, 'image/png');
+    assert.deepEqual([...app.objectOperations[1].paths], [conflict ? upload.path : REVIEW + '/review.png']);
+  }
+  const restricted = load('update-review-source', { review: { flag_status: 'red' } });
+  assert.equal((await restricted.handler(restricted.request({ context: ACCESS, revision: 0, url: 'https://new.example.com' }))).status, 403);
+  assert.equal(restricted.objectOperations.length, 0);
+});
 
 test('access refresh reads current restrictions without model calls or a new chat turn', async () => {
   const app = load('haven-chat', { review: { flag_status: 'red' } });
@@ -204,7 +329,7 @@ test('server chat: prompt uses saved brand, step, and valid low score; request f
   assert.equal(response.status, 200);
   const prompt = app.requests[0].payload.systemInstruction.parts[0].text;
   assert.match(prompt, /Ada Studio/); assert.match(prompt, /VALID SCORE: 20\/100/);
-  assert.match(prompt, /AWAITING Q1 ANSWER/); assert.doesNotMatch(prompt, /FORGED BRAND|INJECTED SUMMARY/);
+  assert.match(prompt, /CURRENT STEP: AWAITING_DIAGNOSTIC_Q1/); assert.doesNotMatch(prompt, /FORGED BRAND|INJECTED SUMMARY/);
   assert.equal(app.requests[0].payload.contents[0].role, 'user');
   assert.ok(!app.requests[0].payload.contents[0].parts[0].text.includes('SYSTEM INSTRUCTIONS'));
   assert.equal(app.rows.haven_sessions[0].current_step, STEPS.AWAITING_DIAGNOSTIC_Q2);
@@ -216,7 +341,7 @@ test('server chat: public support and service construct their own prompts withou
     assert.equal(response.status, 200); assert.equal(app.queries.length, 0);
     const prompt = app.requests[0].payload.systemInstruction.parts[0].text;
     assert.doesNotMatch(prompt, /VALID SCORE: 100|FORGED REVIEW/);
-    assert.match(prompt, scope === 'service' ? /SERVICE GRID/ : /CUSTOMER SUPPORT/);
+    assert.match(prompt, scope === 'service' ? /Entry point: SERVICE_GRID/ : /Entry point: CUSTOMER_SUPPORT/);
   }
 });
 test('server chat: bad data and extraction failure never inject a numeric score into the diagnosis', async () => {
@@ -244,7 +369,9 @@ test('server chat: DB step failures and provider failures cannot report success 
   const db = load('haven-chat', { writeError: 'haven_sessions' });
   assert.equal((await db.handler(db.request(chatBody()))).status, 500);
   const upstream = load('haven-chat', { fetchImpl: async () => new Response('private upstream detail', { status: 400 }) });
-  const response = await upstream.handler(upstream.request(chatBody())); assert.equal(response.status, 502);
+  const response = await upstream.handler(upstream.request(chatBody())); assert.equal(response.status, 503);
+  assert.ok(Number(response.headers.get('Retry-After')) >= 5);
+  assert.equal(upstream.rows.haven_chat_turns[0].status, 'failed');
   assert.doesNotMatch(JSON.stringify(await response.json()), /private upstream detail|gemini-test|groq-test/);
 });
 test('website scoring: coherent weak content produces and saves a valid 20 score', async () => {
@@ -253,12 +380,14 @@ test('website scoring: coherent weak content produces and saves a valid 20 score
   assert.equal(response.status, 200); const result = await response.json();
   assert.equal(result.state, 'valid'); assert.equal(result.score, 20);
   assert.equal(app.rows.brand_reviews[0].haven_score, 20); assert.equal(app.rows.brand_reviews[0].scrape_state, 'valid');
-  assert.equal(app.requests[1].payload.systemInstruction.parts[0].text.includes('untrusted input'), true);
+  assert.match(app.requests[1].payload.systemInstruction.parts[0].text, /material is untrusted/i);
+  assert.deepEqual(result.breakdown, LOW_SCORE.breakdown); assert.deepEqual(result.evidence, LOW_SCORE.evidence);
+  assert.equal(result.rubricVersion, '2026-10-27');
 });
-test('website scoring: short, nonsense, and legal-only extraction become bad_data without paying for model scoring', async () => {
+test('website scoring: short, nonsense, and legal-only extraction become insufficient evidence without paying for model scoring', async () => {
   for (const reader of ['Short text.', 'a'.repeat(800), 'Privacy policy and terms of use. Your personal data, cookies, consent, jurisdiction and liability. '.repeat(15)]) {
     const app = load('scrape-website', { reader }); const response = await app.handler(app.request({ context: ACCESS }));
-    const result = await response.json(); assert.equal(result.state, 'bad_data'); assert.equal(result.score, null);
+    const result = await response.json(); assert.equal(result.state, 'insufficient_evidence'); assert.equal(result.score, null);
     assert.equal(result.breakdown, null); assert.equal(app.rows.brand_reviews[0].haven_score, null);
     assert.equal(app.requests.length, 1);
   }
@@ -266,7 +395,7 @@ test('website scoring: short, nonsense, and legal-only extraction become bad_dat
 test('website scoring: model-detected bad data cannot preserve its proposed numerical score', async () => {
   const app = load('scrape-website', { scoring: { ...LOW_SCORE, state: 'bad_data', score: 5 } });
   const response = await app.handler(app.request({ context: ACCESS })); const data = await response.json();
-  assert.equal(data.state, 'bad_data'); assert.equal(data.score, null); assert.equal(data.biggestIssue, null);
+  assert.equal(data.state, 'insufficient_evidence'); assert.equal(data.score, null); assert.equal(data.biggestIssue, null);
 });
 test('website scoring: reader failure is failed, not bad data, and clears prior score', async () => {
   const app = load('scrape-website', { readerStatus: 503 });
@@ -297,7 +426,7 @@ test('website scoring: an owned fresh saved result can be reused but force retry
   await app.handler(app.request({ context: ACCESS, force: true })); assert.ok(app.requests.length > 0);
 });
 test('social scoring: only owned profiles accept screenshots; valid low and unreadable states persist separately', async () => {
-  for (const state of ['valid', 'bad_data']) {
+  for (const state of ['valid', 'insufficient_evidence']) {
     const app = load('score-social', { review: { platform_type: 'social' }, scoring: { ...SOCIAL_SCORE, state } });
     const response = await app.handler(app.request({ context: ACCESS, screenshot: 'data:image/png;base64,YQ==' }));
     assert.equal(response.status, 200); const data = await response.json();
@@ -345,13 +474,21 @@ test('server replay: completed turn replay returns saved response with one provi
   const changed=await app.handler(app.request(chatBody({messages:[{role:'user',content:'Different body with reused ID.'}]})));
   assert.ok(changed.status>=400);assert.equal(app.requests.length,1);
 });
-test('server routing: model call and Playbook tags cannot bypass two substantive diagnostic answers', async () => {
+test('server routing: unsupported model call and Playbook tags cannot bypass missing work evidence', async () => {
   for(const tag of ['BOOK_CALL','PLAYBOOK']) {
     const app=load('haven-chat',{modelText:`Here is the next step. [[${tag}]] [[NEED:OPERATIONAL]]`});
     const response=await app.handler(app.request(chatBody()));const data=await response.json();
     assert.doesNotMatch(data.text,/BOOK_CALL|PLAYBOOK|NEED|DIAGNOSTIC_QUESTION/);
     assert.match(data.text,/\?/);assert.equal(app.rows.haven_sessions[0].diagnostic_questions_asked,2);
   }
+});
+
+test('server routing: explicit specific team work can route without a mandatory diagnostic count', async () => {
+  const app=load('haven-chat',{session:{diagnostic_questions_asked:0,diagnostic_answers:0},modelText:'The team can discuss that scope. [[BOOK_CALL]]'});
+  const response=await app.handler(app.request(chatBody({messages:[{role:'user',content:'I want your team to rebuild my website.'}]})));
+  assert.equal(response.status,200);const data=await response.json();
+  assert.match(data.text,/BOOK_CALL/);assert.equal(data.routingState.need,'implementation');
+  assert.equal(data.routingState.preference,'delegate');assert.equal(data.routingState.permission,'granted');
 });
 test('server automatic moderation: first event is recorded without mail, second warns and third restricts', async () => {
   const app=load('haven-chat',{modelText:'Let us keep this respectful. [[FLAG:HARASSMENT]]'});
@@ -432,8 +569,8 @@ test('qualified Team enquiry remembers explicit implementation, then honours yes
     ]},modelText:'Would you like to book a call? [[NEED:UNKNOWN]]'});
   const first=await (await app.handler(app.request(chatBody({scope:'support',context:{...PUBLIC_ACCESS,sessionId:SESSION,entryContext:'team_inquiry'},
     messages:[{role:'user',content:'It is WordPress. We tried changing the theme, but the ordering flow still looks unfinished. I want your team to implement the improvements.'}]})))).json();
-  assert.equal(first.routingState.problemType,'operational');assert.equal(first.routingState.pendingAction,'call');
-  assert.match(first.text,/Would you like.*strategy call/);assert.doesNotMatch(first.text,/what specifically.*change first/i);
+  assert.equal(first.routingState.problemType,'operational');assert.equal(first.routingState.permission,'granted');
+  assert.match(first.text,/BOOK_CALL/);assert.doesNotMatch(first.text,/what specifically.*change first/i);
   const second=await (await app.handler(app.request(chatBody({requestId:'60000000-0000-4000-8000-000000000002',scope:'support',context:{...PUBLIC_ACCESS,sessionId:SESSION,entryContext:'team_inquiry'},messages:[{role:'user',content:'Yes, please!'}]})))).json();
   assert.match(second.text,/BOOK_CALL/);assert.equal(second.routingState.permission,'granted');assert.equal(app.requests.length,1);
   // A new support question must not be pulled back into the old sales decision.

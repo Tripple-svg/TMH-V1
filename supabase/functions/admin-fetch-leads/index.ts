@@ -6,6 +6,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
+import { geminiModel } from '../_shared/haven-model.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -29,6 +30,7 @@ const REVIEW_FIELDS = [
   'followup_status', 'followup_notes', 'call_booked_at', 'flag_status', 'flag_reason', 'moderation_strikes',
   'agreed_to_terms', 'agreed_at', 'created_at', 'updated_at',
   'welcome_email_sent', 'welcome_email_id', 'welcome_email_attempted_at', 'welcome_email_last_error',
+  'rubric_version', 'score_evidence', 'scoring_revision',
 ];
 
 const ALLOWED_ORIGINS = [
@@ -63,7 +65,7 @@ function sanitiseMessage(m: unknown) {
   return {
     id: typeof msg.id === 'string' ? msg.id : null,
     role: typeof msg.role === 'string' ? msg.role : null,
-    content: typeof msg.content === 'string' ? msg.content.slice(0, 8000).replace(/\[\[(?:STEP|LEAD|FLAG|NEED|CHIPS|NAV_CHIPS):[\s\S]*?\]\]|\[\[DIAGNOSTIC_QUESTION\]\]/g, '').trim() : '',
+    content: typeof msg.content === 'string' ? msg.content.slice(0, 8000).replace(/\[\[(?:STEP|LEAD|FLAG|NEED|CHIPS|NAV_CHIPS|DECISION|MEMORY):[\s\S]*?\]\]|\[\[DIAGNOSTIC_QUESTION\]\]/g, '').trim() : '',
     timestamp: typeof msg.timestamp === 'number' || typeof msg.timestamp === 'string' ? msg.timestamp : null,
     hasImage: Boolean(msg.hasImage),
     isChipIntent: Boolean(msg.isChipIntent),
@@ -85,6 +87,31 @@ function sessionMetadata(session: Record<string, any>) {
   };
 }
 
+async function aiHealth() {
+  const geminiKey = Deno.env.get('GEMINI_API_KEY')?.trim();
+  const gemini = { configured: Boolean(geminiKey), enabled: Deno.env.get('GEMINI_ENABLED')?.trim().toLowerCase() !== 'false', model: '', status: 'unconfigured', code: '' };
+  const groq = { configured: Boolean(Deno.env.get('GROQ_API_KEY')?.trim()), model: Deno.env.get('GROQ_MODEL')?.trim() || 'openai/gpt-oss-120b' };
+  const note = 'This checks model metadata, not reply quality, generation quota or billing. A 503 is temporary provider unavailability and does not prove your token budget is exhausted.';
+  try { gemini.model = geminiModel(); }
+  catch { return { ok: true, gemini: { ...gemini, status: 'invalid configuration', code: 'gemini_model_invalid' }, groq, note }; }
+  if (!gemini.configured || !gemini.enabled) {
+    return { ok: true, gemini: { ...gemini, status: gemini.configured ? 'disabled' : 'key missing', code: gemini.configured ? 'gemini_disabled' : 'gemini_key_missing' }, groq, note };
+  }
+  try {
+    // Model metadata only: never send a chat, an admin password or customer data.
+    // Keep the key in an HTTP header rather than a URL that could enter logs.
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${gemini.model}`, {
+      method: 'GET', headers: { 'x-goog-api-key': geminiKey! }, signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) return { ok: true, gemini: { ...gemini, status: 'unavailable', code: `gemini_http_${response.status}` }, groq, note };
+    const metadata = await response.json().catch(() => null);
+    const accessible = metadata?.name === `models/${gemini.model}` && Array.isArray(metadata?.supportedGenerationMethods) && metadata.supportedGenerationMethods.includes('generateContent');
+    return { ok: true, gemini: { ...gemini, status: accessible ? 'model accessible' : 'metadata not confirmed', code: accessible ? '' : 'gemini_metadata_unconfirmed' }, groq, note };
+  } catch {
+    return { ok: true, gemini: { ...gemini, status: 'check unavailable', code: 'gemini_metadata_unreachable' }, groq, note };
+  }
+}
+
 serve(async (req) => {
   const origin = req.headers.get('origin');
 
@@ -103,6 +130,8 @@ serve(async (req) => {
     if (password !== ADMIN_PASSWORD) {
       return json({ ok: false, error: 'Unauthorised' }, origin, 401);
     }
+
+    if (body.action === 'aiHealth') return json(await aiHealth(), origin);
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
@@ -234,9 +263,17 @@ serve(async (req) => {
       thankyou_last_error: purchase.thankyou_last_error, thankyou_email_id: purchase.thankyou_email_id,
     }));
 
-    const {data:operations,error:operationsError}=await supabase.rpc('haven_operational_stats');
+    const [{data:operations,error:operationsError}, followup] = await Promise.all([
+      supabase.rpc('haven_operational_stats'),
+      // The aggregate is service-only and optional during a staged migration.
+      Promise.resolve(supabase.rpc('playbook_followup_stats')).catch(() => ({ data: null, error: true })),
+    ]);
+    const followupKeys = ['queued', 'due', 'accepted', 'cancelled', 'needsReview'];
+    const followupValid = !followup.error && followup.data && followupKeys.every(key => Number.isSafeInteger(followup.data[key]) && followup.data[key] >= 0);
+    const followupStats = followupValid ? Object.fromEntries(followupKeys.map(key => [key, followup.data[key]])) : null;
     return json({
       ok: true, leads, count: leads.length, operations:operationsError?null:operations, operations_error:operationsError?'Operational counts are unavailable. Apply the reliability migration and refresh.':null, support_sessions: support.sessions, service_sessions: service.sessions, team_inquiries: team.sessions, team_inquiries_error: team.error,
+      followupStats, followup_stats_error: followupStats ? null : 'Purchase follow-up counts are unavailable. Apply the follow-up migration and refresh.',
       purchases, playbook_purchases: purchases, records_limit: MAX_RECORDS, transcript_limit: MAX_TRANSCRIPT_MESSAGES,
       bookings: bookings || [], bookings_error: bookingsError ? 'Could not load bookings. Apply the strategy call bookings migration and refresh.' : null,
       support_sessions_error: support.error, service_sessions_error: service.error,

@@ -426,7 +426,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                 Free Brand Review
               </h2>
               <p className="mt-1.5 text-xs leading-relaxed text-zinc-700 dark:text-zinc-400">
-                Haven will audit your brand and give you a clarity score. No sales pitch, just real diagnosis.
+                Tell Haven about your brand. With a readable website or profile screenshot, you will get a review of the visible offer and next step. You can also start a conversation without one.
               </p>
             </header>
 
@@ -688,7 +688,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                         <span className="normal-case text-zinc-500"> (required for scoring)</span>
                       </p>
                       <p className="mb-2 text-[11px] leading-relaxed text-zinc-500">
-                        Screenshot the <span className="text-zinc-800 dark:text-zinc-300">top of your profile</span> so the bio, follower count, and 3–4 recent posts are visible. This is what Haven reads to score you.
+                        Screenshot the <span className="text-zinc-800 dark:text-zinc-300">top of your profile</span> with a readable bio and recent posts. Haven reviews what is visible, not your posting frequency, engagement quality or sales.
                       </p>
                       <button
                         type="button"

@@ -56,15 +56,17 @@ function buildBodiesV1(firstName: string, brandName: string, platformType: strin
   const paragraphs = [`Hi ${firstName},`, `We have received the brand review for ${brandName || 'your brand'}.`, reading,
     'Return on the same browser and device to continue your saved review. If the secure access key is missing, contact info@themarketinghaven.xyz so we can help verify ownership.'];
   return { text: `${paragraphs.join('\n\n')}\n\nContinue the review: ${SITE_URL}/?review=continue\n\nTeam Haven`,
-    html: editorialEmail({ label: 'YOUR BRAND REVIEW', title: 'Your next step starts here.', paragraphs,
+    html: editorialEmail({ version: 'editorial-v1', label: 'YOUR BRAND REVIEW', title: 'Your next step starts here.', paragraphs,
       button: { label: 'Continue the review', href: `${SITE_URL}/?review=continue` } }) };
 }
 
 function buildBodies(firstName: string, brandName: string, platformType: string, version: string) {
-  if (version !== 'editorial-v2') return buildBodiesV1(firstName, brandName, platformType);
+  if (!['editorial-v2', 'editorial-v3'].includes(version)) return buildBodiesV1(firstName, brandName, platformType);
   const subject = brandName || 'your brand';
   const focus = platformType === 'website'
-    ? 'Your website review starts with three questions: is the offer clear, is there a reason to trust it, and is the next step easy to find? If the reader cannot access enough of the page, Haven will explain the limit and continue from what you share in chat.'
+    ? version === 'editorial-v3'
+      ? 'Haven reviews the website text it can read: how clearly the offer is explained, which trust signals are present, the reason to choose your business, and the next step. If there is not enough readable evidence, Haven will explain the limit and help you continue in chat.'
+      : 'Your website review starts with three questions: is the offer clear, is there a reason to trust it, and is the next step easy to find? If the reader cannot access enough of the page, Haven will explain the limit and continue from what you share in chat.'
     : platformType === 'social'
       ? 'Your profile screenshot gives Haven a starting point: what people understand from your bio, what your content communicates, and how they can take the next step. The conversation helps put those observations in the context of your business.'
       : 'You do not need a website or social profile to begin. Haven will help you work through what you offer, who it is for, and the first practical step toward reaching them.';
@@ -72,8 +74,8 @@ function buildBodies(firstName: string, brandName: string, platformType: string,
     'If you are already chatting with Haven, keep going there. You do not need to start again from this email.',
     'When you return, bring one question you want to resolve. The useful outcome is a clearer next move for your brand.',
     'The button reopens the review on the browser you used to submit it. Need help on another device? Reply to this email and we will help verify ownership.'];
-  return { text: paragraphs.join('\n\n') + '\n\nContinue your review: ' + SITE_URL + '/?review=continue\n\nTeam Haven',
-    html: editorialEmail({ label: 'YOUR BRAND REVIEW', title: 'Make the next move clearer.', paragraphs,
+  return { text: paragraphs.join('\n\n') + '\n\nContinue your review: ' + SITE_URL + '/?review=continue\n\n' + (version === 'editorial-v3' ? 'Your friends over at Team Haven\nBuilding with intention.' : 'Team Haven'),
+    html: editorialEmail({ version, label: 'YOUR BRAND REVIEW', title: 'Make the next move clearer.', paragraphs,
       button: { label: 'Continue your review', href: SITE_URL + '/?review=continue' } }) };
 }
 

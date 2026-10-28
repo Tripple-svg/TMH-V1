@@ -1,9 +1,9 @@
 // src/components/layout/Footer.jsx
 // Two-column mobile layout. Nav matches site flow. Renamed Marketing Room.
 
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { useHaven } from '../haven/context/HavenContext';
+import { TMH_CONTACT } from '../../lib/tmhPublicInfo';
 
 const InstagramIcon = () => (
   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -82,7 +82,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
                 The Marketing Haven
               </h3>
               <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed max-w-sm">
-                Digital marketing and brand strategy agency built on systems, clarity, and performance.
+                Brand strategy, content and web engineering for creators and business owners. Building with intention.
               </p>
 
               <div className="flex flex-wrap items-center gap-3 mt-6">
@@ -93,12 +93,17 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={social.label}
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 hover:text-blue-500 dark:hover:text-blue-400 hover:border-blue-500/30 dark:hover:border-blue-500/30 transition-all duration-300"
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 hover:text-zinc-950 dark:hover:text-white hover:border-zinc-400 dark:hover:border-zinc-500 transition-all duration-300"
                   >
                     {social.icon}
                   </a>
                 ))}
               </div>
+              <address className="mt-6 space-y-2 text-sm not-italic text-zinc-600 dark:text-zinc-400">
+                <a href={`mailto:${TMH_CONTACT.email}`} className="block break-all underline-offset-4 hover:text-zinc-950 hover:underline dark:hover:text-white">{TMH_CONTACT.email}</a>
+                <a href={TMH_CONTACT.whatsappUrl} target="_blank" rel="noopener noreferrer" className="block underline-offset-4 hover:text-zinc-950 hover:underline dark:hover:text-white">WhatsApp · {TMH_CONTACT.whatsapp}</a>
+                <p>{TMH_CONTACT.location}</p>
+              </address>
             </div>
 
             {/* Quick Navigation */}
@@ -112,7 +117,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
                     <a
                       href={href}
                       onClick={(e) => handleNav(e, href)}
-                      className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                      className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white transition-colors"
                     >
                       {label}
                     </a>
@@ -122,7 +127,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
                   <button
                     onClick={onOpenReview}
                     type="button"
-                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer text-left"
+                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white transition-colors cursor-pointer text-left"
                   >
                     Request Review
                   </button>
@@ -139,7 +144,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
                 <li>
                   <Link
                     to="/privacy"
-                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white transition-colors"
                   >
                     Privacy Policy
                   </Link>
@@ -147,7 +152,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
                 <li>
                   <Link
                     to="/terms"
-                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white transition-colors"
                   >
                     Terms of Service
                   </Link>
@@ -156,7 +161,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
                   <button
                     type="button"
                     onClick={onOpenDataDeletion}
-                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer text-left"
+                    className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white transition-colors cursor-pointer text-left"
                   >
                     Data Deletion
                   </button>

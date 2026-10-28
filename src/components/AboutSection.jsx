@@ -1,5 +1,5 @@
 // src/components/AboutSection.jsx
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import AboutStoryVideo from './about/AboutStoryVideo';
@@ -86,7 +86,7 @@ export default function AboutSection() {
             viewport={{ once: true }}
             transition={{ duration: 0.7 }}
           >
-            <AboutStoryVideo videoSrc={null} poster="/Tmhh.jpeg" />
+            <AboutStoryVideo videoSrc="/Test%20About.mp4" poster="/Tmhh.jpeg" />
           </motion.div>
 
           <motion.div
@@ -105,10 +105,10 @@ export default function AboutSection() {
                 We are a digital marketing agency that turns businesses into brands that last. Structure and identity are what separate a business that sells from a brand that stays.
               </p>
               <p>
-                Every strategy we map out, every funnel we deploy, and every line of code we engineer is rooted in market data and buyer psychology. Not guesswork.
+                We bring brand strategy, content and web engineering together. We start by understanding your business, the people you want to reach and what is getting in the way before recommending the work.
               </p>
               <p>
-                Whether you are launching a new venture in Nigeria or scaling an established business globally, TMH gives you the blueprint to grow the right way.
+                Whether you are starting in Nigeria or reaching customers further afield, we help you make a clear plan and put the right pieces in place.
               </p>
             </div>
           </motion.div>
