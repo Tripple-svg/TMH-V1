@@ -13,6 +13,7 @@ function pipeline({ wrongBuyer = false, rateAllowed = true, mailStatus = 200, pa
   const db = {
     async rpc(name, args) {
       calls.push({ name, args });
+      if(name==='verification_attempt_gate')return {data:{allowed:rateAllowed},error:null};
       if (name === 'consume_playbook_limit') return { data: rateAllowed };
       if (name === 'reserve_playbook_recovery') {
         rows.playbook_recovery_otps.push({ id: args.p_id, reference: args.p_reference, email: args.p_email, code_hash: args.p_code_hash });
@@ -36,7 +37,7 @@ function pipeline({ wrongBuyer = false, rateAllowed = true, mailStatus = 200, pa
         if (patch && row) Object.assign(row, patch);
         return { data: row || null };
       };
-      return { insert(value) { inserted = value; return this; }, select() { return this; }, eq(key, value) { filters.push([key, value]); return this; }, update(value) { patch = value; return this; },
+      return { limit(){return this;},insert(value) { inserted = value; return this; }, select() { return this; }, eq(key, value) { filters.push([key, value]); return this; }, update(value) { patch = value; return this; },
         single: async () => run(), maybeSingle: async () => run(), then(resolve) { return Promise.resolve(run()).then(resolve); } };
     },
     storage: { getBucket: async () => ({ data: { public: false } }), from: () => ({ createSignedUrl: async (path, ttl) => {

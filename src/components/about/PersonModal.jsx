@@ -1,7 +1,7 @@
 // src/components/about/PersonModal.jsx
 // Centered modal showing one team member's photo, role, and bio.
 
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import ProgressiveImage from '../ui/ProgressiveImage';
 import { X } from 'lucide-react';

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 
 const ThemeContext = createContext(null);
 
@@ -38,6 +38,7 @@ export function ThemeProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- The public provider module also exposes its context hook.
 export const useTheme = () => {
   const context = useContext(ThemeContext);
   if (!context) {

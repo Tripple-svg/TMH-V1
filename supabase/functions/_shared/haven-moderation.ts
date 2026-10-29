@@ -7,8 +7,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function drainModerationNotifications(supabase: any, target: { reviewId?: string; visitorId?: string } = {}) {
   let query = supabase.from('flag_alert_notifications')
-    .select('id,sent_at,customer_required,customer_sent_at')
-    .or('sent_at.is.null,and(customer_required.eq.true,customer_sent_at.is.null)')
+    .select('id,sent_at,team_skipped_at,customer_required,customer_sent_at')
+    .or('and(sent_at.is.null,team_skipped_at.is.null),and(customer_required.eq.true,customer_sent_at.is.null)')
     .order('created_at', { ascending: true }).limit(10);
   if (target.reviewId) query = query.eq('review_id', target.reviewId);
   else if (target.visitorId) query = query.eq('visitor_id', target.visitorId);
@@ -32,7 +32,7 @@ export async function drainModerationNotifications(supabase: any, target: { revi
     // Both channels start independently, so one provider timeout cannot consume
     // the full admin request budget before the other channel is even attempted.
     await Promise.all([
-      !notification.sent_at ? send('send-flag-alert') : Promise.resolve(),
+      !notification.sent_at && !notification.team_skipped_at ? send('send-flag-alert') : Promise.resolve(),
       notification.customer_required && !notification.customer_sent_at ? send('send-flag-customer') : Promise.resolve(),
     ]);
   }

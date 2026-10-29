@@ -1,4 +1,5 @@
-import { providerRequest } from '../_shared/provider-request.ts';
+import {recordAIUsage,usageGeminiModel} from '../_shared/ai-usage.ts';
+import { providerRequest,safeProviderDiagnostic } from '../_shared/provider-request.ts';
 import { scoringInstructions } from '../_shared/scoring-rubric.js';
 import { enforceScoringLimits } from '../_shared/haven-limits.ts';
 // supabase/functions/score-social/index.ts
@@ -13,7 +14,7 @@ const SOCIAL_SCORING_PROMPT = scoringInstructions('social');
 
 const parseScoreJson = (raw: string) => parseScoringResult(raw, 'social');
 
-async function scoreWithGemini(screenshot: string): Promise<{ raw: string; status: number }> {
+async function scoreWithGemini(db:any,screenshot: string): Promise<{ raw: string; status: number }> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   if (!apiKey) throw new Error('GEMINI_API_KEY not configured.');
 
@@ -25,7 +26,8 @@ async function scoreWithGemini(screenshot: string): Promise<{ raw: string; statu
         generationConfig: geminiGenerationConfig(true),
       }),
     }, 18000, 1);
-  return { raw: geminiText(await response.json()), status: 200 };
+  const payload=await response.json();await recordAIUsage(db,'gemini',geminiModel(),payload);
+  return { raw: geminiText(payload), status: 200 };
 }
 
 Deno.serve(async (request) => {
@@ -57,7 +59,7 @@ Deno.serve(async (request) => {
     let lastErr: string = '';
     for (let attempt = 0; attempt < 1; attempt++) {
       try {
-        const { raw, status } = await scoreWithGemini(screenshot);
+        const { raw, status } = await scoreWithGemini(supabase,screenshot);
         if (status === 200) {
           const parsed = parseScoreJson(raw);
           if (parsed) {
@@ -75,6 +77,7 @@ Deno.serve(async (request) => {
           break;
         }
       } catch (err) {
+        await recordAIUsage(supabase,'gemini',usageGeminiModel(),{},safeProviderDiagnostic(err,'gemini').code);
         lastErr = err instanceof Error ? err.message : String(err);
         console.warn(`[social-scoring] threw on attempt ${attempt + 1}:`, lastErr);
       }

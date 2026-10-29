@@ -262,11 +262,10 @@ test('flag alert: known names and each chat source/session come from saved conte
   }
 });
 
-test('flag alert: guest session remains traceable and malformed provider acceptance stays pending', async () => {
+test('flag alert: anonymous guests stay dashboard-only; malformed provider acceptance stays pending', async () => {
   const db = database({ rows: [{ id: ID, visitor_id: 'guest-123', source: 'support', session_id: 'guest-session', status: 'yellow', sent_at: null }] });
   const app = load({ db }); await app.handler(request());
-  assert.match(app.mail[0].body.text, /Name: Not provided \(guest\)/);
-  assert.match(app.mail[0].body.text, /Session ID: guest-session/);
+  assert.equal(app.mail.length,0);assert.ok(db.rows[0].team_skipped_at);assert.equal(db.rows[0].sent_at,null);
   const pending = load({ fetch: async () => json({}) });
   assert.equal((await pending.handler(request())).status, 502); assert.equal(pending.db.rows[0].sent_at, null);
 });

@@ -68,6 +68,7 @@ function ChipBar({ chips, onChipSelect }) {
       className="mt-2 flex flex-wrap gap-2 overflow-x-auto pb-1"
     >
       {chips.map((chip, idx) => {
+          if(chip==='__CONTACT_SUPPORT__')return <a key={`contact-${idx}`} href="mailto:info@themarketinghaven.xyz" className="inline-flex rounded-lg border border-zinc-600 px-4 py-2 text-xs font-medium text-zinc-100">Email Team Haven</a>;
         if (chip === '__BOOK_CALL__') {
           return (
             <button

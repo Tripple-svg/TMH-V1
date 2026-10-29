@@ -11,6 +11,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder-anon-key',
+  // Public visitors use private review/purchase capabilities, not Auth sessions.
+  // Never consume an admin invitation fragment or persist it in visitor storage.
+  {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}},
 );
 
 export default supabase;

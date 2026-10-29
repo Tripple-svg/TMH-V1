@@ -3,7 +3,7 @@
 // mode='alert'   → single confirm button
 // mode='confirm' → confirm + cancel buttons
 
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, X } from 'lucide-react';
 

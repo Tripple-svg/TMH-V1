@@ -10,7 +10,7 @@ const CALL_URL = /https?:\/\/(?:www\.)?calendly\.com\/[^\s<>]+/gi;
 const SHOP_URL = /https?:\/\/(?:www\.)?themarketinghaven\.xyz\/?#shop\b/gi;
 const SUPPORT_ISSUE = /\b(?:download|billing|payment|paid|receipt|otp|refund|access|log[ -]?in|restriction|restricted|delet(?:e|ion)|privacy)\b/i;
 const WORK = /\b(?:websites?|sites?|wordpress|checkout|landing pages?|product pages?|campaigns?|ads?|paid media|tracking|funnels?|brand identity|branding|brand strategy|positioning|content|social media|marketing|customer research|market research)\b/i;
-const DELEGATE = /\b(?:(?:your|the|tmh) team|hire|done[ -]for[ -]me|do it for me|handle (?:it|the (?:work|execution))|help from (?:your|the) team)\b/i;
+const DELEGATE = /\b(?:(?:your|the|tmh) team|hire|done[ -]for[ -]me|do it for me|(?:build|make|design|create|develop|rebuild) (?:me|us)|(?:want|need) (?:mine|ours|my website|our website) (?:to be |to look )?(?:like yours|like your)|handle (?:it|the (?:work|execution))|help from (?:your|the) team)\b/i;
 const IMPLEMENT = /\b(?:rebuild|implement|redesign|set up|build|repair|fix|manage|run|design|develop|create|produce|write|improve|help with|work on)\b/i;
 const RESEARCH = /\b(?:customer interviews?|interview(?:ing)? customers|customer research|market research|competitor research|research (?:the|a|our) market|new market|multiple audiences|different customer segments)\b/i;
 const LEARN = /\b(?:i|we)\s+(?:(?:would\s+)?(?:like|want|prefer|need)\s+(?:to\s+)?)?learn\b|\b(?:teach me|learn the framework|work through (?:it|this) myself|do (?:it|this) myself|by myself|on my own)\b/i;
@@ -92,7 +92,7 @@ export function inferHavenNeed(messages = []) {
   const latest = sources.at(-1) || '';
   const latestPreference = [...sources].reverse().find(value => wantsDelegation(value) || wantsLearning(value));
   const preference = latestPreference ? wantsDelegation(latestPreference) ? 'delegate' : 'learn' : 'none';
-  const implementationRequested = sources.some(value => wantsDelegation(value) && IMPLEMENT.test(value) && WORK.test(value));
+  const implementationRequested = sources.some(value => wantsDelegation(value) && (IMPLEMENT.test(value) || /like yours/i.test(value)) && WORK.test(value));
   const researchRequested = sources.some(value => RESEARCH.test(value));
   const need = researchRequested ? 'research' : implementationRequested ? 'implementation'
     : wantsLearning(latest) && learningSubject(facts) ? 'learning' : 'unknown';
@@ -114,6 +114,7 @@ export function acceptedCallInvitation(latest, messages = []) {
 export function supportHelpReply(text, scope, context = {}) {
   if (scope !== 'support') return null;
   const value = String(text || '').toLowerCase();
+  if (/already purchased|recovery (?:page|panel|form|option)/.test(value) && /not|isn.t|missing|where|visible|show|find/.test(value)) return 'Open Get The Unseen Playbook in Digital Products on the homepage (#shop). Already purchased is a tab inside that panel, not a link below the product card. If this device already has valid purchase access, the panel shows your saved download instead. If recovery still is not available, email info@themarketinghaven.xyz with what you see. Do not clear your saved access or pay again.';
   if (humanRequest(value) && (!context.teamInquiry || SUPPORT_ISSUE.test(value))) return `You can reach Team Haven at ${CONTACT} or through the WhatsApp contact in the footer. Tell them what happened so they can review it; I have not created a support ticket or booked a strategy call.`;
   if (/\b(?:are you|is this)\b.{0,25}\b(?:human|real person|ai|bot)\b/.test(value)) return 'I am Haven, TMH’s AI marketing guide. I can help with marketing and questions about this platform. If you need a person, Team Haven is available through the contact details in the footer.';
   if (/\b(?:another|new|second|redo|again)\b/.test(value) && /\b(?:brand review|review)\b/.test(value)) return 'Your saved brand review normally reopens from Request a Free Brand Review. Use the review correction controls to replace a wrong link or screenshot. For a different brand or a fresh review, contact info@themarketinghaven.xyz so the team can help without mixing your records. Deleting a review is a separate privacy action.';
@@ -146,10 +147,10 @@ function bookExplanation(raw, state) {
     && !/\?|\b(?:buy|purchase|guarantee|will fix|exact blueprint|guaranteed fix|losing money|bleeding money)\b/i.test(candidate)) return candidate;
   const customer = /\b(?:audience|customer|buyer|anybody)\b/i.test(state.evidence.join(' '));
   return customer
-    ? 'The Unseen Playbook is relevant here because you need to choose who the offer is for and give that buyer a clear reason to care. Use it to sharpen one offer for one audience, then use Chapter 5, The Shift From Knowing to Doing, to put your next step into practice. The button below opens the book details.'
+    ? 'The Unseen Playbook can help you choose who your offer is for and give that buyer a clear reason to care. You can use its questions to sharpen one offer for one audience. The button below opens the details.'
     : /\btrust|proof|testimonial/i.test(state.evidence.join(' '))
-      ? 'The Unseen Playbook explains how clarity, positioning and trust affect the buying decision. For the proof gap you described, look at how you can give a buyer a concrete reason to believe the offer, then use Chapter 5 to turn that into one practical action. Open the details below to see whether it fits.'
-      : 'The Unseen Playbook gives you a structured way to examine your offer, positioning and the obstacles a buyer faces. Chapter 5, The Shift From Knowing to Doing, helps move that reflection into a practical next step. The button below opens the details so you can decide whether it suits what you want to work on.';
+      ? 'The Unseen Playbook explains how clarity, positioning and trust affect a buying decision. For the proof gap you described, it can help you work out what would give a buyer a concrete reason to believe your offer. Open the details below to see whether it fits.'
+      : 'The Unseen Playbook offers a way to examine your offer and the obstacles a buyer faces. The button below opens the details so you can decide whether it suits what you want to work on.';
 }
 function callExplanation(raw) {
   const candidate = cleanReply(raw).replace(/\[\[(?:STEP:[A-Z0-9_]+|DIAGNOSTIC_QUESTION|CHIPS:.*?)\]\]/gs, '').trim();
@@ -169,6 +170,12 @@ export function resolveHavenRouting(rawText, context = {}) {
   const latest = String(context.latestUserText || '').trim();
   const previous = normalizeState(context.routingState);
   const state = { ...previous, evidence: [...previous.evidence], missing: [...previous.missing] };
+  if ((context.bookingStatus?.confirmed || context.bookingStatus?.pending) && (/\[\[BOOK_CALL\]\]/.test(raw) || BARE_BOOKING.test(latest) || wantsDelegation(latest))) {
+    state.pendingAction=null;state.permission='none';
+    return result(context.bookingStatus.confirmed
+      ? 'You already have an upcoming call. Bring this issue to that meeting; your Calendly confirmation has the details and options to manage it.'
+      : 'A booking page was opened recently. Complete that booking first; if you left without booking, you can try again after the reservation expires (up to 30 minutes).',state,'answer');
+  }
   const sources = userTexts(context);
   const inferred = inferHavenNeed([...sources.map(content => ({ role: 'user', content }))]);
   const marker = [...raw.matchAll(/\[\[DECISION:(\{[^\r\n]*\})\]\]/g)].at(-1);
@@ -188,9 +195,9 @@ export function resolveHavenRouting(rawText, context = {}) {
     state.evidence = proposed.evidence;
     state.missing = Array.isArray(proposed.missing) ? proposed.missing.filter(key => ['goal', 'scope', 'evidence', 'preference', 'problem'].includes(key)).slice(0, 4) : [];
   }
-  const currentDelegation = wantsDelegation(latest) && WORK.test(latest) && (IMPLEMENT.test(latest) || RESEARCH.test(latest));
+  const currentDelegation = wantsDelegation(latest) && WORK.test(latest) && (IMPLEMENT.test(latest) || RESEARCH.test(latest) || /like yours/i.test(latest));
   const currentResearch = RESEARCH.test(latest);
-  if (inferred.need !== 'unknown' && (currentDelegation || currentResearch || (!proposed && state.need === 'unknown'))) {
+  if (inferred.need !== 'unknown' && (currentDelegation || currentResearch || (!proposed && ['unknown','support'].includes(state.need)))) {
     state.need = inferred.need;
     state.complexity = inferred.complexity === 'unknown' ? state.complexity : inferred.complexity;
     state.evidence = inferred.evidence.length ? inferred.evidence : state.evidence;

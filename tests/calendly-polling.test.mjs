@@ -1,3 +1,5 @@
+import {createHash} from 'node:crypto';
+const trackingId=alias=>{const h=createHash('md5').update(alias).digest('hex');return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);};
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -37,7 +39,7 @@ function database(seed = {}, { onRead = () => {}, failInsert = false } = {}) {
       }
       return {
         select() { return this; },
-        eq(column, value) { filters.push((row) => row[column] === value); return this; },
+        eq(column, value) { filters.push((row) => row[column] === value || column==='id' && trackingId(row[column])===value); return this; },
         ilike(column, pattern) { filters.push((row) => row[column]?.toLowerCase() === pattern.replace(/\\([\\%_])/g, '$1').toLowerCase()); return this; },
         or() { filters.push((row) => row.pre_call_briefing == null || row.pre_call_briefing === ''); return this; },
         order(column) { sort = column; return this; },
@@ -60,6 +62,7 @@ function database(seed = {}, { onRead = () => {}, failInsert = false } = {}) {
 function load({ db = database(), events = [event()], invitees = [invitee()], api, env = {}, now = NOW } = {}) {
   let handler;
   const urls = [];
+  const tracked=person=>{const intent=[...db.rows.booking_intents].filter(row=>row.email.toLowerCase()===person.email.toLowerCase()).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))[0];return {...person,...(intent?{tracking:{utm_content:trackingId(intent.id)}}:{})};};
   const code = buildSync({ entryPoints: [new URL('../supabase/functions/calendly-poll-bookings/index.ts', import.meta.url).pathname.replace(/^\/(\w:)/, '$1')], bundle: true, write: false, format: 'cjs', platform: 'node', external: ['https://*'] }).outputFiles[0].text;
   vm.runInNewContext(code, {
     require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: () => db.client },
@@ -71,12 +74,12 @@ function load({ db = database(), events = [event()], invitees = [invitee()], api
         const result = await api(parsed);
         if (!parsed.pathname.endsWith('/invitees') || !result.ok) return result;
         const body = await result.json();
-        if (Array.isArray(body.collection)) body.collection = body.collection.map((person) => ({ ...person, uri: `https://api.calendly.com${parsed.pathname}/${person.email.split('@')[0]}` }));
+        if (Array.isArray(body.collection)) body.collection = body.collection.map((person) => ({ ...tracked(person), uri: `https://api.calendly.com${parsed.pathname}/${person.email.split('@')[0]}` }));
         return json(body);
       }
       if (parsed.pathname === '/users/me') return json({ resource: { uri: 'https://api.calendly.com/users/owner' } });
       if (parsed.pathname === '/scheduled_events') return json({ collection: events });
-      if (parsed.pathname.endsWith('/invitees')) return json({ collection: invitees });
+      if (parsed.pathname.endsWith('/invitees')) return json({ collection: invitees.map(tracked) });
       throw new Error('Unexpected URL');
     },
     Request, Response, Headers, URL, URLSearchParams, AbortSignal,

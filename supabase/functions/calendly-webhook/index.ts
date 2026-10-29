@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
-import { saveCalendlyBooking } from '../_shared/calendly-bookings.ts';
+import { saveCalendlyBooking,matchCalendlyIntent } from '../_shared/calendly-bookings.ts';
 import { internalHeaders } from '../_shared/internal-auth.js';
 
 function json(body: unknown, status = 200) {
@@ -71,10 +71,7 @@ serve(async (req) => {
         .update({ call_booked_at: startTime, pre_call_briefing: briefing }).eq('id', review.id);
       if (error) throw error;
     }
-    const { data: intent, error: intentError } = await supabase.from('booking_intents')
-      .select('id, service_id, confirmation_sent').ilike('email', pattern)
-      .order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (intentError) throw intentError;
+    const intent = await matchCalendlyIntent(supabase,payload);
     const savedBooking = await saveCalendlyBooking(supabase, { ...scheduled, uri: scheduled?.uri || (typeof payload.event === 'string' ? payload.event : null), status: canceled ? 'canceled' : 'active' }, { ...payload, status: canceled ? 'canceled' : 'active' }, review, intent);
     if (canceled) return json({ ok: true, canceled: true });
     if (!review && !intent) {

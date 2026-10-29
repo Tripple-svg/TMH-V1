@@ -16,12 +16,13 @@ function shop(saved, invoke) {
     useEffect(fn, deps) { const i = cursor++; if (!(i in state) || deps.some((dep, n) => dep !== state[i][n])) effects.push(fn); state[i] = deps; },
   };
   const context = {
-    module: { exports: {} },
+    module: { exports: {} },React:react,
     require(name) {
       if (name === 'react') return react;
+      if(name.includes('havenIdentity'))return {getHavenIdentity:()=>({visitorId:'visitor',visitorToken:'private-proof'})};
       if (name === 'framer-motion') return { motion: new Proxy({}, { get: (_, key) => key }), AnimatePresence: 'presence', useReducedMotion: () => false };
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => key });
-      if (name.includes('supabase')) return { supabase: { functions: { invoke } } };
+      if (name.includes('supabase')) return { supabase: { functions: { invoke:(name,options)=>{const {visitorId,visitorToken,...body}=options.body;return invoke(name,{...options,body});} } } };
       return { default: 'ConfirmModal', __esModule: true };
     },
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },

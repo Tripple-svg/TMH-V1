@@ -10,7 +10,7 @@ function fixture(reduced=false) {
   const react={useState(initial){const i=s++;if(!(i in state))state[i]=typeof initial==='function'?initial():initial;return[state[i],value=>state[i]=typeof value==='function'?value(state[i]):value]},useRef(value){return refs[r++]||= {current:value}},useEffect(fn){effects.push(fn)},useCallback(fn){return fn}};
   const module={exports:{}};
   const document={visibilityState:'visible',addEventListener:(key,fn)=>listeners.set(key,fn),removeEventListener:key=>listeners.delete(key)};
-  vm.runInNewContext(code,{module,exports:module.exports,require:name=>name==='react'?react:name==='framer-motion'?{motion:{div:'div'},useInView:()=>true,useReducedMotion:()=>reduced}:require(name),navigator:{},document,requestAnimationFrame:fn=>fn()});
+  vm.runInNewContext(code,{module,exports:module.exports,require:name=>name==='react'?react:name==='framer-motion'?{motion:{div:'div'},useInView:()=>true,useReducedMotion:()=>reduced}:require(name),navigator:{},sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},setTimeout:()=>1,clearTimeout(){},document,requestAnimationFrame:fn=>fn()});
   const render=()=>{s=0;r=0;return module.exports.default({videoSrc:'/Test%20About.mp4'})};
   render();const video={currentTime:90,muted:true,loop:true,paused:true,plays:0,pauses:0,play(){this.paused=false;this.plays++;return Promise.resolve()},pause(){this.paused=true;this.pauses++}};refs[1].current=video;
   return {render,video,effects,listeners,document};
@@ -34,7 +34,7 @@ test('story video: tap pauses/resumes and close returns to the muted loop withou
 });
 
 test('story video: reduced motion suppresses the background preview while explicit playback stays available',()=>{
-  const f=fixture(true);f.effects[1]();assert.equal(f.video.plays,0);assert.equal(f.video.paused,true);
+  const f=fixture(true);f.effects.forEach(fn=>fn());assert.equal(f.video.plays,0);assert.equal(f.video.paused,true);
   button(f.render(),'Play story video with sound').props.onClick();assert.equal(f.video.plays,1);
 });
 
@@ -49,3 +49,5 @@ test('story video: one custom play/pause control retains seeking and mute withou
   button(f.render(),'Mute story video').props.onClick();assert.equal(f.video.muted,true);
   button(f.render(),'Unmute story video').props.onClick();assert.equal(f.video.muted,false);
 });
+
+test('story video resumes the audible position after returning to the looping preview and removes fullscreen',()=>{const f=fixture();button(f.render(),'Play story video with sound').props.onClick();f.video.currentTime=12;button(f.render(),'Close story playback').props.onClick();assert.equal(f.video.currentTime,0);button(f.render(),'Play story video with sound').props.onClick();assert.equal(f.video.currentTime,12);assert.equal(button(f.render(),'Show story video fullscreen'),undefined);});

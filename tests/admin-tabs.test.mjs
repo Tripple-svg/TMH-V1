@@ -92,7 +92,7 @@ test('admin tabs: six counted sections switch panels without leaving other secti
 test('lead conversations: scope switcher keeps all linked scopes under one lead', () => {
   const ui = harness();
   const lead = { id: 'lead-1', sessions: ['audit', 'support', 'service'].map((scope) => ({ ...fixture(scope), review_id: 'lead-1' })) };
-  const props = { lead, password: 'admin-test', onAuthLost: ui.onAuthLost };
+  const props = { lead, accessToken: 'test-admin-jwt', onAuthLost: ui.onAuthLost };
   let tree = ui.render('LeadConversations', props);
   assert.equal(tree.find((node) => node.type?.name === 'TranscriptPanel').props.session.scope, 'audit');
   tree.find((node) => node.type === 'button' && node.props.children[0] === 'support').props.onClick();
@@ -104,26 +104,26 @@ test('lead conversations: scope switcher keeps all linked scopes under one lead'
 test('guest chat: transcript mounts only after expansion and visitor moderation keeps saved502 status', async () => {
   const visitor = { id: 'visitor-1', flag_status: 'yellow', flag_reason: 'Repeated misuse' };
   const ui = harness({ send: async () => ({ status: 502, ok: false, error: 'Flag saved; team email pending', visitor }) });
-  const props = { session: fixture(), password: 'admin-test', onAuthLost: ui.onAuthLost, onVisitorChange: ui.onVisitorChange, showToast: ui.showToast };
+  const props = { session: fixture(), accessToken: 'test-admin-jwt', onAuthLost: ui.onAuthLost, onVisitorChange: ui.onVisitorChange, showToast: ui.showToast };
   let tree = ui.render('StandaloneSessionRow', props);
   assert.ok(!tree.some((node) => node.type?.name === 'TranscriptPanel'));
   tree.find((node) => node.type === 'button' && node.props['aria-expanded'] === false).props.onClick();
   tree = ui.render('StandaloneSessionRow', props);
   assert.ok(tree.some((node) => node.type?.name === 'TranscriptPanel'));
   await tree.find((node) => node.type?.name === 'FlagSelect').props.onChange({ target: { value: 'yellow' } });
-  assert.deepEqual(ui.requests[0].body, { password: 'admin-test', visitorId: 'visitor-1', sessionId: 'session-support', status: 'yellow', reason: 'Repeated misuse' });
+  assert.deepEqual(ui.requests[0].body, { visitorId: 'visitor-1', sessionId: 'session-support', status: 'yellow', reason: 'Repeated misuse' });
   assert.equal(ui.changes[0].flag_status, 'yellow');
   assert.match(ui.toasts[0][1], /email pending/);
 });
 
 test('transcript: authenticated lazy request is cached and never fetches while the closed row is rendered', async () => {
   const ui = harness();
-  const props = { session: fixture(), password: 'admin-test', onAuthLost: ui.onAuthLost };
+  const props = { session: fixture(), accessToken: 'test-admin-jwt', onAuthLost: ui.onAuthLost };
   let tree = ui.render('TranscriptPanel', props);
   assert.ok(tree.some((node) => node.props.role === 'status'));
   await ui.effects();
   assert.equal(ui.requests.length, 1);
-  assert.deepEqual(ui.requests[0].body, { password: 'admin-test', action: 'transcript', sessionId: 'session-support' });
+  assert.deepEqual(ui.requests[0].body, { action: 'transcript', sessionId: 'session-support' });
   tree = ui.render('TranscriptPanel', props);
   assert.equal(tree.find((node) => node.type?.name === 'TranscriptViewer').props.session.messages[0].content, 'Actual saved conversation');
   await ui.effects();
@@ -132,7 +132,7 @@ test('transcript: authenticated lazy request is cached and never fetches while t
 
 test('transcript: failed lazy request provides an explicit retry and then renders saved content', async () => {
   const ui = harness({ send: async (_, attempt) => attempt === 0 ? { status: 500, ok: false, error: 'Conversation unavailable' } : { status: 200, ...sessionResponse() } });
-  const props = { session: fixture(), password: 'admin-test', onAuthLost: ui.onAuthLost };
+  const props = { session: fixture(), accessToken: 'test-admin-jwt', onAuthLost: ui.onAuthLost };
   ui.render('TranscriptPanel', props); await ui.effects();
   let tree = ui.render('TranscriptPanel', props);
   assert.ok(tree.some((node) => node.props.role === 'alert'));
@@ -145,7 +145,7 @@ test('transcript: failed lazy request provides an explicit retry and then render
 
 test('transcript: refresh replaces an earlier empty snapshot with newly saved messages', async () => {
   const ui = harness({ send: async (_, attempt) => ({ ok: true, session: { ...sessionResponse().session, messages: attempt ? [{ role: 'user', content: 'Back after access was restored' }] : [] } }) });
-  const props = { session: fixture(), password: 'admin-test' };
+  const props = { session: fixture(), accessToken: 'test-admin-jwt' };
   ui.render('TranscriptPanel', props); await ui.effects();
   let tree = ui.render('TranscriptPanel', props);
   assert.equal(tree.find((node) => node.type?.name === 'TranscriptViewer').props.session.messages.length, 0);
@@ -176,7 +176,7 @@ test('bookings: upcoming and cancellation filters separate provider and legacy s
 
 test('standalone sessions and purchases: search has an explicit empty state', () => {
   const chats = harness();
-  const props = { scope: 'service', sessions: [fixture('service')], password: 'admin-test' };
+  const props = { scope: 'service', sessions: [fixture('service')], accessToken: 'test-admin-jwt' };
   let tree = chats.render('SessionsPanel', props);
   tree.find((node) => node.type === 'input').props.onChange({ target: { value: 'not-present' } });
   tree = chats.render('SessionsPanel', props);
@@ -193,14 +193,14 @@ test('purchase email: pending retry sends only the saved reference and patches t
   let finish;
   const purchase = { id: 'p1', email: 'buyer@example.com', reference: 'UNSEEN_1', amount: 10000, thankyou_sent: false };
   const ui = harness({ send: async () => new Promise((resolve) => { finish = resolve; }) });
-  const props = { purchases: [purchase], password: 'admin-test', onAuthLost: ui.onAuthLost, onPurchaseChange: ui.onPurchaseChange, showToast: ui.showToast };
+  const props = { purchases: [purchase], accessToken: 'test-admin-jwt', onAuthLost: ui.onAuthLost, onPurchaseChange: ui.onPurchaseChange, showToast: ui.showToast };
   const tree = ui.render('PurchasesPanel', props);
   const button = tree.find((node) => node.type === 'button' && node.props.children.includes('Retry email'));
   const pending = button.props.onClick();
   await button.props.onClick();
   assert.equal(ui.requests.length, 1, 'A rapid second click cannot send another request');
   assert.equal(ui.requests[0].url, 'https://project.supabase.co/functions/v1/admin-retry-purchase-email');
-  assert.deepEqual(ui.requests[0].body, { password: 'admin-test', reference: 'UNSEEN_1' });
+  assert.deepEqual(ui.requests[0].body, { reference: 'UNSEEN_1' });
   assert.ok(ui.render('PurchasesPanel', props).some((node) => node.type === 'button' && node.props.disabled && node.props.children.includes('Retrying…')));
   finish({ status: 200, ok: true, purchase: { ...purchase, thankyou_sent: true } });
   await pending;
@@ -212,7 +212,7 @@ test('purchase email: pending retry sends only the saved reference and patches t
 test('purchase email: failed retry retains saved diagnostics and exposes a retryable error', async () => {
   const purchase = { id: 'p1', email: 'buyer@example.com', reference: 'UNSEEN_1', amount: 10000, thankyou_sent: false };
   const ui = harness({ send: async () => ({ status: 502, ok: false, error: 'Email provider unavailable', purchase: { ...purchase, thankyou_last_error: 'Provider rejected delivery' } }) });
-  const props = { purchases: [purchase], password: 'admin-test', onAuthLost: ui.onAuthLost, onPurchaseChange: ui.onPurchaseChange, showToast: ui.showToast };
+  const props = { purchases: [purchase], accessToken: 'test-admin-jwt', onAuthLost: ui.onAuthLost, onPurchaseChange: ui.onPurchaseChange, showToast: ui.showToast };
   let tree = ui.render('PurchasesPanel', props);
   await tree.find((node) => node.type === 'button' && node.props.children.includes('Retry email')).props.onClick();
   assert.equal(ui.purchaseChanges[0].thankyou_last_error, 'Provider rejected delivery');

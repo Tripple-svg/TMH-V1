@@ -50,7 +50,7 @@ function load(name, db, options = {}) {
   let handler;
   const env = { SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-test', HCAPTCHA_SECRET: 'captcha-test', ...options.env };
   const shared = { exports: {} };
-  const context = { module: shared, exports: shared.exports, crypto: webcrypto, TextEncoder, Uint8Array };
+  const context = { module: shared, exports: shared.exports, crypto: webcrypto, TextEncoder,TextDecoder, Uint8Array };
   vm.runInNewContext(transformSync(readFileSync(new URL('../supabase/functions/_shared/review-access.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'cjs' }).code, context);
   const requestModule = { exports: {} };
   vm.runInNewContext(transformSync(readFileSync(new URL('../supabase/functions/_shared/haven-request.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'cjs' }).code, {

@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
-import { HavenRequestError } from '../_shared/haven-request.ts';
+import { HavenRequestError,readBoundedJson } from '../_shared/haven-request.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -68,7 +68,7 @@ serve(async (req) => {
   }
 
   try {
-    const payload = await req.json().catch(() => null);
+    const payload = await readBoundedJson(req,4096);
     const email = typeof payload?.email === 'string' ? payload.email.trim() : '';
 
     // Invalid requests deliberately receive the same response as valid ones.

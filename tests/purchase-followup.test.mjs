@@ -14,7 +14,7 @@ function source(path) {
   return compiled.get(path);
 }
 function sandbox(extra = {}) {
-  return { module: { exports: {} }, Response, Request, Headers, URL, URLSearchParams, AbortSignal, TextEncoder, Uint8Array, crypto: webcrypto,
+  return { module: { exports: {} }, Response, Request, Headers, URL, URLSearchParams, AbortSignal, TextEncoder,TextDecoder, Uint8Array, crypto: webcrypto,
     console: { error() {}, warn() {}, log() {} }, ...extra };
 }
 function helper() {

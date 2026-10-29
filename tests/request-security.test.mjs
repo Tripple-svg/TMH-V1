@@ -10,7 +10,7 @@ import { resolveHavenRouting, supportHelpReply } from '../supabase/functions/_sh
 function moduleExports(file){
   const code=buildSync({entryPoints:[file],bundle:true,write:false,format:'cjs',platform:'node',external:['https://*']}).outputFiles[0].text;
   const module={exports:{}};
-  vm.runInNewContext(code,{module,exports:module.exports,crypto:webcrypto,TextEncoder,Uint8Array,Request,Response,Headers,AbortSignal,console});
+  vm.runInNewContext(code,{module,exports:module.exports,crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,Request,Response,Headers,AbortSignal,console});
   return module.exports;
 }
 function endpoint(name,db,send=async()=>Response.json({success:false})){
@@ -19,9 +19,9 @@ function endpoint(name,db,send=async()=>Response.json({success:false})){
   vm.runInNewContext(code,{require:name=>name.includes('server.ts')?{serve:fn=>{handler=fn;}}:{createClient:()=>db},
     Deno:{env:{get:name=>({SUPABASE_URL:'https://project.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'private-key',ADMIN_PASSWORD:'correct-secret',HCAPTCHA_SECRET:'captcha',RESEND_API_KEY:'resend'})[name]}},
     fetch:send,crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,Request,Response,Headers,AbortSignal,URLSearchParams,console:{error(){}}});
-  return body=>handler(new Request('https://project.supabase.co',{method:'POST',headers:{origin:'http://localhost:5173','x-forwarded-for':'192.0.2.5','content-type':'application/json'},body:JSON.stringify(body)}));
+  return body=>handler(new Request('https://project.supabase.co',{method:'POST',headers:{origin:'http://localhost:5173','x-forwarded-for':'192.0.2.5','content-type':'application/json',authorization:'Bearer test-admin-jwt'},body:JSON.stringify(body)}));
 }
-const {authenticateAdmin,adminPasswordQuality}=moduleExports('supabase/functions/_shared/admin-auth.ts');
+const {requireAdmin}=moduleExports('supabase/functions/_shared/admin-auth.ts');
 const {publicRequestLimit}=moduleExports('supabase/functions/_shared/abuse-limits.ts');
 const req=(ip='192.0.2.5')=>new Request('https://project.supabase.co',{headers:{'x-forwarded-for':ip}});
 
@@ -34,20 +34,13 @@ test('request budgets: rotating email/reference does not change a network bucket
   assert.ok(!JSON.stringify(calls).includes('192.0.2.5'));assert.ok(!JSON.stringify(calls).includes('private-key'));
   await assert.rejects(()=>publicRequestLimit({rpc:async()=>({error:{}})},req(),'secret','lookup'),error=>error.status===503);
 });
-test('admin auth: a locked budget is checked before credentials; successful attempts release their reservation',async()=>{
-  const calls=[];
-  const db={rpc:async(name,args)=>{calls.push({name,args});return name==='begin_admin_auth'?{data:{allowed:true,started_at:'2026-10-28T00:00:00Z'}}:{data:true};}};
-  assert.equal(await authenticateAdmin(db,req(),'service','correct','correct'),true);
-  assert.deepEqual(calls.map(call=>call.name),['begin_admin_auth','finish_admin_auth']);
-  assert.ok(!JSON.stringify(calls).includes('correct'));
-  calls.length=0;assert.equal(await authenticateAdmin(db,req(),'service','wrong','correct'),false);assert.equal(calls.length,1);
-  await assert.rejects(()=>authenticateAdmin({rpc:async()=>({data:{allowed:false}})},req(),'service','correct','correct'),error=>error.status===429);
-  await assert.rejects(()=>authenticateAdmin({rpc:async()=>({error:{}})},req(),'service','correct','correct'),error=>error.status===503);
-});
-test('admin password quality: warns about weak configuration without pretending composition proves entropy',()=>{
-  for(const secret of ['admin','password1234567890','short','aaaaaaaaaaaaaaaaaaaa','abcdabcdabcdabcd'])assert.equal(adminPasswordQuality(secret).strong,false);
-  assert.equal(adminPasswordQuality('independent random phrase 76391').strong,true);
-  assert.match(adminPasswordQuality('short').recommendation,/20 characters/);
+test('admin Auth validates the JWT with Auth and requires trusted app_metadata, never a password or editable user_metadata',async()=>{
+  const request=token=>new Request('https://example.com',{headers:{authorization:'Bearer '+token}});
+  const db={rpc:async()=>({data:true}),auth:{getUser:async token=>({data:{user:token==='admin'?{app_metadata:{role:'admin'}}:token==='customer'?{user_metadata:{role:'admin'}}:null},error:null})}};
+  assert.equal((await requireAdmin(db,request('admin'),'service')).app_metadata.role,'admin');
+  for(const [token,status] of [['customer',403],['forged',401],['service',401]])await assert.rejects(()=>requireAdmin(db,request(token),'service'),e=>e.status===status);
+  await assert.rejects(()=>requireAdmin(db,new Request('https://example.com'),'service'),e=>e.status===401);
+  await assert.rejects(()=>requireAdmin({...db,rpc:async()=>({data:false})},request('admin'),'service'),e=>e.status===429);
 });
 test('public endpoints: a sixth attempt is rejected despite changing email, before more mail/CAPTCHA/intent writes',async()=>{
   for(const name of ['check-email-exists','capture-booking-lead','create-brand-review','request-data-deletion']){
@@ -66,9 +59,9 @@ test('public endpoints: a sixth attempt is rejected despite changing email, befo
 });
 test('admin endpoints: a locked budget returns 429 before any private data query',async()=>{
   for(const name of ['admin-fetch-leads','admin-update-lead','admin-team-assignment','admin-retry-purchase-email','flag-user']){
-    const db={rpc:async()=>({data:{allowed:false}}),from(){throw new Error('Private data must not be queried');}};
+    const db={rpc:async()=>({data:false}),from(){throw new Error('Private data must not be queried');}};
     const response=await endpoint(name,db)({password:'correct-secret',action:'load'});
-    assert.equal(response.status,429,name);assert.equal(response.headers.get('Retry-After'),'600',name);
+    assert.equal(response.status,429,name);assert.equal(response.headers.get('Retry-After'),'60',name);
   }
 });
 test('strategy routing: call recommendations consistently identify the appointment as free',()=>{

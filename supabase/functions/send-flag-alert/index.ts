@@ -42,12 +42,17 @@ serve(async (req) => {
 
     // Email content comes only from the database snapshot created by the flag trigger.
     const { data: notification, error } = await supabase.from('flag_alert_notifications')
-      .select('id,email,visitor_id,full_name,source,entry_point,session_id,status,reason,sent_at,team_email_id,email_template_version').eq('id', body.notificationId).maybeSingle();
+      .select('id,email,visitor_id,full_name,source,entry_point,session_id,status,reason,sent_at,team_skipped_at,team_email_id,email_template_version').eq('id', body.notificationId).maybeSingle();
     if (error) {
       console.error('send-flag-alert: notification lookup failed');
       return json({ ok: false, error: 'Unable to load flag notification' }, 500);
     }
     if (!notification) return json({ ok: false, error: 'Flag notification not found' }, 404);
+    if(!notification.email){
+      const {error:skipError}=await supabase.from('flag_alert_notifications').update({team_skipped_at:new Date().toISOString()}).eq('id',notification.id);
+      if(skipError)throw Error('anonymous_flag_skip_failed');
+      return json({ok:true,skipped:'anonymous_dashboard_only'});
+    }
     if (notification.sent_at) return json({ ok: true, skipped: 'already sent' });
 
     const sourceLabel = ['editorial-v2', 'editorial-v3'].includes(notification.email_template_version) && notification.entry_point === 'team_inquiry' ? 'Team inquiry (Talk to Our Team)' : SOURCE_LABELS[notification.source] || 'Admin action / legacy record';

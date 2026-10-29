@@ -63,6 +63,8 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
       if (event) event[name === 'send-flag-alert' ? 'sent_at' : 'customer_sent_at'] = new Date().toISOString(); return { data: { ok: true }, error: null }; } },
     async rpc(name, args) {
       rpcCalls.push({ name, args: structuredClone(args) });
+      if(name==='record_ai_usage')return {data:null,error:null};
+      if(name==='visitor_strategy_booking')return {data:{pending:false},error:null};
       if (name === 'consume_playbook_limit') return { data:rateAllowed,error:null };
       if (name === 'correct_haven_review_source') {
         if (correctionError) return { error: { code: correctionError } };
@@ -186,6 +188,14 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
   return { handler, rows, requests, writes, queries, request, rpcCalls, deliveries, objectOperations };
 }
 const chatBody = (extras = {}) => ({ scope: 'audit', requestId: REQUEST_ID, noticeVersion: '2026-10-26', context: ACCESS, messages: [{ role: 'user', content: 'I post but nothing happens.' }], ...extras });
+
+test('usage: records provider totals including thinking tokens, without prompts/secrets or visible step metadata',async()=>{
+  const app=load('haven-chat',{env:{GEMINI_API_KEY:'private-test-key'},fetchImpl:async()=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'Who is most likely to buy this offer? [[STEP:AWAITING_DIAGNOSTIC_Q2]]'}]}}],usageMetadata:{promptTokenCount:200,candidatesTokenCount:100,totalTokenCount:580}})});
+  const response=await app.handler(app.request(chatBody()));assert.equal(response.status,200);
+  const data=await response.json();assert.doesNotMatch(data.text,/\[\[STEP:/);assert.equal(data.currentStep,'AWAITING_DIAGNOSTIC_Q2');
+  const usage=app.rpcCalls.find(call=>call.name==='record_ai_usage');assert.equal(usage.args.p_total,580);assert.equal(usage.args.p_input,200);assert.equal(usage.args.p_output,100);
+  assert.doesNotMatch(JSON.stringify(usage.args),/private-test-key|Who is most likely|Ada Studio/);
+});
 
 test('Gemini transient 503 retries once and succeeds before using the fallback', async () => {
   let attempts = 0;

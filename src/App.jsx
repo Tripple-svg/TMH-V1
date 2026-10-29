@@ -29,6 +29,7 @@ const PrivacyPage = lazy(() => import('./pages/PrivacyPage'));
 const TermsPage = lazy(() => import('./pages/TermsPage'));
 const DataDeletionConfirmPage = lazy(() => import('./pages/DataDeletionConfirmPage'));
 const TeamBriefPage = lazy(() => import('./pages/TeamBriefPage'));
+const AdminInvitePage = lazy(() => import('./pages/AdminInvitePage'));
 
 function AppInner() {
   const { openDrawer, hasExistingReview, getSavedReviewFormData } = useHaven();
@@ -231,6 +232,7 @@ export default function App() {
       <Suspense fallback={<div role="status" className="flex min-h-screen items-center justify-center bg-zinc-950 text-sm text-zinc-400">Loading page…</div>}>
       <Routes>
         <Route path="/admin" element={<AdminRoute />} />
+        <Route path="/admin/accept-invite" element={<AdminInvitePage />} />
         <Route path="/team-brief" element={<TeamBriefPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />

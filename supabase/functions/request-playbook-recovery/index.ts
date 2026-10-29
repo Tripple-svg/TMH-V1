@@ -1,3 +1,4 @@
+import {verificationAttempt} from '../_shared/verification-attempts.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson } from '../_shared/haven-request.ts';
 import { purchaseDetails, recoveryCode, codeHash, limitRecovery, requestBucket, verifyPurchasePayment } from '../_shared/playbook-recovery.ts';
@@ -16,12 +17,13 @@ Deno.serve(async request => {
     const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), url = Deno.env.get('SUPABASE_URL');
     if (!secret || !url) throw new HavenRequestError('Recovery is not configured.', 503);
     const db = createClient(url, secret, { auth: { persistSession: false } });
-    await limitRecovery(db, 'recovery-ip:' + await requestBucket(request, secret), 5, 900);
+    await limitRecovery(db, 'recovery-mail-ip:' + await requestBucket(request, secret), 20, 900);
+    await verificationAttempt(db,request,secret,body,'check');
     await limitRecovery(db, 'recovery-pair:' + await codeHash(reference, email, secret), 3);
     const id = crypto.randomUUID();
     const generic = (challengeId = id) => json({ ok: true, challengeId, expiresIn: 600, resendAfter: 60,
       message: 'If the details match a purchase, a six-digit code will arrive at the checkout email. Check spam too.' });
-    if (!await verifyPurchasePayment(db, reference, email)) return generic();
+    if (!await verifyPurchasePayment(db, reference, email)) {await verificationAttempt(db,request,secret,body);return generic();}
     const code = recoveryCode();
     const { data: reservation, error } = await db.rpc('reserve_playbook_recovery', {
       p_id: id, p_reference: reference, p_email: email, p_code_hash: await codeHash(id, code, secret),
@@ -45,6 +47,6 @@ Deno.serve(async request => {
     return generic();
   } catch (error) {
     if(error instanceof HavenRequestError && error.status===429)Object.assign(headers,{'Retry-After':String(error.retryAfter||900)});
-    return json({ ok: false, error: error instanceof HavenRequestError ? error.message : 'Recovery is temporarily unavailable.' }, error instanceof HavenRequestError ? error.status : 502);
+    return json({ ok: false, code:(error as any)?.code, error: error instanceof HavenRequestError ? error.message : 'Recovery is temporarily unavailable.' }, error instanceof HavenRequestError ? error.status : 502);
   }
 });

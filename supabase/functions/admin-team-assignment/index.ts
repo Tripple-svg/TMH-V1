@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { ASSIGNMENT_FIELDS, TEAM_NAMES, assignmentBrief, assignmentEmail, assignmentToken } from '../_shared/team-assignment.js';
 import { deliverEmail, mailConfiguration, MailDeliveryError } from '../_shared/resend-delivery.js';
-import { authenticateAdmin, AdminAuthError } from '../_shared/admin-auth.ts';
+import { requireAdmin, AdminAuthError,readAdminBody } from '../_shared/admin-auth.ts';
 
 const ORIGINS=['https://themarketinghaven.xyz','https://www.themarketinghaven.xyz','http://localhost:5173','http://localhost:5175','http://127.0.0.1:5173'];
 const uuid=(value:unknown)=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
@@ -11,23 +11,22 @@ serve(async(req)=>{
   const headers={'Access-Control-Allow-Origin':origin&&ORIGINS.includes(origin)?origin:ORIGINS[0],
     'Access-Control-Allow-Headers':'authorization,x-client-info,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS',
     'Content-Type':'application/json','Cache-Control':'no-store',Vary:'Origin'};
-  const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...headers,...(status===429?{'Retry-After':'600'}:{})}});
+  const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...headers,...(status===429?{'Retry-After':'60'}:{})}});
   if(origin&&!ORIGINS.includes(origin))return json({ok:false,error:'Origin not allowed'},403);
   if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
   if(req.method!=='POST')return json({ok:false,error:'Method not allowed'},405);
   try{
-    const url=Deno.env.get('SUPABASE_URL'),key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),password=Deno.env.get('ADMIN_PASSWORD');
-    if(!url||!key||!password)return json({ok:false,error:'Assignments are not configured.'},503);
-    const raw=await req.text();if(raw.length>12000)return json({ok:false,error:'Request too large.'},413);
-    const body=JSON.parse(raw);
+    const url=Deno.env.get('SUPABASE_URL'),key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if(!url||!key)return json({ok:false,error:'Assignments are not configured.'},503);
+    const body=await readAdminBody(req);
     const db=createClient(url,key,{auth:{persistSession:false}});
-    if(!await authenticateAdmin(db,req,key,body.password,password))return json({ok:false,error:'Unauthorised'},401);
+    if(!await requireAdmin(db,req,key))return json({ok:false,error:'Unauthorised'},401);
     const load=async(id:string)=>{
       const result=await db.from('team_assignments').select(ASSIGNMENT_FIELDS).eq('id',id).maybeSingle();
       if(result.error)throw new Error('assignment_read_failed');return result.data;
     };
     if(['load','save'].includes(body.action)){
-      if(!['booking','inquiry'].includes(body.kind)||(body.kind==='booking'?!/^[1-9]\d{0,17}$/.test(String(body.targetId)):!uuid(body.targetId)))return json({ok:false,error:'Select a valid booking or team inquiry.'},400);
+      if(!['booking','inquiry'].includes(body.kind)||(body.kind==='booking'?!/^[1-9]\d{0,17}$/.test(String(body.targetId)):typeof body.targetId!=='string'||body.targetId.length<1||body.targetId.length>200))return json({ok:false,error:'Select a valid booking or team inquiry.'},400);
       if(body.action==='load'){
         const {data,error}=await db.from('team_assignments').select(ASSIGNMENT_FIELDS).eq(body.kind==='booking'?'booking_id':'inquiry_id',body.targetId).maybeSingle();
         if(error)throw new Error('assignment_read_failed');return json({ok:true,assignment:data});

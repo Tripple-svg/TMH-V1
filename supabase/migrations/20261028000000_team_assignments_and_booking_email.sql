@@ -34,7 +34,7 @@ end; $$;
 create table public.team_assignments (
   id uuid primary key default gen_random_uuid(),
   booking_id bigint unique references public.strategy_call_bookings(id) on delete cascade,
-  inquiry_id uuid unique references public.haven_sessions(id) on delete cascade,
+  inquiry_id text unique references public.haven_sessions(id) on delete cascade,
   assignee_name text not null check(length(assignee_name) between 1 and 80),
   assignee_email text not null check(length(assignee_email) between 3 and 254),
   preparation_note text not null default '' check(length(preparation_note)<=2000),
@@ -63,16 +63,16 @@ begin
       then raise exception 'Active upcoming booking required' using errcode='P0002'; end if;
     select * into item from public.team_assignments where booking_id=p_target::bigint for update;
   else
-    if not exists(select 1 from public.haven_sessions where id=p_target::uuid and service_id='team-inquiry')
+    if not exists(select 1 from public.haven_sessions where id=p_target and service_id='team-inquiry')
       then raise exception 'Team inquiry required' using errcode='P0002'; end if;
-    select * into item from public.team_assignments where inquiry_id=p_target::uuid for update;
+    select * into item from public.team_assignments where inquiry_id=p_target for update;
   end if;
   if coalesce(item.revision,0)<>p_revision then return jsonb_build_object('conflict',true); end if;
   if item.email_attempted_at>now()-interval '60 seconds' and item.email_sent_at is null
     then return jsonb_build_object('busy',true); end if;
   if item.id is null then
     insert into public.team_assignments(booking_id,inquiry_id,assignee_name,assignee_email,preparation_note)
-    values(case when p_kind='booking' then p_target::bigint end,case when p_kind='inquiry' then p_target::uuid end,p_name,lower(trim(p_email)),p_note) returning * into item;
+    values(case when p_kind='booking' then p_target::bigint end,case when p_kind='inquiry' then p_target end,p_name,lower(trim(p_email)),p_note) returning * into item;
   else
     update public.team_assignments set assignee_name=p_name,assignee_email=lower(trim(p_email)),preparation_note=p_note,
       revision=revision+1,expires_at=now()+interval '7 days',revoked_at=null,acknowledged_at=null,email_payload=null,

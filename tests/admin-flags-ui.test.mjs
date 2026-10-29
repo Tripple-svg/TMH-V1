@@ -48,7 +48,7 @@ function harness({ response = { ok: true, review: { id: 'review-1', flag_status:
   const actions = () => {
     cursor = 0;
     return context.module.exports.useLeadActions({
-      lead, password: 'admin-password', onLeadChange: (value) => changes.push(value),
+      lead, accessToken: 'test-admin-jwt', onLeadChange: (value) => changes.push(value),
       onAuthLost: () => { authLost++; }, showToast: (...args) => toasts.push(args),
     });
   };
@@ -71,9 +71,8 @@ test('admin flags: persists the returned flag and posts password, email, status,
   const ui = harness();
   await ui.actions().onFlagChange({ target: { value: 'red' } });
   assert.equal(ui.requests[0].url, 'https://project.supabase.co/functions/v1/flag-user');
-  assert.equal(ui.requests[0].headers.Authorization, 'Bearer public-anon-key');
-  assert.deepEqual(JSON.parse(ui.requests[0].body), {
-    password: 'admin-password', email: 'user@example.com', status: 'red', reason: 'Abuse',
+  assert.equal(ui.requests[0].headers.Authorization, 'Bearer test-admin-jwt');
+  assert.deepEqual(JSON.parse(ui.requests[0].body), { email: 'user@example.com', status: 'red', reason: 'Abuse',
   });
   assert.equal(ui.changes[0].flag_status, 'red');
   assert.equal(ui.changes[0].flag_reason, 'Abuse');

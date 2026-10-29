@@ -1,3 +1,5 @@
+import { getHavenIdentity } from '../../../lib/havenIdentity';
+import { quickPrompts } from '../config/quick-prompts';
 // src/components/haven/components/HavenDrawer.jsx
 // Viewport sizing and slide animation are isolated for mobile keyboards.
 
@@ -7,8 +9,8 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
   X, Menu, Plus, MoreVertical, Pin, MessageSquare, Sparkles,
-  BarChart3, Target, Zap, Trash2, RotateCcw, Settings, ExternalLink,
-  ChevronDown, AlertCircle,
+   Target,  Trash2, RotateCcw, Settings, ExternalLink,
+  ChevronDown,
 } from 'lucide-react';
 import useDrawerViewport from '../hooks/useDrawerViewport';
 import { useHaven } from '../hooks/useHaven';
@@ -113,14 +115,9 @@ function ThinkingIndicator() {
   );
 }
 
-const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt }) {
+const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt, scope, serviceId }) {
   const [err, setErr] = useState(false);
-  const prompts = [
-    { title: 'Funnel Breakdown', desc: 'Audit landing page conversion points', icon: Target },
-    { title: 'Ad Strategy', desc: 'Draft simple campaign launch ideas', icon: Zap },
-    { title: 'Content Ideas', desc: 'Build engaging post concepts', icon: Sparkles },
-    { title: 'Conversion Review', desc: 'Identify bottlenecks in sales channels', icon: BarChart3 },
-  ];
+  const prompts = quickPrompts(scope,serviceId).map(([title,desc])=>({title,desc,icon:Target}));
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="flex flex-col items-center justify-center min-h-[75%] text-center px-2 py-6 space-y-8">
@@ -157,49 +154,17 @@ const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt }
 });
 
 function BookingModal({ isOpen, onClose }) {
-  const { bookingContext } = useHaven();
+  const { bookingContext, userProfile = {} } = useHaven();
   const [bookingEmail, setBookingEmail] = useState('');
   const [bookingError, setBookingError] = useState('');
   const [capturing, setCapturing] = useState(false);
   const fromServices = bookingContext.source === 'services';
   const validEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  const [hasOpenedBefore, setHasOpenedBefore] = useState(false);
-  const [lastOpenedLabel, setLastOpenedLabel] = useState('');
-
-  useEffect(() => {
-    if (!isOpen) return;
-    try {
-      const raw = localStorage.getItem(CALENDLY_CLICKED_KEY);
-      if (raw) {
-        const ts = new Date(raw);
-        const now = new Date();
-        const diffMs = now - ts;
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHrs = Math.floor(diffMs / 3600000);
-        const diffDays = Math.floor(diffMs / 86400000);
-
-        let label;
-        if (diffMins < 1) label = 'a moment ago';
-        else if (diffMins < 60) label = `${diffMins} min ago`;
-        else if (diffHrs < 24) label = `${diffHrs} hour${diffHrs > 1 ? 's' : ''} ago`;
-        else label = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-
-        setHasOpenedBefore(true);
-        setLastOpenedLabel(label);
-      } else {
-        setHasOpenedBefore(false);
-        setLastOpenedLabel('');
-      }
-    } catch {
-      setHasOpenedBefore(false);
-    }
-  }, [isOpen]);
-
   const handleChooseTime = async (event) => {
-    if (fromServices) {
+    {
       event.preventDefault();
       if (capturing) return;
-      const email = bookingEmail.trim();
+      const email = (bookingEmail || userProfile.email || '').trim();
       if (!validEmail(email)) {
         setBookingError('Please enter a valid email address.');
         return;
@@ -212,10 +177,11 @@ function BookingModal({ isOpen, onClose }) {
       setBookingError('');
       try {
         const { data, error } = await supabase.functions.invoke('capture-booking-lead', {
-          body: { email, serviceId: bookingContext.serviceId },
+          body: { email, serviceId: bookingContext.serviceId || null, source: bookingContext.source==='team'?'team':fromServices ? 'service' : 'lead', ...getHavenIdentity(), ...(userProfile.reviewId ? { reviewId:userProfile.reviewId,sessionId:userProfile.sessionId,accessToken:userProfile.accessToken } : {}) },
         });
-        if (error || !data?.ok) throw new Error('Capture failed');
-        const url = `${CALENDLY_URL}?email=${encodeURIComponent(email)}`;
+        if (error || !data?.ok) { const detail=error?.context instanceof Response?await error.context.clone().json().catch(()=>null):data; throw new Error(detail?.error || 'We could not confirm booking access. Please retry.'); }
+        if(!/^[a-f0-9-]{36}$/i.test(data.intentId||''))throw Error('Booking access could not be confirmed. Please retry.');
+        const url = `${CALENDLY_URL}?email=${encodeURIComponent(email)}&utm_content=${encodeURIComponent(data.intentId)}`;
         if (bookingWindow) bookingWindow.location.href = url;
         else window.location.assign(url);
       } catch {
@@ -228,7 +194,7 @@ function BookingModal({ isOpen, onClose }) {
     }
     try {
       localStorage.setItem(CALENDLY_CLICKED_KEY, new Date().toISOString());
-    } catch {}
+    } catch { /* Optional browser storage may be unavailable. */ }
     onClose();
   };
 
@@ -250,20 +216,10 @@ function BookingModal({ isOpen, onClose }) {
             </div>
             <h3 className="relative text-base font-semibold text-white">Book Your Free Strategy Call</h3>
             <p className="relative text-sm text-zinc-400 leading-relaxed">
-              Pick a time that works. We're available Mon, Wed &amp; Fri, 6–8 PM WAT.
+              Choose an available time in Calendly. Your confirmation will include the meeting details.
             </p>
 
-            {hasOpenedBefore && (
-              <div className="relative flex items-start gap-2.5 text-left rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
-                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <p className="text-[11px] leading-relaxed text-amber-200/90">
-                  You opened the booking page {lastOpenedLabel}. If you've already booked,
-                  check your email for the confirmation — no need to book again.
-                </p>
-              </div>
-            )}
-
-            {fromServices && (
+            {(fromServices || !userProfile.email) && (
               <div className="relative text-left space-y-2">
                 <label htmlFor="booking-email" className="block text-xs text-zinc-300">Email for your booking</label>
                 <input id="booking-email" type="email" placeholder="your@email.com" value={bookingEmail}
@@ -390,12 +346,11 @@ export default function HavenDrawer() {
     if (!isOpen) { openedSessionRef.current = null; return; }
     if (openedSessionRef.current === activeSessionId) return;
     openedSessionRef.current = activeSessionId;
-    setAutoFollow(true);
-    setShowScrollBtn(false);
     requestAnimationFrame(() => {
+      setAutoFollow(true);setShowScrollBtn(false);
       if (!scrollRef.current) return;
       const el = scrollRef.current;
-      if (!messages || messages.length === 0) {
+      if (messages.length === 0) {
         el.scrollTop = 0;
         return;
       }
@@ -455,9 +410,8 @@ export default function HavenDrawer() {
     if (lastMsg?.role !== 'agent') return;
     forceScrollOnNextAgentMsg.current = false;
     if (autoFollow) return;
-    setAutoFollow(true);
-    setShowScrollBtn(false);
     requestAnimationFrame(() => {
+      setAutoFollow(true);setShowScrollBtn(false);
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'instant' });
     });
   }, [messages, autoFollow, reduceMotion]);
@@ -494,7 +448,7 @@ export default function HavenDrawer() {
     if (isRestricted) return;
     if (text === '__BOOK_CALL__') {
       updateUserProfile?.({ clickedBookingLink: true });
-      openDrawer('booking');
+      openDrawer('booking',{source:currentSession?.serviceId==='team-inquiry'?'team':activeScope==='service'?'services':activeScope==='audit'?'review':'team',serviceId:activeService?.id||(['web','growth','content'].includes(currentSession?.serviceId)?currentSession.serviceId:null)});
       setShowBookingModal(true);
       return;
     }
@@ -518,7 +472,7 @@ export default function HavenDrawer() {
 
     armForceScroll();
     sendMessage(text);
-  }, [sendMessage, closeDrawer, openDrawer, armForceScroll, updateUserProfile, isRestricted]);
+  }, [sendMessage, closeDrawer, openDrawer, armForceScroll, updateUserProfile, isRestricted,activeScope,activeService,currentSession]);
 
   const handleNavChipSelect = useCallback((navChip) => {
     if (isRestricted) return;
@@ -774,7 +728,7 @@ export default function HavenDrawer() {
                       onCorrect={correctReviewSource}
                     />
                   ) : viewState === 'landing' ? (
-                    <QuickPromptCards onSelectPrompt={handleQuickPrompt} />
+                    <QuickPromptCards onSelectPrompt={handleQuickPrompt} scope={activeScope} serviceId={currentSession?.serviceId || activeService?.id} />
                   ) : (
                     messages.map((msg, idx) => (
                       <ChatMessage

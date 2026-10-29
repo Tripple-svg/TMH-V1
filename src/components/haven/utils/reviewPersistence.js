@@ -43,7 +43,7 @@ export function clearReviewFormData() {
   try {
     localStorage.removeItem(FORM_DATA_KEY);
     localStorage.removeItem(FORM_STEP_KEY);
-  } catch {}
+  } catch { /* Browser storage may be unavailable. */ }
 }
 
 export function loadReviewFormStep() {
@@ -58,7 +58,7 @@ export function loadReviewFormStep() {
 export function saveReviewFormStep(step) {
   try {
     localStorage.setItem(FORM_STEP_KEY, String(step));
-  } catch {}
+  } catch { /* Browser storage may be unavailable. */ }
 }
 
 /** True if the user has typed anything meaningful into either form. */

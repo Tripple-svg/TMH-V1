@@ -4,11 +4,12 @@ import { scoreFailureCopy } from '../../../../supabase/functions/_shared/scoring
 // assessment_summary to brand_reviews alongside lead temperature
 // and click flags.
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { STEPS, LEADS, SCORING_COPY } from '../config/prompts';
 import { scheduleHavenSessionSync } from '../../../lib/havenSessionSync';
 import { getHavenIdentity, CHAT_NOTICE_VERSION } from '../../../lib/havenIdentity';
 
+// eslint-disable-next-line react-refresh/only-export-components -- Context and its provider share this established public import path.
 export const HavenContext = createContext(null);
 
 const STORAGE_KEYS = {
@@ -140,7 +141,7 @@ function loadUserProfile() {
 
 function saveUserProfile(profile) {
   try {
-    const { screenshot, ...rest } = profile;
+    const rest = { ...profile }; delete rest.screenshot;
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(rest));
   } catch (e) { console.warn('Haven: Failed to save user profile', e); }
 }
@@ -308,7 +309,7 @@ export function HavenProvider({ children }) {
     if (activeScope !== 'support') return;
     try {
       localStorage.setItem(LAST_SUPPORT_SESSION_KEY, activeSessionId);
-    } catch {}
+    } catch { /* Optional browser storage may be unavailable. */ }
   }, [activeScope, activeSessionId, mounted]);
 
   // Sync only the owned conversation snapshot and click metadata. AI results stay server-owned.
@@ -628,7 +629,7 @@ export function HavenProvider({ children }) {
       const greetingName = name ? `Hi ${name}` : 'Hi there';
       const brand        = brandName ? ` for **${brandName}**` : '';
 
-      let greetingContent = '';
+      let greetingContent;
       if (businessDomain === 'none') {
         greetingContent = `${greetingName}! I've received your details${brand}.\n\nBefore we go deeper — are you building from scratch, or do you already have customers and simply haven't set up a social space yet?`;
       } else {
@@ -672,7 +673,7 @@ export function HavenProvider({ children }) {
         let lastSupportId = null;
         try {
           lastSupportId = localStorage.getItem(LAST_SUPPORT_SESSION_KEY);
-        } catch {}
+        } catch { /* Optional browser storage may be unavailable. */ }
 
         const lastSupport = lastSupportId
           ? supportSessions.find((s) => s.id === lastSupportId)
@@ -1015,6 +1016,7 @@ export function HavenProvider({ children }) {
   return <HavenContext.Provider value={value}>{children}</HavenContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- Preserve the provider/hook API used by existing page components.
 export function useHaven() {
   const ctx = useContext(HavenContext);
   if (!ctx) throw new Error('useHaven must be used within a HavenProvider');

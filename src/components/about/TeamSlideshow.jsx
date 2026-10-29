@@ -1,7 +1,7 @@
 // src/components/about/TeamSlideshow.jsx
 // Background slideshow + inline viewer for the About section story card.
 
-import React, { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 

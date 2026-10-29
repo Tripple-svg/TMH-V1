@@ -1,5 +1,5 @@
 // supabase/functions/admin-fetch-leads/index.ts
-// Admin-only endpoint. Verifies the admin password against a
+// Admin-only endpoint. Verifies an Auth JWT and trusted admin role using a
 // Supabase secret, then reads brand_reviews + haven_sessions with
 // the service_role key (bypasses RLS) and returns leads with
 // 1-hour signed screenshot URLs. Transcripts load on demand after admin auth.
@@ -7,11 +7,10 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { geminiModel } from '../_shared/haven-model.ts';
-import { authenticateAdmin, AdminAuthError, adminPasswordQuality } from '../_shared/admin-auth.ts';
+import { requireAdmin, AdminAuthError,readAdminBody } from '../_shared/admin-auth.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const ADMIN_PASSWORD = Deno.env.get('ADMIN_PASSWORD');
 
 const SCREENSHOT_BUCKET = 'tmh-screenshots';
 const SIGNED_URL_TTL = 60 * 60; // 1 hour
@@ -54,7 +53,7 @@ function corsHeaders(origin: string | null) {
 function json(body: unknown, origin: string | null, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(status===429?{'Retry-After':'600'}:{}) },
+    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(status===429?{'Retry-After':'60'}:{}) },
   });
 }
 
@@ -120,19 +119,27 @@ serve(async (req) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, origin, 405);
 
   try {
-    if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ADMIN_PASSWORD) {
+    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
       console.error('admin-fetch-leads: missing secrets');
       return json({ ok: false, error: 'Server misconfigured' }, origin, 500);
     }
 
-    const body = await req.json().catch(() => ({}));
-    const password = typeof body?.password === 'string' ? body.password : '';
+    const body = await readAdminBody(req);
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-    if (!await authenticateAdmin(supabase,req,SERVICE_ROLE_KEY,password,ADMIN_PASSWORD)) {
+    if (!await requireAdmin(supabase,req,SERVICE_ROLE_KEY)) {
       return json({ ok: false, error: 'Unauthorised' }, origin, 401);
     }
 
+    if(body.action==='securityAttempts'){
+      const {data,error}=await supabase.from('verification_attempts').select('visitor_id,attempts,locked_at,updated_at').not('visitor_id','is',null).not('locked_at','is',null).order('updated_at',{ascending:false}).limit(100);
+      return json(error?{ok:false,error:'Verification attempts could not be loaded. Apply the security migration.'}:{ok:true,rows:data},origin,error?503:200);
+    }
+    if(body.action==='apiUsage'){
+      const {data,error}=await supabase.rpc('ai_usage_summary');
+      if(error)return json({ok:false,error:'Apply the API usage migration and refresh.'},origin,503);
+      return json({ok:true,rows:data,threshold:Number(Deno.env.get('AI_DAILY_TOKEN_ALERT_THRESHOLD'))||800000},origin);
+    }
     if (body.action === 'aiHealth') return json(await aiHealth(), origin);
 
     if (body.action === 'transcript') {
@@ -270,7 +277,7 @@ serve(async (req) => {
     const followupValid = !followup.error && followup.data && followupKeys.every(key => Number.isSafeInteger(followup.data[key]) && followup.data[key] >= 0);
     const followupStats = followupValid ? Object.fromEntries(followupKeys.map(key => [key, followup.data[key]])) : null;
     return json({
-      ok: true, leads, count: leads.length, operations:operationsError?null:{...operations,adminSecurity:adminPasswordQuality(ADMIN_PASSWORD)}, operations_error:operationsError?'Operational counts are unavailable. Apply the reliability migration and refresh.':null, support_sessions: support.sessions, service_sessions: service.sessions, team_inquiries: team.sessions, team_inquiries_error: team.error,
+      ok: true, leads, count: leads.length, operations:operationsError?null:operations, operations_error:operationsError?'Operational counts are unavailable. Apply the reliability migration and refresh.':null, support_sessions: support.sessions, service_sessions: service.sessions, team_inquiries: team.sessions, team_inquiries_error: team.error,
       followupStats, followup_stats_error: followupStats ? null : 'Purchase follow-up counts are unavailable. Apply the follow-up migration and refresh.',
       purchases, playbook_purchases: purchases, records_limit: MAX_RECORDS, transcript_limit: MAX_TRANSCRIPT_MESSAGES,
       bookings: bookings || [], bookings_error: bookingsError ? 'Could not load bookings. Apply the strategy call bookings migration and refresh.' : null,

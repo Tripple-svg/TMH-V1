@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.read-team-assignment]
 verify_jwt = false
+
+[functions.send-ai-usage-alerts]
+verify_jwt = false

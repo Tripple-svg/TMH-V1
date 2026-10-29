@@ -24,7 +24,7 @@ function harness(send = async () => response()) {
   let nextId = 0, now = 1_000_000;
   const context = {
     module: { exports: {} },
-    TextEncoder,
+    TextEncoder,TextDecoder,
     Date: class extends Date { static now() { return now; } },
     setTimeout(callback, delay) { const id = ++nextId; timers.set(id, { callback, due: now + delay }); return id; },
     clearTimeout(id) { timers.delete(id); },

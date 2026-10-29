@@ -23,6 +23,9 @@ Deno.serve(async request => {
       // capability can unlock only the NEW payment generated here.
       const { email } = details;
       await limitRecovery(db, 'checkout-ip:' + await requestBucket(request, secret), 5);
+      const {data:existing,error:existingError}=await db.from('playbook_purchases').select('id').eq('email',email).limit(1).maybeSingle();
+      if(existingError)throw new HavenRequestError('Purchase history could not be checked. Please retry shortly.',503);
+      if(existing)return json({ok:false,code:'purchase_exists',error:'A purchase is already recorded for this checkout email. Use Already purchased to verify your inbox and recover your copy; you do not need to pay again.'},409);
       const reference = 'UNSEEN_' + crypto.randomUUID();
       const downloadToken = privateToken();
       const { error } = await db.from('playbook_download_grants').insert({

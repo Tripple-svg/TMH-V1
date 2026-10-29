@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
-import { HavenRequestError } from '../_shared/haven-request.ts';
+import { HavenRequestError,readBoundedJson } from '../_shared/haven-request.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -54,9 +54,12 @@ serve(async (req) => {
   let includeFlag = false;
   if (origin && !ALLOWED_ORIGINS.includes(origin)) return response(false,origin,undefined,403);
   try {
-    const payload = await req.json().catch(() => null);
+    const payload = await readBoundedJson(req,4096);
     const email = typeof payload?.email === 'string' ? payload.email.trim() : '';
     includeFlag = payload?.includeFlag === true;
+    // Email membership is used by the review form; moderation status requires
+    // the private visitor/review capability checked by Haven, never an email lookup.
+    if(includeFlag)return response(false,origin,undefined,403);
 
     if (!EMAIL_PATTERN.test(email) || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return response(false, origin, undefined, includeFlag ? 400 : 200);

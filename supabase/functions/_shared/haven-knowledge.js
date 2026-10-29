@@ -22,9 +22,9 @@ browser. Do not claim to know a browser's actual error or teach unreleased conte
 
 ABOUT VIDEO: Our Story & Philosophy previews muted in a loop where browser,
 reduced-motion and data-saving preferences allow autoplay. Press the glass Play
-Video button or the speaker icon to restart the video inline with sound. The
+Video button or the speaker icon to play the video inline with sound (resuming saved progress on this tab). The
 preview controls disappear during playback; a single glass control bar provides
-play/pause, seeking, mute/volume and fullscreen where the browser supports it.
+play/pause, seeking and mute/volume. Controls hide after a short idle period.
 Tap the picture to pause/resume; X returns to the muted preview. No popup opens.
 Offscreen/hidden video may pause to save resources. If a video fails to load,
 check the connection and try again; do not promise that unreleased videos exist.
@@ -61,7 +61,7 @@ person's situation in a few sentences; do not recite its whole public contents.
 PURCHASE ACCESS: A fresh successful checkout opens the download after server
 payment verification without asking for an OTP. Saved valid device access can
 reopen the copy. On another device, or without saved access, open Get The Unseen
-Playbook, choose Already purchased and enter the checkout email and Paystack
+Playbook. Already purchased is a tab INSIDE that panel, not below the product card. Saved valid access may show a download instead. Choose Already purchased and enter the checkout email and Paystack
 reference there; confirm the six-digit code in that panel. Never collect an OTP,
 reference, card details or private token in chat. One download action is available
 per page visit; reload later to open it again. Review deletion preserves purchase

@@ -1,7 +1,8 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { applyAutomaticFlag, drainModerationNotifications, ModerationError } from '../_shared/haven-moderation.ts';
-import { authenticateAdmin, AdminAuthError } from '../_shared/admin-auth.ts';
+import { requireAdmin, AdminAuthError,readAdminBody } from '../_shared/admin-auth.ts';
+import { isInternalRequest } from '../_shared/internal-auth.js';
 
 const ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz', 'http://localhost:5173', 'http://localhost:5175', 'http://localhost:3000'];
 const STATUSES = ['white', 'yellow', 'red'];
@@ -14,28 +15,22 @@ serve(async (req) => {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
   if (origin && ORIGINS.includes(origin)) headers['Access-Control-Allow-Origin'] = origin;
-  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers,...(status===429?{'Retry-After':'600'}:{})} });
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers,...(status===429?{'Retry-After':'60'}:{})} });
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   if (origin && !ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, 403);
 
   const url = Deno.env.get('SUPABASE_URL');
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const adminPassword = Deno.env.get('ADMIN_PASSWORD');
   if (!url || !key) return json({ ok: false, error: 'Server misconfigured' }, 500);
   try {
-    const body = await req.json().catch(() => null);
-    const authorization = req.headers.get('authorization') || '';
+    const body = await readAdminBody(req);
     const supabase = createClient(url, key, { auth: { persistSession: false } });
-    const serviceCaller = authorization === `Bearer ${key}`;
-    let allowed = serviceCaller;
-    if(!allowed && typeof body?.password==='string' && adminPassword)allowed=await authenticateAdmin(supabase,req,key,body.password,adminPassword);
-    if (!allowed && authorization.startsWith('Bearer ')) {
-      // Only server-verified Auth users with an administrator-controlled claim qualify.
-      const { data, error } = await supabase.auth.getUser(authorization.slice(7));
-      allowed = !error && data?.user?.app_metadata?.role === 'admin';
-    }
-    if (!allowed) return json({ ok: false, error: 'Unauthorised' }, 401);
+    const serviceCaller = isInternalRequest(req,key);
+    if(body?.source==='ai'){
+      if(!serviceCaller)return json({ok:false,error:'Internal service authentication required'},401);
+      if(body.action)return json({ok:false,error:'Invalid automatic moderation action'},400);
+    }else await requireAdmin(supabase,req,key);
 
     if (body?.action === 'retryNotifications') {
       // Drain committed delivery work without changing anyone's access status.

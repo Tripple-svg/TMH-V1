@@ -14,7 +14,7 @@ test('assignment migration: real PostgreSQL enforces privacy, revision fencing, 
       create table booking_intents(id uuid primary key default gen_random_uuid());
       create table brand_reviews(id text primary key);
       create table strategy_call_bookings(id bigint primary key,status text,end_time timestamptz,invitee_uri text,confirmation_email_sent boolean default false);
-      create table haven_sessions(id uuid primary key,service_id text,inquiry_owner text,inquiry_revision integer not null default 0,inquiry_updated_at timestamptz);
+      create table haven_sessions(id text primary key,service_id text,inquiry_owner text,inquiry_revision integer not null default 0,inquiry_updated_at timestamptz);
       insert into booking_intents default values;insert into brand_reviews values('old-review');
       insert into strategy_call_bookings(id,status,end_time) values(1,'active',now()+interval '2 days'),(2,'canceled',now()+interval '2 days'),(3,'active',now()-interval '1 day');
       insert into haven_sessions(id,service_id) values('12345678-1234-4234-8234-123456789abc','team-inquiry'),('22345678-1234-4234-8234-123456789abc',null);

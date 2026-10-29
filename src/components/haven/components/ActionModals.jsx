@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, memo } from 'react';
+import { memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -10,7 +10,7 @@ import {
   Clock,
   User,
   BarChart3,
-  Sparkles,
+
   CheckCircle2,
 } from 'lucide-react';
 

@@ -145,6 +145,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
   useEffect(() => {
     if (isOpen) {
       const savedForm = loadReviewFormData();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore the saved browser form when this modal reopens.
       setStep(loadReviewFormStep());
       setErrors({});
       try {

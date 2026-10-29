@@ -6,11 +6,10 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { internalHeaders } from '../_shared/internal-auth.js';
 import { invocationFailure } from '../_shared/resend-delivery.js';
-import { authenticateAdmin, AdminAuthError } from '../_shared/admin-auth.ts';
+import { requireAdmin, AdminAuthError,readAdminBody } from '../_shared/admin-auth.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const ADMIN_PASSWORD = Deno.env.get('ADMIN_PASSWORD');
 
 const ALLOWED_FOLLOWUP_STATUS = ['pending', 'contacted', 'booked', 'closed', 'lost'];
 const WELCOME_FIELDS = 'id,email,welcome_email_sent,welcome_email_id,welcome_email_attempted_at,welcome_email_last_error';
@@ -35,7 +34,7 @@ function corsHeaders(origin: string | null) {
 function json(body: unknown, origin: string | null, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(status===429?{'Retry-After':'600'}:{}) },
+    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(status===429?{'Retry-After':'60'}:{}) },
   });
 }
 
@@ -47,20 +46,24 @@ serve(async (req) => {
   if (origin && !ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, origin, 403);
 
   try {
-    if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ADMIN_PASSWORD) {
+    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
       return json({ ok: false, error: 'Server misconfigured' }, origin, 500);
     }
 
-    const body = await req.json().catch(() => ({}));
-    const password = typeof body?.password === 'string' ? body.password : '';
-    const reviewId = typeof body?.reviewId === 'string' ? body.reviewId : '';
+    const body = await readAdminBody(req);
+        const reviewId = typeof body?.reviewId === 'string' ? body.reviewId : '';
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-    if (!await authenticateAdmin(supabase,req,SERVICE_ROLE_KEY,password,ADMIN_PASSWORD)) {
+    if (!await requireAdmin(supabase,req,SERVICE_ROLE_KEY)) {
       return json({ ok: false, error: 'Unauthorised' }, origin, 401);
     }
+    if(body.action==='unlockVerification'){
+      if(typeof body.visitorId!=='string'||!/^[a-f0-9-]{36}$/i.test(body.visitorId))return json({ok:false,error:'Select a saved visitor.'},origin,400);
+      const {data,error}=await supabase.from('verification_attempts').update({attempts:0,cooldown_until:null,locked_at:null,updated_at:new Date().toISOString()}).eq('visitor_id',body.visitorId).select('visitor_id');
+      return json(error?{ok:false,error:'Verification attempts could not be reset.'}:{ok:true,reset:data?.length||0},origin,error?503:200);
+    }
     if (body.action === 'updateInquiry') {
-      const allowed = ['action','password','sessionId','expectedRevision','status','owner','notes','followupOn'];
+      const allowed = ['action','sessionId','expectedRevision','status','owner','notes','followupOn'];
       const followup = body.followupOn;
       if (Object.keys(body).some(key => !allowed.includes(key))
         || typeof body.sessionId !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.sessionId)
@@ -81,7 +84,7 @@ serve(async (req) => {
     if (!reviewId || reviewId.length > 200) return json({ ok: false, error: 'Missing reviewId' }, origin, 400);
 
     if (body.action === 'retryWelcome') {
-      if (Object.keys(body).some(key => !['action', 'password', 'reviewId'].includes(key))) {
+      if (Object.keys(body).some(key => !['action',  'reviewId'].includes(key))) {
         return json({ ok: false, error: 'Select a saved review to retry its email.' }, origin, 400);
       }
       const { data: review, error: readError } = await supabase.from('brand_reviews').select(WELCOME_FIELDS).eq('id', reviewId).maybeSingle();

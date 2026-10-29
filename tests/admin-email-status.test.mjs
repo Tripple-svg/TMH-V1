@@ -32,7 +32,7 @@ function harness(send=async()=>({ok:true,review:{id:'review-1',welcome_email_sen
     fetch:async(url,options)=>{const request={url,...options,body:JSON.parse(options.body)};requests.push(request);const response=await send(request);const{status=200,...body}=response;return{status,ok:status<400,json:async()=>body};},
   };
   vm.runInNewContext(code,context);
-  const props={lead:{id:'review-1',email:'buyer@example.com',full_name:'Buyer'},password:'admin-password',onLeadChange:value=>changes.push(value),showToast:(...args)=>toasts.push(args),onAuthLost:()=>lost++};
+  const props={lead:{id:'review-1',email:'buyer@example.com',full_name:'Buyer'},accessToken:'test-admin-jwt',onLeadChange:value=>changes.push(value),showToast:(...args)=>toasts.push(args),onAuthLost:()=>lost++};
   return{render(name,extra={}){cursor=0;return context.module.exports[name]({...props,...extra});},requests,changes,toasts,get lost(){return lost;}};
 }
 
@@ -50,8 +50,8 @@ test('review retry posts only the review identity and prevents overlapping dupli
   let complete;const ui=harness(()=>new Promise(resolve=>{complete=resolve;}));
   const action=ui.render('useLeadActions');const first=action.onRetryWelcome();await action.onRetryWelcome();
   assert.equal(ui.requests.length,1);assert.equal(ui.requests[0].url,'https://project.supabase.co/functions/v1/admin-update-lead');
-  assert.deepEqual(ui.requests[0].body,{password:'admin-password',action:'retryWelcome',reviewId:'review-1'});
-  assert.equal(ui.requests[0].headers.Authorization,'Bearer public-key');
+  assert.deepEqual(ui.requests[0].body,{action:'retryWelcome',reviewId:'review-1'});
+  assert.equal(ui.requests[0].headers.Authorization,'Bearer test-admin-jwt');
   complete({ok:true,review:{id:'review-1',welcome_email_sent:true}});await first;
   assert.equal(ui.changes[0].welcome_email_sent,true);assert.match(ui.toasts[0][1],/accepted by the provider/);
   assert.equal(ui.render('useLeadActions').retryingWelcome,false);
@@ -76,7 +76,7 @@ test('new rubric labels and weights remain separate from previously saved review
 test('AI setup checks use the admin endpoint, lock concurrent checks and show safe provider diagnostics',async()=>{
   let complete;const ui=harness(()=>new Promise(resolve=>{complete=resolve;}));
   let tree=ui.render('AISetupPanel');const check=nodes(tree).find(node=>node.type==='button');const first=check.props.onClick();await check.props.onClick();
-  assert.equal(ui.requests.length,1);assert.deepEqual(ui.requests[0].body,{password:'admin-password',action:'aiHealth'});
+  assert.equal(ui.requests.length,1);assert.deepEqual(ui.requests[0].body,{action:'aiHealth'});
   complete({ok:true,gemini:{configured:true,enabled:true,model:'configured-gemini-model',status:'unavailable',code:'gemini_http_503'},groq:{configured:true,model:'fallback-model'}});await first;
   tree=ui.render('AISetupPanel');assert.match(text(tree),/configured-gemini-model/);assert.match(text(tree),/gemini_http_503/);assert.match(text(tree),/temporary provider unavailability/);assert.match(text(tree),/does not prove your token budget is exhausted/);
 });

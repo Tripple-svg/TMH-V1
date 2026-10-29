@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {getHavenIdentity} from '../lib/havenIdentity';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   BookOpen, CheckCircle2, ArrowRight, X, ShieldCheck,
@@ -29,7 +30,7 @@ const playbookModules = [
 ];
 
 async function functionData(name, body) {
-  const { data, error } = await supabase.functions.invoke(name, { body, signal: AbortSignal.timeout(30000) });
+  const { data, error } = await supabase.functions.invoke(name, { body: {...body,...getHavenIdentity()}, signal: AbortSignal.timeout(30000) });
   if (error || data?.ok !== true) {
     let detail = data;
     if (error?.context instanceof Response) detail = await error.context.clone().json().catch(() => null);
@@ -124,7 +125,7 @@ export default function ShopSection() {
           downloadedAt,
         })
       );
-    } catch {}
+    } catch { /* Optional browser storage may be unavailable. */ }
   };
 
   const verifyPurchase = useCallback(async (reference, purchaseEmail) => {
@@ -168,6 +169,7 @@ export default function ShopSection() {
       if (!raw) return;
       const data = JSON.parse(raw);
       if (data?.reference) {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the saved purchase capability before revalidating it with the server.
         setPaymentReference(data.reference);
         setDeliveryContact(data.email || '');
         setPaymentSuccess(false);
@@ -175,7 +177,7 @@ export default function ShopSection() {
         if (data.downloadToken) { deviceGrantRef.current = data; void verifyPurchase(data.reference, data.email); }
         else { setRecoveryOpen(true); setRecoveryEmail(data.email || ''); setRecoveryReference(data.reference); }
       }
-    } catch {}
+    } catch { /* Optional browser storage may be unavailable. */ }
   }, [verifyPurchase]);
 
   async function requestPurchaseCode(reference, checkoutEmail) {
@@ -258,6 +260,7 @@ export default function ShopSection() {
       if (!checkout.downloadToken || !checkout.reference || checkout.amount !== PAYSTACK_AMOUNT_KOBO) throw new Error('Checkout could not be prepared. Please retry.');
     } catch (error) {
       setLoading(false);
+      if(error.code==='purchase_exists'){setRecoveryEmail(trimmed);setRecoveryOpen(true);setAlertState(null);return;}
       setAlertState({ title: 'Checkout unavailable', message: error.message, variant: 'danger', confirmText: 'Got it' });
       return;
     }

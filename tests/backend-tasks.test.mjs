@@ -1,3 +1,6 @@
+const trackingId=alias=>{const h=createHash('md5').update(alias).digest('hex');return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);};
+import {createHash} from 'node:crypto';
+import {adminFixtureRequest} from './helpers/security-fixture.mjs';
 import { withSecurityRpc } from './helpers/security-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,7 +22,7 @@ function loadHandler(name, { client = {}, fetch = () => { throw new Error('Unexp
   });
   return handler;
 }
-const request = (body, headers = {}, method = 'POST') => new Request('https://project.supabase.co/functions/v1/test', {
+const request = (body, headers = {}, method = 'POST') => adminFixtureRequest('https://project.supabase.co/functions/v1/test',body, {
   method, headers: { 'Content-Type': 'application/json', origin: 'http://localhost:5175', ...headers },
   ...(method === 'POST' ? { body: JSON.stringify(body) } : {}),
 });
@@ -96,6 +99,7 @@ function database(seed) {
   const calls = [];
   const client = { rpc: async (name, args = {}) => {
     calls.push({ action: 'rpc', name, values: args.p_booking });
+    if(name==='reserve_strategy_booking'){rows.booking_intents.push({id:'11111111-1111-4111-8111-111111111111',email:args.p_email,service_id:args.p_service,confirmation_sent:false});return {data:{intentId:'11111111-1111-4111-8111-111111111111'}};}
     if (name === 'prepare_booking_confirmation') {
       rows.booking_confirmation_emails ||= [];
       let saved=rows.booking_confirmation_emails.find(row=>row.id===args.p_id);
@@ -126,7 +130,7 @@ function database(seed) {
       select() { return this; },
       or() { filters.push(row=>row.service_id==null||row.service_id!=='team-inquiry'); return this; },
       ilike(column, pattern) { filters.push((row) => String(row[column]).toLowerCase() === pattern.replace(/\\([\\%_])/g, '$1').toLowerCase()); return this; },
-      eq(column, value) { filters.push((row) => row[column] === value); return this; },
+      eq(column, value) { filters.push((row) => row[column] === value || column==='id' && trackingId(String(row[column]))===value); return this; },
       is(column, value) { filters.push((row) => value === null ? row[column] == null : row[column] === value); return this; },
       in(column, values) { filters.push((row) => values.includes(row[column])); return this; },
       order(column) { sort = column; return this; },
@@ -143,6 +147,16 @@ function database(seed) {
 }
 
 const booking = (email = 'owner@example.com') => ({ event: 'invitee.created', payload: { email, name: 'Owner', uri: 'https://api.calendly.com/scheduled_events/event/invitees/invitee', event: { uri: 'https://api.calendly.com/scheduled_events/event', start_time: '2026-10-20T17:00:00Z' } } });
+test('Calendly correlation uses the specific tracked intent, never the newest intent sharing an email',async()=>{
+  for(const tracked of [true,false]){
+    const db=database({brand_reviews:[],booking_intents:[{id:'older-web',email:'owner@example.com',service_id:'web',source:'service'},{id:'newer-growth',email:'owner@example.com',service_id:'growth',source:'service'}]});
+    db.client.functions={invoke:async()=>({data:{ok:true}})};
+    const input=booking();if(tracked)input.payload.tracking={utm_content:trackingId('older-web')};
+    const result=await loadHandler('calendly-webhook',{client:db.client})(signedRequest(input));assert.equal(result.status,200);
+    const saved=db.calls.find(call=>call.name==='record_strategy_call_booking').values;
+    assert.equal(saved.source,tracked?'service':'calendly');assert.equal(saved.service_id,tracked?'web':null);assert.equal(saved.booking_intent_id,tracked?'older-web':null);
+  }
+});
 function signedRequest(body, { timestamp = Math.floor(Date.now() / 1000), signatureBody = body, secret = 'signing-test' } = {}) {
   const signature = createHmac('sha256', secret).update(`${timestamp}.${JSON.stringify(signatureBody)}`).digest('hex');
   return request(body, { 'Calendly-Webhook-Signature': `t=${timestamp},v1=${signature}` });
@@ -170,13 +184,13 @@ test('Task 7: capture validates service/email and logs abandoned intent without 
   const db = database({ booking_intents: [] });
   const handler = loadHandler('capture-booking-lead', { client: db.client });
   for (const serviceId of ['web', 'growth', 'content', null]) {
-    const result = await handler(request({ email: ' Buyer@Example.com ', serviceId }, { 'x-forwarded-for': '192.0.2.1, 10.0.0.1' }));
+    const result = await handler(request({ email: ' Buyer@Example.com ', serviceId,visitorId:'11111111-1111-4111-8111-111111111111',visitorToken:'a'.repeat(64) }, { 'x-forwarded-for': '192.0.2.1, 10.0.0.1' }));
     assert.equal(result.status, 200);
   }
   assert.equal(db.rows.booking_intents.length, 4);
   assert.equal(db.rows.booking_intents[0].service_id, 'web');
   assert.equal(db.rows.booking_intents[0].email, 'buyer@example.com');
-  assert.equal(db.rows.booking_intents[0].ip_address, '192.0.2.1');
+  assert.equal(db.calls.find(call=>call.name==='reserve_strategy_booking')!==undefined,true);
   assert.equal(db.rows.booking_intents[0].confirmation_sent, false);
   assert.equal((await handler(request({ email: 'bad', serviceId: 'web' }))).status, 400);
   assert.equal((await handler(request({ email: 'buyer@example.com', serviceId: 'other' }))).status, 400);
@@ -234,7 +248,7 @@ test('Task 7: services path selects the newest intent and sends correct service 
     } };
     const webhook = loadHandler('calendly-webhook', { client: db.client });
     // Current Calendly payload: event is a URI, scheduled_event holds the time.
-    const body = booking(); body.payload.scheduled_event = body.payload.event; body.payload.event = 'https://api.calendly.com/scheduled_events/event';
+    const body = booking(); body.payload.tracking={utm_content:trackingId('new')}; body.payload.scheduled_event = body.payload.event; body.payload.event = 'https://api.calendly.com/scheduled_events/event';
     assert.equal((await webhook(signedRequest(body))).status, 200);
     assert.equal((await webhook(signedRequest(body))).status, 200);
     assert.equal(emails.length, 1); assert.ok(emails[0].text.includes(friendly));
@@ -280,11 +294,11 @@ test('Task 7: admin indexes independent support sessions and loads their saved t
   });
   const handler = loadHandler('admin-fetch-leads', { client: db.client });
   assert.equal((await handler(request({ password: 'wrong' }))).status, 401);
-  const body = await (await handler(request({ password: 'admin-test' }))).json();
+  const body = await (await handler(request({ accessToken:'test-admin-jwt' }))).json();
   assert.equal(body.count, 1); assert.equal(body.leads[0].session.current_step, 'GREETING');
   assert.equal(body.support_sessions.length, 1); assert.equal(body.support_sessions[0].id, 'support');
   assert.equal(body.support_sessions[0].messages, undefined);
-  const transcript = await (await handler(request({ password: 'admin-test', action: 'transcript', sessionId: 'support' }))).json();
+  const transcript = await (await handler(request({ accessToken:'test-admin-jwt', action: 'transcript', sessionId: 'support' }))).json();
   assert.equal(transcript.session.messages.length, 65);
   assert.equal(transcript.session.messages[0].content, 'message-0');
   assert.ok(!JSON.stringify(body).includes('private-base64')); assert.ok(!JSON.stringify(body).includes('private-url'));

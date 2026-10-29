@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
-import { saveCalendlyBooking } from '../_shared/calendly-bookings.ts';
+import { saveCalendlyBooking,matchCalendlyIntent } from '../_shared/calendly-bookings.ts';
 import { internalHeaders } from '../_shared/internal-auth.js';
 
 const LOCAL_ORIGINS = ['http://localhost:5173', 'http://localhost:5175'];
@@ -130,10 +130,7 @@ serve(async (req) => {
               if (briefingError) throw briefingError;
             }
           }
-          const { data: intent, error: intentError } = await supabase.from('booking_intents')
-            .select('id, service_id, confirmation_sent').ilike('email', pattern)
-            .order('created_at', { ascending: false }).limit(1).maybeSingle();
-          if (intentError) throw intentError;
+          const intent = await matchCalendlyIntent(supabase,invitee);
           // Persist every invitee, including unmatched, processed and canceled
           // bookings. The email retry marker is not the bookings source of truth.
           const savedBooking = await saveCalendlyBooking(supabase, { ...event, uri: event.uri || `https://api.calendly.com/scheduled_events/${uuid}` }, invitee, review, intent);

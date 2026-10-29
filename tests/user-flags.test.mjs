@@ -12,7 +12,7 @@ function load({ flag = 'white', rpcError = null, deliveryFailure = null, pending
   let handler; const calls = [], sends = [], notifications = [], events = new Set();
   let currentFlag = flag; let currentStrikes=strikes;
   const client = {
-    auth: { async getUser() { return auth || { data: { user: null }, error: { message: 'Invalid' } }; } },
+    auth: { async getUser() { return auth || (arguments[0]==='test-admin-jwt'?{data:{user:{app_metadata:{role:'admin'}}},error:null}:{ data: { user: null }, error: { message: 'Invalid' } }); } },
     async rpc(name, args) {
       calls.push({ name, args }); if (rpcError) return { data: null, error: rpcError };
       const targetReview = args.p_review_id || (!guest && !args.p_visitor_id ? REVIEW : null);
@@ -45,7 +45,7 @@ function load({ flag = 'white', rpcError = null, deliveryFailure = null, pending
     Deno: { env: { get(name) { return ({ SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-test', ADMIN_PASSWORD: 'admin-test', ...env })[name]; } } },
     Request, Response, Headers, console: { error() {} },
   });
-  const request = (body, authorization = 'Bearer service-test', origin = 'http://localhost:5173') => new Request('https://project.supabase.co/functions/v1/flag-user', {
+  const request = (body, authorization = body.source==='ai'?'Bearer service-test':'Bearer test-admin-jwt', origin = 'http://localhost:5173') => new Request('https://project.supabase.co/functions/v1/flag-user', {
     method: 'POST', headers: { 'Content-Type':'application/json', authorization, origin }, body: JSON.stringify(body),
   });
   return { handler, request, calls, sends, notifications, get flag() { return currentFlag; } };
@@ -53,21 +53,18 @@ function load({ flag = 'white', rpcError = null, deliveryFailure = null, pending
 const admin = (status = 'yellow', extra = {}) => ({ email: 'Owner@Example.com', status, reason: 'Terms violation', ...extra });
 const automatic = (extra = {}) => ({ source: 'ai', reviewId: REVIEW, eventKey: 'chat:session:turn', reason: 'Haven detected harassment.', ...extra });
 
-test('moderation admin: service bearer and existing password authorize the atomic RPC', async () => {
-  for (const [body, token] of [[admin(), 'Bearer service-test'], [admin('red',{password:'admin-test'}), 'Bearer anon']]) {
-    const app=load(); const response=await app.handler(app.request(body,token)); assert.equal(response.status,200);
-    assert.equal(app.calls[0].name,'set_haven_moderation_flag'); assert.equal(app.calls[0].args.p_email,'owner@example.com');
-  }
+test('moderation admin: the old service bearer and shared password no longer authorize manual changes',async()=>{
+  for(const token of ['Bearer service-test','Bearer anon']){const app=load();assert.equal((await app.handler(app.request(admin('red',{password:'admin-test'}),token))).status,401);}
 });
 test('moderation admin: only server-verified app_metadata administrator claims authorize', async () => {
   for (const allowed of [true,false]) {
     const app=load({auth:{data:{user:allowed ? {app_metadata:{role:'admin'}} : {user_metadata:{role:'admin'}}},error:null}});
-    assert.equal((await app.handler(app.request(admin(),'Bearer user-session'))).status,allowed?200:401);
+    assert.equal((await app.handler(app.request(admin(),'Bearer user-session'))).status,allowed?200:403);
   }
 });
 test('moderation admin: missing, forged, wrong-password and absent-password credentials cannot write', async () => {
   for (const [body,token,env] of [[admin(),'',{}],[admin('red',{password:'wrong'}),'Bearer forged',{}],[admin('red',{password:''}),'',{ADMIN_PASSWORD:undefined}]]) {
-    const app=load({env}); assert.equal((await app.handler(app.request(body,token))).status,401); assert.equal(app.calls.length,0);
+    const app=load({env}); assert.equal((await app.handler(app.request(body,token))).status,401); assert.ok(app.calls.every(c=>!['set_haven_moderation_flag','apply_haven_ai_flag'].includes(c.name)));
   }
 });
 test('moderation admin: visitor restrictions target the verified stored identity rather than an invented email', async () => {
@@ -111,6 +108,10 @@ test('automatic moderation: only internal service credentials may create AI even
   const app=load(); assert.equal((await app.handler(app.request({...automatic(),password:'admin-test'},'Bearer anon'))).status,401);
   assert.equal(app.calls.length,0);
 });
+test('automatic source cannot bypass administrator authentication to drain the notification queue',async()=>{
+  const app=load();const response=await app.handler(app.request({source:'ai',action:'retryNotifications'},'Bearer anon'));
+  assert.equal(response.status,401);assert.equal(app.sends.length,0);assert.equal(app.calls.length,0);
+});
 test('automatic moderation: first event is recorded white and repeated events do not add strikes or mail', async () => {
   const app=load(); for(let i=0;i<3;i++) assert.equal((await app.handler(app.request(automatic()))).status,200);
   assert.equal(app.flag,'white'); assert.equal(app.notifications.length,0); assert.equal(app.sends.length,0);
@@ -144,7 +145,7 @@ test('automatic moderation: malformed event keys, IDs and reasons cannot reach t
 test('notification retry: admin can drain pending mail without changing flags, reasons or creating new events', async () => {
   const app = load({ flag: 'red' });
   app.notifications.push({ id: EVENT, sent_at: null, customer_required: true, customer_sent_at: null });
-  const response = await app.handler(app.request({ action: 'retryNotifications', password: 'admin-test' }, 'Bearer anon'));
+  const response = await app.handler(app.request({ action: 'retryNotifications', password: 'admin-test' }, 'Bearer test-admin-jwt'));
   assert.equal(response.status, 200); assert.equal((await response.json()).attempted, 1);
   assert.equal(app.flag, 'red'); assert.equal(app.calls.length, 0); assert.equal(app.notifications.length, 1);
   assert.deepEqual(app.sends.map(({ name }) => name), ['send-flag-alert', 'send-flag-customer']);

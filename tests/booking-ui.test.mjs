@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { transformSync } from 'esbuild';
 
 // Execute the actual modal with lightweight hooks, without a browser or network.
-function modal({ source = null, serviceId = null, invoke = async () => ({ data: { ok: true } }), popupBlocked = false } = {}) {
+function modal({ source = null, serviceId = null, invoke = async () => ({ data: { ok: true,intentId:'11111111-1111-4111-8111-111111111111' } }), popupBlocked = false } = {}) {
   const sourceFile = readFileSync(new URL('../src/components/haven/components/HavenDrawer.jsx', import.meta.url), 'utf8');
   const code = transformSync(sourceFile.slice(sourceFile.indexOf('function BookingModal('), sourceFile.indexOf('export default function HavenDrawer')) + '\nmodule.exports = BookingModal;', { loader: 'jsx', format: 'cjs' }).code;
   let cursor = 0, states = [], closed = 0, opens = 0;
@@ -16,7 +16,8 @@ function modal({ source = null, serviceId = null, invoke = async () => ({ data: 
     React: { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) },
     motion: { div: 'div' }, AnimatePresence: 'presence', Link: 'link', AlertCircle: 'icon', ExternalLink: 'icon',
     LOGO_SRC: '/logo', CALENDLY_URL: 'https://calendly.com/themarketinghaven01/30min', CALENDLY_CLICKED_KEY: 'tmh_calendly_clicked_at',
-    useHaven: () => ({ bookingContext: { source, serviceId } }),
+    useHaven: () => ({ bookingContext: { source, serviceId },userProfile:source==='services'?{}:{email:'buyer@example.com'} }),
+    getHavenIdentity:()=>({visitorId:'visitor',visitorToken:'proof'}),Response,
     useState: (initial) => { const slot = cursor++; if (!(slot in states)) states[slot] = initial; return [states[slot], (value) => { states[slot] = value; }]; },
     useEffect() {},
     localStorage: { setItem: (key, value) => stored.set(key, value), getItem: (key) => stored.get(key) },
@@ -39,15 +40,11 @@ function modal({ source = null, serviceId = null, invoke = async () => ({ data: 
   return { render, popup, stored, get opens() { return opens; }, get closed() { return closed; } };
 }
 
-test('Task 7 UI: review path has no email input/capture/prefill and preserves click timestamp', async () => {
-  const ui = modal({ invoke() { throw new Error('Review path must not capture'); } });
-  const view = ui.render();
-  assert.equal(view.input, undefined);
-  assert.equal(view.choose.props.href, 'https://calendly.com/themarketinghaven01/30min');
-  await view.choose.props.onClick({ preventDefault() { throw new Error('Existing anchor behavior must be preserved'); } });
-  assert.ok(ui.stored.has('tmh_calendly_clicked_at')); assert.equal(ui.closed, 1); assert.equal(ui.opens, 0);
+test('Task 7 UI: review path captures its verified visitor before opening Calendly',async()=>{
+  let payload;const ui=modal({invoke:async(_name,{body})=>{payload=body;return {data:{ok:true,intentId:'11111111-1111-4111-8111-111111111111'}};}});
+  assert.equal(ui.render().input,undefined);await ui.render().choose.props.onClick({preventDefault(){}});
+  assert.equal(payload.source,'lead');assert.equal(payload.email,'buyer@example.com');assert.equal(payload.visitorId,'visitor');assert.match(ui.popup.location.href,/utm_content=11111111/);assert.equal(ui.closed,1);
 });
-
 test('Task 7 UI: invalid services email blocks Calendly and shows inline error', async () => {
   const ui = modal({ source: 'services', serviceId: 'web', invoke() { throw new Error('Invalid email must not capture'); } });
   const view = ui.render();
@@ -69,8 +66,8 @@ test('Task 7 UI: service capture completes before navigation; encoded email and 
   const pending = ui.render().choose.props.onClick({ preventDefault() {} });
   assert.equal(ui.popup.location.href, 'about:blank'); assert.equal(ui.closed, 0);
   assert.equal(captured.serviceId, 'growth'); assert.equal(captured.email, 'buyer+growth@example.com');
-  resolveCapture({ data: { ok: true } }); await pending;
-  assert.equal(ui.popup.location.href, 'https://calendly.com/themarketinghaven01/30min?email=buyer%2Bgrowth%40example.com');
+  resolveCapture({ data: { ok: true,intentId:'11111111-1111-4111-8111-111111111111' } }); await pending;
+  assert.equal(ui.popup.location.href, 'https://calendly.com/themarketinghaven01/30min?email=buyer%2Bgrowth%40example.com&utm_content=11111111-1111-4111-8111-111111111111');
   assert.equal(ui.popup.opener, null); assert.equal(ui.closed, 1); assert.ok(ui.stored.has('tmh_calendly_clicked_at'));
 });
 

@@ -100,6 +100,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
                 ))}
               </div>
               <address className="mt-6 space-y-2 text-sm not-italic text-zinc-600 dark:text-zinc-400">
+                <h4 className="text-xs font-semibold uppercase tracking-wider">Contact Information</h4>
                 <a href={`mailto:${TMH_CONTACT.email}`} className="block break-all underline-offset-4 hover:text-zinc-950 hover:underline dark:hover:text-white">{TMH_CONTACT.email}</a>
                 <a href={TMH_CONTACT.whatsappUrl} target="_blank" rel="noopener noreferrer" className="block underline-offset-4 hover:text-zinc-950 hover:underline dark:hover:text-white">WhatsApp · {TMH_CONTACT.whatsapp}</a>
                 <p>{TMH_CONTACT.location}</p>

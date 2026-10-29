@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback } from 'react';
 
 const UserContext = createContext();
 const STORAGE_KEY = 'tmh_user_data';
@@ -41,4 +41,5 @@ export function UserProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- The public provider module also exposes its context hook.
 export const useUser = () => useContext(UserContext);

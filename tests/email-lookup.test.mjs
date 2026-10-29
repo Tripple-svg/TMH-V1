@@ -97,7 +97,7 @@ function load(name, { db = database(), env = {}, fetch: send = async () => json(
     require: (specifier) => specifier.includes('server.ts') ? { serve: (fn) => { handler = fn; } } : { createClient: () => withSecurityRpc(db.client) },
     Deno: { env: { get: (key) => ({ ...ENV, ...env })[key] } },
     fetch: async (url, options) => { mail.push({ url, ...options, body: JSON.parse(options.body) }); return send(url, options); },
-    Response, Request, Headers, AbortSignal, TextEncoder, Uint8Array, crypto: webcrypto,
+    Response, Request, Headers, AbortSignal, TextEncoder,TextDecoder, Uint8Array, crypto: webcrypto,
     console: { error() {}, warn() {}, log() {} },
   });
   return { handler, db, mail };
@@ -113,20 +113,21 @@ test('flag lookup: legacy email-check response remains exactly { exists } withou
   assert.deepEqual(await (await handler(request({ email: 'missing@example.com' }))).json(), { exists: false });
 });
 
-test('flag lookup: includeFlag returns current red or white without exposing reason, email or review ID', async () => {
+test('flag lookup: public includeFlag is denied; ordinary lookup escapes wildcard email characters', async () => {
   const db = database([
     { id: 'red', email: 'A_%@Example.com', flag_status: 'red', flag_reason: 'Private reason' },
     { id: 'legacy', email: 'legacy@example.com', flag_status: null },
   ]);
   const { handler } = load('check-email-exists', { db });
   const result = await handler(request({ email: ' A_%@EXAMPLE.com ', includeFlag: true }));
-  assert.equal(result.status, 200);
+  assert.equal(result.status, 403);
   assert.equal(result.headers.get('Cache-Control'), 'no-store');
-  assert.deepEqual(await result.json(), { exists: true, flag_status: 'red' });
+  assert.deepEqual(await result.json(), { exists: false });
+  assert.equal(db.reads.length,0);
+  assert.deepEqual(await (await handler(request({email:' A_%@EXAMPLE.com '}))).json(),{exists:true});
   assert.equal(db.reads[0].pattern, 'A\\_\\%@EXAMPLE.com');
-  assert.equal(db.reads[0].fields, 'id, flag_status');
-  assert.deepEqual(await (await handler(request({ email: 'legacy@example.com', includeFlag: true }))).json(), { exists: true, flag_status: 'white' });
-  assert.deepEqual(await (await handler(request({ email: 'missing@example.com', includeFlag: true }))).json(), { exists: false, flag_status: 'white' });
+  assert.equal(db.reads[0].fields, 'id');
+  for(const email of ['legacy@example.com','missing@example.com'])assert.equal((await handler(request({email,includeFlag:true}))).status,403);
 });
 
 test('flag lookup: includeFlag errors are non-200 while legacy database failures retain their response shape', async () => {

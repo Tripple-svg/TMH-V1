@@ -1,3 +1,4 @@
+import {adminFixtureRequest} from './helpers/security-fixture.mjs';
 import { withSecurityRpc } from './helpers/security-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -380,25 +381,25 @@ test('webhook refuses success when a sender claims success without the durable s
   assert.equal(db.rows[0].thankyou_sent, false);
 });
 
-const adminRequest = (body = {}, origin) => new Request('https://project.supabase.co/functions/v1/admin-retry-purchase-email', {
-  method: 'POST', headers: { 'Content-Type': 'application/json', ...(origin ? { Origin: origin } : {}) }, body: JSON.stringify(body),
+const adminRequest = (body = {}, origin) => adminFixtureRequest('https://project.supabase.co/functions/v1/admin-retry-purchase-email',body, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...(origin ? { Origin: origin } : {}) },
 });
 
-test('admin email retry requires the existing admin password, a valid reference and allowed method/origin', async () => {
+test('admin email retry requires a verified admin JWT, a valid reference and allowed method/origin', async () => {
   const db = database(), handler = load('admin-retry-purchase-email', { db });
-  for (const body of [{}, { password: 'wrong', reference: 'UNSEEN_purchase-123' }, { password: ENV.ADMIN_PASSWORD, reference: 'OTHER_123' }]) {
-    assert.equal((await handler(adminRequest(body))).status, body.password === ENV.ADMIN_PASSWORD ? 400 : 401);
+  for (const body of [{}, { password: 'wrong', reference: 'UNSEEN_purchase-123' }, { accessToken:'test-admin-jwt', reference: 'OTHER_123' }]) {
+    assert.equal((await handler(adminRequest(body))).status, body.accessToken === 'test-admin-jwt' ? 400 : 401);
   }
-  assert.equal((await handler(adminRequest({ password: ENV.ADMIN_PASSWORD, reference: 'UNSEEN_purchase-123' }, 'https://untrusted.example'))).status, 403);
+  assert.equal((await handler(adminRequest({ accessToken:'test-admin-jwt', reference: 'UNSEEN_purchase-123' }, 'https://untrusted.example'))).status, 403);
   assert.equal((await handler(new Request('https://project.supabase.co'))).status, 405);
   assert.equal(db.calls.length, 0);
-  assert.equal((await load('admin-retry-purchase-email', { env: { ADMIN_PASSWORD: undefined } })(adminRequest())).status, 500);
+  assert.equal((await load('admin-retry-purchase-email', { env: { ADMIN_PASSWORD: undefined } })(adminRequest())).status, 401);
 });
 
 test('admin retry recovers an existing pending purchase using only its saved recipient and returns fresh delivery status', async () => {
   const { db, emails } = pipeline({ seed: [{ id: 'saved', email: 'buyer@example.com', reference: 'UNSEEN_purchase-123', amount: 10000, thankyou_sent: false }] });
   const handler = load('admin-retry-purchase-email', { db });
-  const response = await handler(adminRequest({ password: ENV.ADMIN_PASSWORD, reference: 'UNSEEN_purchase-123', email: 'attacker@example.com' }, 'http://localhost:5175'));
+  const response = await handler(adminRequest({ accessToken:'test-admin-jwt', reference: 'UNSEEN_purchase-123', email: 'attacker@example.com' }, 'http://localhost:5175'));
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.ok, true); assert.equal(data.purchase.thankyou_sent, true);
@@ -412,7 +413,7 @@ test('admin retry returns saved sanitized failure diagnostics and can subsequent
   const { db } = pipeline({ seed: [{ id: 'saved', email: 'buyer@example.com', reference: 'UNSEEN_purchase-123', thankyou_sent: false }],
     fetch: async () => fails ? json({ secret: ENV.RESEND_API_KEY, message: 'provider private data' }, 429) : json({ id: 'recovered-email' }) });
   const handler = load('admin-retry-purchase-email', { db });
-  const body = { password: ENV.ADMIN_PASSWORD, reference: 'UNSEEN_purchase-123' };
+  const body = { accessToken:'test-admin-jwt', reference: 'UNSEEN_purchase-123' };
   const failed = await handler(adminRequest(body));
   assert.equal(failed.status, 502);
   const status = await failed.json();
@@ -430,7 +431,7 @@ test('admin retry skips sent purchases, rejects unknown purchases and repairs st
     { id: 'accepted', email: 'buyer@example.com', reference: 'UNSEEN_accepted', thankyou_sent: false, thankyou_email_id: 'prior-accepted-email' },
   ] });
   const handler = load('admin-retry-purchase-email', { db });
-  const call = (reference) => handler(adminRequest({ password: ENV.ADMIN_PASSWORD, reference }));
+  const call = (reference) => handler(adminRequest({ accessToken:'test-admin-jwt', reference }));
   assert.equal((await call('UNSEEN_unknown')).status, 404);
   assert.equal((await (await call('UNSEEN_sent')).json()).skipped, 'already sent');
   assert.equal((await call('UNSEEN_accepted')).status, 200);

@@ -1,6 +1,7 @@
+import { quickPrompts } from '../config/quick-prompts';
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sparkles, Minimize2, Maximize2, Zap, Target, BarChart3 } from 'lucide-react';
+import { X, Sparkles, Minimize2, Maximize2, Target } from 'lucide-react';
 import { useHaven } from '../hooks/useHaven';
 import ChatMessage from './chat/ChatMessage';
 import ChatInput from './chat/ChatInput';
@@ -36,15 +37,10 @@ function InlineThinking() {
 
 /* ─────────────────────────── Inline Quick Prompts ─────────────────────────── */
 
-const InlineQuickPrompts = React.memo(function InlineQuickPrompts({ onSelect, hide }) {
+const InlineQuickPrompts = React.memo(function InlineQuickPrompts({ onSelect, hide, scope, serviceId }) {
   const [imgError, setImgError] = useState(false);
 
-  const prompts = [
-    { title: 'Funnel Breakdown', desc: 'Audit conversion points', icon: Target },
-    { title: 'Ad Strategy', desc: 'Campaign launch ideas', icon: Zap },
-    { title: 'Content Ideas', desc: 'Engaging post concepts', icon: Sparkles },
-    { title: 'Conversion Review', desc: 'Sales bottlenecks', icon: BarChart3 },
-  ];
+  const prompts = quickPrompts(scope,serviceId).map(([title,desc])=>({title,desc,icon:Target}));
 
   if (hide) return null;
 
@@ -112,6 +108,7 @@ export default function HavenInlineModal({
   className = '',
 }) {
   const {
+    activeScope, activeService, currentSession, openDrawer,
     messages = [],
     sendMessage,
     isThinking,
@@ -120,6 +117,15 @@ export default function HavenInlineModal({
   } = useHaven();
 
   const [isExpanded, setIsExpanded] = useState(false);
+  const handleChipSelect=useCallback(text=>{
+    if(text==='__BOOK_CALL__'){
+      onClose?.();openDrawer('booking',{source:currentSession?.serviceId==='team-inquiry'?'team':activeScope==='service'?'services':activeScope==='audit'?'review':'team',serviceId:activeService?.id||null});return;
+    }
+    if(text==='__PLAYBOOK__'){
+      onClose?.();document.getElementById('shop')?.scrollIntoView({behavior:'smooth',block:'start'});window.dispatchEvent(new CustomEvent('open-playbook-modal'));return;
+    }
+    sendMessage(text);
+  },[onClose,openDrawer,currentSession,activeScope,activeService,sendMessage]);
   const [inputHasContent, setInputHasContent] = useState(false);
 
   const scrollRef = useRef(null);
@@ -276,13 +282,14 @@ export default function HavenInlineModal({
                 className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-4"
               >
                 {messages.length === 0 && showQuickPrompts ? (
-                  <InlineQuickPrompts onSelect={handleQuickPrompt} hide={inputHasContent} />
+                  <InlineQuickPrompts onSelect={handleQuickPrompt} hide={inputHasContent} scope={activeScope} serviceId={activeService?.id} />
                 ) : (
                   messages.map((message, index) => (
                     <ChatMessage
                       key={message.id || index}
                       message={message}
                       size="compact"
+                      onChipSelect={handleChipSelect}
                       shouldAnimateGreeting={index === 0 && message.role === 'agent'}
                     />
                   ))

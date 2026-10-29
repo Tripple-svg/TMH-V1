@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, Globe, Smartphone, MessageCircle, ChevronDown, Send,
@@ -61,6 +61,7 @@ export default function ReviewForm({ onClose, onSubmitForm, onLaunchHaven }) {
   // Sync previews safely to avoid memory leaks with createObjectURL
   useEffect(() => {
     const newPreviews = files.map(file => URL.createObjectURL(file));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Publish object URLs created by this effect; cleanup revokes those same URLs.
     setFilePreviews(newPreviews);
 
     return () => {

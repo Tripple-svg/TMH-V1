@@ -1,3 +1,4 @@
+import {adminFixtureRequest} from './helpers/security-fixture.mjs';
 import { webcrypto } from 'node:crypto';
 import { withSecurityRpc } from './helpers/security-fixture.mjs';
 import * as workspace from '../src/lib/adminWorkspace.js';
@@ -8,14 +9,14 @@ import vm from 'node:vm';
 import { transformSync, buildSync } from 'esbuild';
 
 const ENV = { SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-test', ADMIN_PASSWORD: 'admin-test' };
-const request = (body) => new Request('https://project.supabase.co/functions/v1/admin', {
-  method: 'POST', headers: { 'Content-Type': 'application/json', origin: 'http://localhost:5173' }, body: JSON.stringify(body),
+const request = (body) => adminFixtureRequest('https://project.supabase.co/functions/v1/admin',body, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', origin: 'http://localhost:5173' },
 });
 
 function handler(name, client) {
   let handle;
   const code = buildSync({entryPoints:[`supabase/functions/${name}/index.ts`],bundle:true,write:false,format:'cjs',platform:'node',external:['https://*']}).outputFiles[0].text;
-  vm.runInNewContext(code, { crypto:webcrypto,TextEncoder,Uint8Array,
+  vm.runInNewContext(code, { crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,
     require: (name) => name.includes('server.ts') ? { serve: (fn) => { handle = fn; } } : { createClient: () => withSecurityRpc(client) },
     Deno: { env: { get: (key) => ENV[key] } }, Request, Response,
     console: { error() {}, warn() {} },
@@ -57,12 +58,12 @@ function readDatabase({ purchasesError = false, seed = {} } = {}) {
   } } };
 }
 
-test('admin data: password gate prevents reads and authorized payload includes purchases without private tokens', async () => {
+test('admin data: verified JWT gate prevents reads and authorized payload includes purchases without private tokens', async () => {
   const db = readDatabase();
   const read = handler('admin-fetch-leads', db.client);
   assert.equal((await read(request({ password: 'wrong' }))).status, 401);
   assert.equal(db.calls.length, 0);
-  const response = await read(request({ password: 'admin-test' }));
+  const response = await read(request({ accessToken: 'test-admin-jwt' }));
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
   const data = await response.json();
@@ -86,7 +87,7 @@ test('admin data: linked chats stay under the lead and remain discoverable in sc
     ],
     haven_chat_visitors: [{ id: 'visitor-1', flag_status: 'red', flag_reason: 'Repeated misuse', token_hash: 'never-return-visitor-hash' }],
   } });
-  const data = await (await handler('admin-fetch-leads', db.client)(request({ password: 'admin-test' }))).json();
+  const data = await (await handler('admin-fetch-leads', db.client)(request({ accessToken: 'test-admin-jwt' }))).json();
   assert.deepEqual(data.leads[0].sessions.map((session) => session.scope), ['audit', 'support', 'service', 'support']);
   assert.equal(data.leads[0].session.id, 'linked-audit');
   assert.equal(data.team_inquiries.length,1);assert.equal(data.team_inquiries[0].inquiry_owner,'Francis');assert.equal(data.team_inquiries[0].inquiry_revision,2);
@@ -110,7 +111,7 @@ test('admin data: transcript is authenticated on demand, bounded to200, and stri
   const read = handler('admin-fetch-leads', db.client);
   assert.equal((await read(request({ password: 'wrong', action: 'transcript', sessionId: 'session-detail' }))).status, 401);
   assert.equal(db.calls.length, 0);
-  const result = await read(request({ password: 'admin-test', action: 'transcript', sessionId: 'session-detail' }));
+  const result = await read(request({ accessToken: 'test-admin-jwt', action: 'transcript', sessionId: 'session-detail' }));
   const data = await result.json();
   assert.equal(result.status, 200);
   assert.equal(data.session.messages.length, 200);
@@ -119,12 +120,12 @@ test('admin data: transcript is authenticated on demand, bounded to200, and stri
   assert.equal(data.session.transcript_loaded, true);
   assert.ok(!JSON.stringify(data).includes('never-return'));
   assert.equal(db.calls.length, 1);
-  assert.equal((await read(request({ password: 'admin-test', action: 'transcript', sessionId: 'missing' }))).status, 404);
+  assert.equal((await read(request({ accessToken: 'test-admin-jwt', action: 'transcript', sessionId: 'missing' }))).status, 404);
 });
 
 test('admin data: missing purchase migration is visible without hiding usable lead records', async () => {
   const db = readDatabase({ purchasesError: true });
-  const response = await handler('admin-fetch-leads', db.client)(request({ password: 'admin-test' }));
+  const response = await handler('admin-fetch-leads', db.client)(request({ accessToken: 'test-admin-jwt' }));
   const data = await response.json();
   assert.equal(data.ok, true);
   assert.equal(data.leads.length, 1);
@@ -145,12 +146,12 @@ function deleteDatabase({ missing = false, rpcError = false, storageError = fals
     } }; } },
   } };
 }
-const deletion = { password: 'admin-test', action: 'delete', reviewId: 'review-1', confirmation: 'review-1' };
+const deletion = { accessToken: 'test-admin-jwt', action: 'delete', reviewId: 'review-1', confirmation: 'review-1' };
 
 test('admin delete: wrong credentials and missing confirmation cannot reach database or storage', async () => {
   const db = deleteDatabase();
   const remove = handler('admin-update-lead', db.client);
-  assert.equal((await remove(request({ ...deletion, password: 'wrong' }))).status, 401);
+  assert.equal((await remove(request({ ...deletion, accessToken:'forged', password: 'wrong' }))).status, 401);
   assert.equal((await remove(request({ ...deletion, confirmation: null }))).status, 400);
   assert.equal((await remove(request({ ...deletion, action: 'truncate' }))).status, 400);
   assert.equal(db.calls.length, 0);
@@ -222,7 +223,7 @@ function ui({ confirm = true, networkError = false, httpStatus = 200, response =
   vm.runInNewContext(uiCode, context);
   const actions = () => {
     cursor = refCursor = 0;
-    return context.module.exports.useLeadActions({ lead: { id: 'review-1', email: 'buyer@example.com', brand_name: 'Buyer Brand' }, password: 'admin-test',
+    return context.module.exports.useLeadActions({ lead: { id: 'review-1', email: 'buyer@example.com', brand_name: 'Buyer Brand' }, accessToken: 'test-admin-jwt',
       onLeadDelete: (id) => removed.push(id), onLeadChange: (row) => changed.push(row), onAuthLost: () => { lost++; }, showToast: (...args) => toasts.push(args) });
   };
   return { actions, exports: context.module.exports, states, requests, removed, changed, toasts, confirmations, get lost() { return lost; } };
@@ -242,7 +243,7 @@ test('admin UI: cancelling concrete lead confirmation sends no delete; confirmed
   assert.equal(cancelled.requests.length, 0);
   const approved = ui();
   await approved.actions().onDeleteLead();
-  assert.deepEqual(JSON.parse(approved.requests[0].body), deletion);
+  assert.deepEqual(JSON.parse(approved.requests[0].body), {action:'delete',reviewId:'review-1',confirmation:'review-1'});
   assert.deepEqual(approved.removed, ['review-1']);
   assert.equal(approved.states[0], false);
 });
@@ -279,10 +280,10 @@ test('admin UI: purchase response reaches dashboard helper and kobo displays as 
 });
 
 
-const inquiryUpdate={password:'admin-test',action:'updateInquiry',sessionId:'10000000-0000-4000-8000-000000000001',expectedRevision:0,status:'reviewing',owner:' Francis ',notes:'Review the request',followupOn:'2026-11-03'};
+const inquiryUpdate={accessToken:'test-admin-jwt',action:'updateInquiry',sessionId:'10000000-0000-4000-8000-000000000001',expectedRevision:0,status:'reviewing',owner:' Francis ',notes:'Review the request',followupOn:'2026-11-03'};
 test('inquiry management authorizes and validates dates, fields and revisions before the privileged update',async()=>{
   const calls=[];const update=handler('admin-update-lead',{rpc:async(name,args)=>{calls.push({name,args});return{data:{session:{id:args.p_session_id,inquiry_revision:1}},error:null};}});
-  assert.equal((await update(request({...inquiryUpdate,password:'wrong'}))).status,401);
+  assert.equal((await update(request({...inquiryUpdate,accessToken:'forged',password:'wrong'}))).status,401);
   for(const extra of [{followupOn:'2026-02-30'},{expectedRevision:-1},{status:'red'},{flag_status:'red'},{owner:'x'.repeat(81)}])assert.equal((await update(request({...inquiryUpdate,...extra}))).status,400);
   assert.equal(calls.length,0);assert.equal((await update(request(inquiryUpdate))).status,200);
   assert.equal(calls[0].name,'update_haven_inquiry');assert.equal(calls[0].args.p_owner,'Francis');assert.equal(calls[0].args.p_revision,0);

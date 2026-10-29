@@ -1,4 +1,5 @@
-import { providerRequest } from '../_shared/provider-request.ts';
+import {recordAIUsage,usageGeminiModel} from '../_shared/ai-usage.ts';
+import { providerRequest,safeProviderDiagnostic } from '../_shared/provider-request.ts';
 import { scoringInstructions } from '../_shared/scoring-rubric.js';
 import { RUBRIC_VERSION } from '../_shared/scoring-rubric.js';
 import { enforceScoringLimits } from '../_shared/haven-limits.ts';
@@ -15,7 +16,7 @@ const SCORING_PROMPT = scoringInstructions('website');
 
 const parseScoreJson = (raw: string, summary?: string) => parseScoringResult(raw, 'website', summary);
 
-async function scoreWithGemini(summary: string): Promise<{ raw: string; status: number }> {
+async function scoreWithGemini(db:any,summary: string): Promise<{ raw: string; status: number }> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   if (!geminiProcessingEnabled()) throw new Error('Gemini is disabled or its API key is missing.');
   if (!apiKey) throw new Error('GEMINI_API_KEY not configured.');
@@ -28,10 +29,11 @@ async function scoreWithGemini(summary: string): Promise<{ raw: string; status: 
         generationConfig: geminiGenerationConfig(true),
       }),
     }, 18000, 1);
-  return { raw: geminiText(await response.json()), status: 200 };
+  const payload=await response.json();await recordAIUsage(db,'gemini',geminiModel(),payload);
+  return { raw: geminiText(payload), status: 200 };
 }
 
-async function scoreWithGroq(summary: string): Promise<string> {
+async function scoreWithGroq(db:any,summary: string): Promise<string> {
   const apiKey = Deno.env.get('GROQ_API_KEY')?.trim();
   if (!apiKey) throw new Error('GROQ_API_KEY not configured.');
 
@@ -51,15 +53,15 @@ async function scoreWithGroq(summary: string): Promise<string> {
     }),
   });
   if (!response.ok) throw new Error('groq_http_' + response.status);
-  const data = await response.json();
+  const data = await response.json();await recordAIUsage(db,'groq',Deno.env.get('GROQ_MODEL')?.trim()||'openai/gpt-oss-120b',data);
   if(data.choices?.[0]?.finish_reason && data.choices[0].finish_reason!=='stop') throw new Error('groq_incomplete_response');
   return data.choices?.[0]?.message?.content || '';
 }
 
-async function scoreWebsite(summary: string) {
+async function scoreWebsite(db:any,summary: string) {
   for (let attempt = 0; geminiProcessingEnabled() && attempt < 1; attempt++) {
     try {
-      const { raw, status } = await scoreWithGemini(summary);
+      const { raw, status } = await scoreWithGemini(db,summary);
       if (status === 200) {
         const parsed = parseScoreJson(raw, summary);
         if (parsed) {
@@ -74,13 +76,14 @@ async function scoreWebsite(summary: string) {
         break;
       }
     } catch (err) {
+      await recordAIUsage(db,'gemini',usageGeminiModel(),{},safeProviderDiagnostic(err,'gemini').code);
       console.warn(`[scoring] Gemini threw on attempt ${attempt + 1}:`, err instanceof Error ? err.message : err);
     }
 
   }
 
   try {
-    const raw = await scoreWithGroq(summary);
+    const raw = await scoreWithGroq(db,summary);
     const parsed = parseScoreJson(raw, summary);
     if (parsed) {
       console.log(`[scoring] Groq fallback OK — score ${parsed.score}`);
@@ -88,6 +91,7 @@ async function scoreWebsite(summary: string) {
     }
     console.warn('[scoring] Groq unparseable JSON:', '[redacted model output]');
   } catch (err) {
+    await recordAIUsage(db,'groq',Deno.env.get('GROQ_MODEL')?.trim()||'openai/gpt-oss-120b',{},safeProviderDiagnostic(err,'groq').code);
     console.warn('[scoring] Groq fallback failed:', err instanceof Error ? err.message : err);
   }
 
@@ -152,7 +156,7 @@ Deno.serve(async (request) => {
     } finally { clearTimeout(timeout); }
 
     const summary = extractWebsiteText(raw);
-    const scoring = hasMeaningfulBusinessText(summary) ? await scoreWebsite(summary)
+    const scoring = hasMeaningfulBusinessText(summary) ? await scoreWebsite(supabase,summary)
       : { state: 'insufficient_evidence' as const, rubricVersion: RUBRIC_VERSION, reason: websiteContentReason(summary), score: null, breakdown: null, biggestIssue: null };
     if (!scoring) throw new HavenRequestError(SCORING_COPY.failed, 502);
     await persistScoring(supabase, review.id, scoring, summary, review.scoring_revision || 0);

@@ -80,14 +80,9 @@ export default function AboutSection() {
 
         {/* Story */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center mb-20 lg:mb-24">
-          <motion.div
-            initial={{ opacity: 0, x: reduceMotion ? 0 : -30 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.7 }}
-          >
-            <AboutStoryVideo videoSrc="/Test%20About.mp4" poster="/Tmhh.jpeg" />
-          </motion.div>
+          <div>
+            <AboutStoryVideo videoSrc="/Test%20About.mp4" />
+          </div>
 
           <motion.div
             initial={{ opacity: 0, x: reduceMotion ? 0 : 30 }}

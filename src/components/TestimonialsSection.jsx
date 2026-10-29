@@ -1,8 +1,8 @@
 // src/components/TestimonialsSection.jsx
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence, useReducedMotion, useInView } from 'framer-motion';
 import ProgressiveImage from './ui/ProgressiveImage';
-import { Star, Quote, Play, X, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
+import { Quote, Play, X, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 
 const TESTIMONIALS = [
   {
@@ -135,7 +135,7 @@ export default function TestimonialsSection() {
 
   const closeVideo = () => {
     if (videoRef.current) {
-      try { videoRef.current.pause(); } catch {}
+      try { videoRef.current.pause(); } catch { /* Optional browser storage may be unavailable. */ }
     }
     setIsVideoOpen(false);
   };

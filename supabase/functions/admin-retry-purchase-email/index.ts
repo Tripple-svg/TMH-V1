@@ -3,7 +3,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 
 import { invocationFailure } from '../_shared/resend-delivery.js';
-import { authenticateAdmin, AdminAuthError } from '../_shared/admin-auth.ts';
+import { requireAdmin, AdminAuthError,readAdminBody } from '../_shared/admin-auth.ts';
 
 const PURCHASE_FIELDS = 'id,email,reference,amount,created_at,thankyou_sent,thankyou_sent_at,thankyou_attempted_at,thankyou_last_error,thankyou_email_id';
 const ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz'];
@@ -17,17 +17,17 @@ serve(async (req) => {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
-  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers,...(status===429?{'Retry-After':'600'}:{})} });
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers,...(status===429?{'Retry-After':'60'}:{})} });
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   if (origin && !allowed) return json({ ok: false, error: 'Origin not allowed' }, 403);
   try {
-    const password = Deno.env.get('ADMIN_PASSWORD');
+
     const url = Deno.env.get('SUPABASE_URL');
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!password || !url || !serviceKey) return json({ ok: false, error: 'Server misconfigured' }, 500);
-    const body = await req.json().catch(() => null);
-    if (!await authenticateAdmin(createClient(url,serviceKey,{auth:{persistSession:false}}),req,serviceKey,body?.password,password)) return json({ ok: false, error: 'Unauthorised' }, 401);
+    if (!url || !serviceKey) return json({ ok: false, error: 'Server misconfigured' }, 500);
+    const body = await readAdminBody(req);
+    if (!await requireAdmin(createClient(url,serviceKey,{auth:{persistSession:false}}),req,serviceKey)) return json({ ok: false, error: 'Unauthorised' }, 401);
     if (body?.action === 'checkConfiguration') {
       const { data, error } = await createClient(url, serviceKey, { auth: { persistSession: false } }).functions.invoke('send-purchase-thankyou', {
         body: { action: 'checkConfiguration' }, headers: internalHeaders(serviceKey),

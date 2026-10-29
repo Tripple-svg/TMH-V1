@@ -1,3 +1,4 @@
+import { recordAIUsage,usageGeminiModel } from '../_shared/ai-usage.ts';
 import { providerRequest, safeProviderDiagnostic, type ProviderDiagnostic } from '../_shared/provider-request.ts';
 import { captureConversationMemory, savedConversationMemory } from '../_shared/haven-memory.js';
 import { enforceHavenLimits } from '../_shared/haven-limits.ts';
@@ -26,7 +27,7 @@ function parseChips(rawText: string) {
 }
 
 // One short retry for a transient Gemini HTTP failure, then a bounded Groq fallback.
-async function askGemini(systemPrompt: string, messages: HavenMessage[], screenshot: string | null) {
+async function askGemini(db:any,systemPrompt: string, messages: HavenMessage[], screenshot: string | null) {
   if (!geminiProcessingEnabled()) throw new Error('gemini_disabled_or_unconfigured');
   const contents = messages.filter(message => message.content?.trim() || screenshot).map((message, index) => ({
     role: message.role === 'agent' ? 'model' : 'user',
@@ -42,11 +43,13 @@ async function askGemini(systemPrompt: string, messages: HavenMessage[], screens
       body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt }] }, contents,
         generationConfig: geminiGenerationConfig() }) });
   if (!response.ok) throw new Error('gemini_http_' + response.status);
-  const text = geminiText(await response.json());
+  const payload=await response.json();
+  await recordAIUsage(db,'gemini',geminiModel(),payload);
+  const text = geminiText(payload);
   if (!text) throw new Error('gemini_empty_response');
   return text;
 }
-async function askGroq(systemPrompt: string, messages: HavenMessage[]) {
+async function askGroq(db:any,systemPrompt: string, messages: HavenMessage[]) {
   const key = Deno.env.get('GROQ_API_KEY')?.trim();
   if (!key) throw new Error('groq_unconfigured');
   const response = await providerRequest('groq', 'https://api.groq.com/openai/v1/chat/completions', {
@@ -58,20 +61,21 @@ async function askGroq(systemPrompt: string, messages: HavenMessage[]) {
   }, 12000, 0);
   if (!response.ok) throw new Error('groq_http_' + response.status);
   const data = await response.json();
+  await recordAIUsage(db,'groq',Deno.env.get('GROQ_MODEL')?.trim()||'openai/gpt-oss-120b',data);
   if (data.choices?.[0]?.finish_reason && data.choices[0].finish_reason !== 'stop') throw new Error('groq_incomplete_response');
   const text = data.choices?.[0]?.message?.content?.trim();
   if (!text) throw new Error('groq_empty_response');
   return text;
 }
-async function callModel(systemPrompt: string, messages: HavenMessage[], screenshot: string | null): Promise<{text: string; model: ModelUsed; diagnostics: ProviderDiagnostic[]}> {
+async function callModel(db:any,systemPrompt: string, messages: HavenMessage[], screenshot: string | null): Promise<{text: string; model: ModelUsed; diagnostics: ProviderDiagnostic[]}> {
   const diagnostics: ProviderDiagnostic[]=[];
-  try { return { text: await askGemini(systemPrompt, messages, screenshot), model: 'gemini', diagnostics }; }
-  catch (error) { diagnostics.push(safeProviderDiagnostic(error,'gemini')); console.warn('Primary model unavailable',diagnostics[0].code); }
+  try { return { text: await askGemini(db,systemPrompt, messages, screenshot), model: 'gemini', diagnostics }; }
+  catch (error) { diagnostics.push(safeProviderDiagnostic(error,'gemini')); console.warn('Primary model unavailable',diagnostics[0].code); await recordAIUsage(db,'gemini',usageGeminiModel(),{},diagnostics[0].code); }
   const fallbackMessages = screenshot ? messages.map((message, index) => index === messages.length - 1
     ? { ...message, content: '[The image reader is unavailable. You cannot see the image. Ask the user to describe it; never pretend to inspect it.] ' + (message.content || '') } : message) : messages;
-  try { return { text: await askGroq(systemPrompt, fallbackMessages), model: 'groq', diagnostics }; }
+  try { return { text: await askGroq(db,systemPrompt, fallbackMessages), model: 'groq', diagnostics }; }
   catch(error) {
-    diagnostics.push(safeProviderDiagnostic(error,'groq'));
+    diagnostics.push(safeProviderDiagnostic(error,'groq'));await recordAIUsage(db,'groq',Deno.env.get('GROQ_MODEL')||'openai/gpt-oss-120b',{},diagnostics.at(-1)!.code);
     const unavailable=new HavenRequestError('The AI services are temporarily unavailable. Your message is saved; please retry shortly.',503);
     Object.assign(unavailable,{code:diagnostics.some(d=>d.status===429)?'ai_rate_limited':'ai_temporarily_unavailable',diagnostics,retryAfter:Math.max(5,...diagnostics.map(d=>d.retryAfter||0))});
     throw unavailable;
@@ -180,7 +184,7 @@ Deno.serve(async (request) => {
     const directAbuse = detectHavenAbuse(latest);
     const { text: modelText, model, diagnostics=[] } = directAbuse ? { text: moderationReply(directAbuse), model: null, diagnostics:[] } : directHelp
       ? { text: directHelp, model: null, diagnostics:[] }
-      : await callModel(systemPrompt, history.length ? history : [{ role:'user', content:latest }], screenshot);
+      : await callModel(supabase,systemPrompt, history.length ? history : [{ role:'user', content:latest }], screenshot);
     const captured = captureConversationMemory(modelText, session.conversation_memory, latest, requestId);
     let rawText = captured.text;
     if (!rawText.trim()) throw new Error('Empty model response');
@@ -196,7 +200,9 @@ Deno.serve(async (request) => {
       flagStatus = moderation.flagStatus;
       warned = moderation.changed && flagStatus === 'yellow';
     }
-    const routed = directAbuse || supportReply ? { text: rawText, routingState: session.routing_state || { problemType: 'unknown', permission: 'none' } } : resolveHavenRouting(rawText, { scope, ...qualification, teamInquiry: session.service_id === 'team-inquiry', acceptedCall, playbookVerified, routingState: session.routing_state, serviceId: session.service_id, latestUserText: latest, messages:session.messages||[] });
+    const {data:bookingStatus,error:bookingError}=await supabase.rpc('visitor_strategy_booking',{p_visitor:conversation.visitor.id});
+    if(bookingError)throw new HavenRequestError('Booking status could not be checked. Please retry shortly.',503);
+    const routed = directAbuse || supportReply ? { text: rawText, routingState: session.routing_state || { problemType: 'unknown', permission: 'none' } } : resolveHavenRouting(rawText, { scope, ...qualification, bookingStatus, teamInquiry: session.service_id === 'team-inquiry', acceptedCall, playbookVerified, routingState: session.routing_state, serviceId: session.service_id, latestUserText: latest, messages:session.messages||[] });
     rawText = routed.text;
     const askedQuestion = !directHelp && !flag && rawText.includes('?') && !/\[\[(?:BOOK_CALL|PLAYBOOK|STEP:AWAITING_PERMISSION)/.test(rawText);
     rawText = rawText.replace(/\[\[(?:FLAG:[A-Z_]+|NEED:[A-Z_]+|DIAGNOSTIC_QUESTION)\]\]/g,'').trim();
@@ -208,6 +214,8 @@ Deno.serve(async (request) => {
     const leadMatch = [...rawText.matchAll(/\[\[LEAD:([A-Z]+)\]\]/g)].at(-1)?.[1];
     const currentStep = Object.values(STEPS).includes(stepMatch || '') && stepMatch !== STEPS.GREETING ? stepMatch : promptContext.auditData.currentStep;
     const leadTemperature = Object.values(LEADS).includes(leadMatch || '') ? leadMatch : null;
+    parsed.text=parsed.text.replace(/\[\[(?:STEP:[A-Z0-9_]+|LEAD:[A-Z_]+|DECISION:[\s\S]*?|MEMORY:[\s\S]*?)\]\]/g,'').trim();
+    if(/info@themarketinghaven\.xyz/i.test(parsed.text))parsed.chips=[...parsed.chips,'__CONTACT_SUPPORT__'];
     const response = { ok: true, ...parsed, model, currentStep, leadTemperature, flagStatus, sessionId: session.id, routingState: routed.routingState, providerDiagnostics:diagnostics };
     const { error: completionError } = await supabase.rpc('finish_haven_turn', {
       p_session_id: session.id, p_turn_id: requestId, p_attempt_id:activeTurn.attemptId, p_response: { ...response, conversationMemory: captured.memory }, p_question: askedQuestion, p_step: currentStep,

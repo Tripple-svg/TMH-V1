@@ -1,3 +1,8 @@
+import VerificationAttemptsPanel from '../components/admin/VerificationAttemptsPanel';
+import APIUsagePanel from '../components/admin/APIUsagePanel';
+import {observeAdminSession} from '../lib/adminSession';
+import LoginScreen from '../components/admin/AdminSignIn';
+import { adminSupabase as supabase } from '../lib/adminAuth';
 import InquiryWorkflow from '../components/admin/InquiryWorkflow';
 import TeamAssignment from '../components/admin/TeamAssignment';
 import { SERVICE_NAMES } from '../../supabase/functions/_shared/team-assignment-public.js';
@@ -16,7 +21,7 @@ const UPDATE_URL = `${SUPABASE_URL}/functions/v1/admin-update-lead`;
 const FLAG_URL = `${SUPABASE_URL}/functions/v1/flag-user`;
 const RETRY_PURCHASE_URL = `${SUPABASE_URL}/functions/v1/admin-retry-purchase-email`;
 const ASSIGNMENT_URL = `${SUPABASE_URL}/functions/v1/admin-team-assignment`;
-const PASSWORD_KEY = 'tmh_admin_password';
+
 const PAGE_SIZE = 25;
 const transcriptCache = new Map();
 const transcriptRequests = new Map();
@@ -75,23 +80,23 @@ const LEGACY_SOCIAL_CATEGORIES = [
 
 // ─── Helpers ────────────────────────────────────────────────────
 
-function apiHeaders() {
+function apiHeaders(accessToken) {
   return {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    Authorization: `Bearer ${accessToken}`,
     apikey: SUPABASE_ANON_KEY,
   };
 }
 
-async function apiRequest(url, password, payload = {}) {
+async function apiRequest(url, accessToken, payload = {}) {
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: apiHeaders(),
-      body: JSON.stringify({ password, ...payload }),
+      headers: apiHeaders(accessToken),
+      body: JSON.stringify(payload),
       signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(20000) : undefined,
     });
-    if (res.status === 401) return { ok: false, code: 'unauthorised' };
+    if ((res.status === 401 || res.status === 403)) return { ok: false, code: 'unauthorised' };
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) return { ok: false, code: data.code === 'conflict' ? 'conflict' : 'error', session: data.session, error: data.error || `Error ${res.status}`, review: data.review, visitor: data.visitor, purchase: data.purchase };
     return data;
@@ -100,8 +105,8 @@ async function apiRequest(url, password, payload = {}) {
   }
 }
 
-async function apiFetchLeads(password) {
-  const data = await apiRequest(FETCH_URL, password);
+async function apiFetchLeads(accessToken) {
+  const data = await apiRequest(FETCH_URL, accessToken);
   return data.ok ? {
     ...data,
     bookings: Array.isArray(data.bookings) ? data.bookings : [],
@@ -113,15 +118,15 @@ async function apiFetchLeads(password) {
   } : data;
 }
 
-async function apiUpdateLead(password, updates) {
-  return apiRequest(UPDATE_URL, password, updates);
+async function apiUpdateLead(accessToken, updates) {
+  return apiRequest(UPDATE_URL, accessToken, updates);
 }
 
-async function apiFlagUser(password, email, status, reason) {
+async function apiFlagUser(accessToken, email, status, reason) {
   const res = await fetch(FLAG_URL, {
     method: 'POST',
-    headers: apiHeaders(),
-    body: JSON.stringify({ password, email, status, reason }),
+    headers: apiHeaders(accessToken),
+    body: JSON.stringify({ email, status, reason }),
   });
   if (res.status === 401) return { ok: false, code: 'unauthorised' };
   const data = await res.json().catch(() => ({}));
@@ -266,45 +271,6 @@ function CalendarIcon() {
 
 // ─── Login ──────────────────────────────────────────────────────
 
-function LoginScreen({ onAuth }) {
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [checking, setChecking] = useState(false);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!password) return;
-    setChecking(true);
-    setError('');
-    const result = await apiFetchLeads(password);
-    setChecking(false);
-    if (result.ok) onAuth(password);
-    else if (result.code === 'unauthorised') setError('Incorrect password.');
-    else setError(result.error || 'Could not reach the server.');
-  };
-
-  return (
-    <main className="grid min-h-screen place-items-center bg-zinc-950 p-4 text-zinc-100">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-        <h1 className="text-2xl font-bold">TMH Admin</h1>
-        <p className="mt-1 text-sm text-zinc-400">Enter the dashboard password.</p>
-        <input
-          autoFocus type="password" value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-          className="mt-5 w-full rounded-lg border border-white/10 bg-black/20 p-3 text-sm outline-none focus:border-white/30"
-        />
-        {error && <p className="mt-2 text-sm text-red-300">{error}</p>}
-        <button
-          type="submit" disabled={checking || !password}
-          className="mt-4 w-full rounded-lg border border-white/15 bg-white/10 p-3 text-sm font-semibold hover:bg-white/15 disabled:bg-zinc-800 disabled:cursor-not-allowed"
-        >
-          {checking ? 'Checking…' : 'Continue'}
-        </button>
-      </form>
-    </main>
-  );
-}
 
 // ─── Shared pieces ──────────────────────────────────────────────
 
@@ -346,7 +312,7 @@ function TranscriptViewer({ session }) {
   );
 }
 
-function TranscriptPanel({ session, password, onAuthLost }) {
+function TranscriptPanel({ session, accessToken, onAuthLost }) {
   const cacheKey = `${session.id}:${session.updated_at || session.last_session_update || ''}`;
   const [transcript, setTranscript] = useState(() => transcriptCache.get(cacheKey) || (session.transcript_loaded !== false && Array.isArray(session.messages) ? session : null));
   const [error, setError] = useState('');
@@ -356,7 +322,7 @@ function TranscriptPanel({ session, password, onAuthLost }) {
     let active = true;
     let request = transcriptRequests.get(cacheKey);
     if (!request) {
-      request = apiRequest(FETCH_URL, password, { action: 'transcript', sessionId: session.id });
+      request = apiRequest(FETCH_URL, accessToken, { action: 'transcript', sessionId: session.id });
       transcriptRequests.set(cacheKey, request);
       request.finally(() => { if (transcriptRequests.get(cacheKey) === request) transcriptRequests.delete(cacheKey); });
     }
@@ -372,14 +338,14 @@ function TranscriptPanel({ session, password, onAuthLost }) {
       setTranscript(result.session);
     });
     return () => { active = false; };
-  }, [attempt, cacheKey, onAuthLost, password, session.id, transcript]);
+  }, [attempt, cacheKey, onAuthLost, accessToken, session.id, transcript]);
   const refresh = () => { transcriptCache.delete(cacheKey); setTranscript(null); setError(''); setAttempt((value) => value + 1); };
   if (error) return <div role="alert" className="space-y-3 text-sm text-red-300"><p>{error}</p><button type="button" onClick={() => { setError(''); setAttempt((value) => value + 1); }} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-200">Retry transcript</button></div>;
   if (!transcript) return <p role="status" className="animate-pulse text-xs text-zinc-500">Loading conversation…</p>;
   return <div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-[11px] leading-relaxed text-zinc-500">Saved conversation · up to the latest 200 stored messages. Uploaded image contents are omitted.</p><button type="button" onClick={refresh} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-200">Refresh transcript</button></div><TranscriptViewer session={transcript} /></div>;
 }
 
-function LeadConversations({ lead, password, onAuthLost }) {
+function LeadConversations({ lead, accessToken, onAuthLost }) {
   const sessions = Array.isArray(lead.sessions) ? lead.sessions : lead.session ? [{ scope: 'audit', ...lead.session }] : [];
   const [scope, setScope] = useState(() => sessions.some((session) => session.scope === 'audit') ? 'audit' : sessions[0]?.scope || 'audit');
   const [selectedId, setSelectedId] = useState('');
@@ -403,7 +369,7 @@ function LeadConversations({ lead, password, onAuthLost }) {
     {matching.length > 1 && <label className="block space-y-2 text-xs text-zinc-400"><span>Conversation</span><select value={selected?.id || ''} onChange={(event) => setSelectedId(event.target.value)} className="w-full rounded-lg border border-white/10 bg-zinc-950 p-2 text-zinc-200">{matching.map((session) => <option key={session.id} value={session.id}>{formatDate(session.updated_at || session.created_at)} · {session.service_id || session.id}</option>)}</select></label>}
     <div role="tabpanel" id={`lead-${lead.id}-conversation`} aria-labelledby={`lead-${lead.id}-${scope}`} tabIndex={0}>
       {selected && <p className="mb-3 break-all font-mono text-[11px] text-zinc-500">Session ID: {selected.id}{selected.service_id ? ` · ${selected.service_id}` : ''}</p>}
-      {selected ? <TranscriptPanel key={`${selected.id}:${selected.updated_at || ''}`} session={selected} password={password} onAuthLost={onAuthLost} /> : <p className="text-xs text-zinc-500">No {scope === 'audit' ? 'brand review' : scope} conversation is linked to this lead.</p>}
+      {selected ? <TranscriptPanel key={`${selected.id}:${selected.updated_at || ''}`} session={selected} accessToken={accessToken} onAuthLost={onAuthLost} /> : <p className="text-xs text-zinc-500">No {scope === 'audit' ? 'brand review' : scope} conversation is linked to this lead.</p>}
     </div>
   </div>;
 }
@@ -452,7 +418,7 @@ function ScoreBreakdown({ lead }) {
   );
 }
 
-function LeadDetails({ lead, onDelete, saving, password, onAuthLost }) {
+function LeadDetails({ lead, onDelete, saving, accessToken, onAuthLost }) {
   return (
     <div className="min-w-0 space-y-4 md:max-w-[calc(100vw-6rem)] 2xl:max-w-none">
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
@@ -491,7 +457,7 @@ function LeadDetails({ lead, onDelete, saving, password, onAuthLost }) {
         )}
       </div>
       <div className="min-w-0 lg:col-span-2 border-t border-white/[0.06] pt-4">
-        <LeadConversations lead={lead} password={password} onAuthLost={onAuthLost} />
+        <LeadConversations lead={lead} accessToken={accessToken} onAuthLost={onAuthLost} />
       </div>
     </div>
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-4">
@@ -518,7 +484,7 @@ function WelcomeEmailStatus({ lead, retrying, onRetry }) {
   </div>;
 }
 
-function AISetupPanel({ password, onAuthLost }) {
+function AISetupPanel({ accessToken, onAuthLost }) {
   const [checking, setChecking] = useState(false);
   const [report, setReport] = useState(null);
   const [error, setError] = useState('');
@@ -527,7 +493,7 @@ function AISetupPanel({ password, onAuthLost }) {
     if (requestLock.current) return;
     requestLock.current = true; setChecking(true); setError('');
     try {
-      const result = await apiRequest(FETCH_URL, password, { action: 'aiHealth' });
+      const result = await apiRequest(FETCH_URL, accessToken, { action: 'aiHealth' });
       if (result.ok) setReport(result);
       else if (result.code === 'unauthorised') onAuthLost();
       else setError(result.error || 'The AI setup check could not finish. Try again shortly.');
@@ -619,7 +585,7 @@ function BookedBadge() {
 
 // ─── Actions hook (shared between desktop and mobile) ───────────
 
-function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showToast }) {
+function useLeadActions({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, showToast }) {
   const [saving, setSaving] = useState(false);
   const [notes, setNotes] = useState(lead.followup_notes || '');
   const [retryingWelcome, setRetryingWelcome] = useState(false);
@@ -627,13 +593,14 @@ function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost
   const welcomeLock = useRef(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Mirror a refreshed server record into the editable draft.
     setNotes(lead.followup_notes || '');
     notesRef.current = lead.followup_notes || '';
   }, [lead.id, lead.followup_notes]);
 
   const save = useCallback(async (updates) => {
     setSaving(true);
-    const result = await apiUpdateLead(password, { reviewId: lead.id, ...updates });
+    const result = await apiUpdateLead(accessToken, { reviewId: lead.id, ...updates });
     setSaving(false);
     if (result.ok) {
       if (updates.followupNotes !== undefined) notesRef.current = updates.followupNotes;
@@ -649,14 +616,14 @@ function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost
     } else {
       showToast('error', result.error || 'Could not save.');
     }
-  }, [lead, password, onLeadChange, onAuthLost, showToast]);
+  }, [lead, accessToken, onLeadChange, onAuthLost, showToast]);
 
   const onStatusChange = (e) => save({ followupStatus: e.target.value });
   const onDeleteLead = async () => {
     if (saving || !window.confirm(`Delete the lead for ${lead.brand_name || lead.full_name || 'this brand'} (${lead.email || lead.id})?\n\nThis permanently removes the review and its chat sessions. Purchases and booking history will be kept. Manage meeting cancellations in Calendly. This cannot be undone.`)) return;
     setSaving(true);
     try {
-      const result = await apiUpdateLead(password, { action: 'delete', reviewId: lead.id, confirmation: lead.id });
+      const result = await apiUpdateLead(accessToken, { action: 'delete', reviewId: lead.id, confirmation: lead.id });
       if (result.ok && result.deletedId === lead.id) {
         onLeadDelete?.(lead.id);
         showToast(result.warning ? 'error' : 'success', result.warning || 'Lead deleted.');
@@ -672,7 +639,7 @@ function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost
     if (reason === null) return;
     setSaving(true);
     try {
-      const result = await apiFlagUser(password, lead.email, status, reason.trim());
+      const result = await apiFlagUser(accessToken, lead.email, status, reason.trim());
       if (result.review) onLeadChange({ id: lead.id, ...result.review });
       if (result.ok) {
         showToast('success', 'User flag updated.');
@@ -696,7 +663,7 @@ function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost
     if (welcomeLock.current) return;
     welcomeLock.current = true; setRetryingWelcome(true);
     try {
-      const result = await apiRequest(UPDATE_URL, password, { action: 'retryWelcome', reviewId: lead.id });
+      const result = await apiRequest(UPDATE_URL, accessToken, { action: 'retryWelcome', reviewId: lead.id });
       if (result.review) onLeadChange({ id: lead.id, ...result.review });
       if (result.ok) showToast('success', 'Review email accepted by the provider. Inbox delivery is not confirmed here.');
       else if (result.code === 'unauthorised') onAuthLost();
@@ -715,10 +682,10 @@ function useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost
 
 // ─── Desktop table row ─────────────────────────────────────────
 
-function LeadRow({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showToast }) {
+function LeadRow({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, showToast }) {
   const [expanded, setExpanded] = useState(false);
   const { saving, notes, setNotes, onStatusChange, onFlagChange, onDeleteLead, onNotesBlur, handleCopy, retryingWelcome, onRetryWelcome } =
-    useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showToast });
+    useLeadActions({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, showToast });
 
   const toggleExpanded = () => setExpanded((v) => !v);
   const isBooked = Boolean(lead.call_booked_at);
@@ -814,7 +781,7 @@ function LeadRow({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showT
       {expanded && (
         <tr className="border-b border-white/[0.06] bg-black/10">
           <td colSpan={13} className="p-4">
-            <LeadDetails lead={lead} onDelete={onDeleteLead} saving={saving} password={password} onAuthLost={onAuthLost} />
+            <LeadDetails lead={lead} onDelete={onDeleteLead} saving={saving} accessToken={accessToken} onAuthLost={onAuthLost} />
           </td>
         </tr>
       )}
@@ -824,10 +791,10 @@ function LeadRow({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showT
 
 // ─── Mobile card ────────────────────────────────────────────────
 
-function LeadCard({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showToast }) {
+function LeadCard({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, showToast }) {
   const [expanded, setExpanded] = useState(false);
   const { saving, notes, setNotes, onStatusChange, onFlagChange, onDeleteLead, onNotesBlur, handleCopy, retryingWelcome, onRetryWelcome } =
-    useLeadActions({ lead, password, onLeadChange, onLeadDelete, onAuthLost, showToast });
+    useLeadActions({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, showToast });
 
   const toggleExpanded = () => setExpanded((v) => !v);
   const isBooked = Boolean(lead.call_booked_at);
@@ -916,7 +883,7 @@ function LeadCard({ lead, password, onLeadChange, onLeadDelete, onAuthLost, show
 
       {expanded && (
         <div className="mt-4 border-t border-zinc-800 pt-4">
-          <LeadDetails lead={lead} onDelete={onDeleteLead} saving={saving} password={password} onAuthLost={onAuthLost} />
+          <LeadDetails lead={lead} onDelete={onDeleteLead} saving={saving} accessToken={accessToken} onAuthLost={onAuthLost} />
         </div>
       )}
     </article>
@@ -925,7 +892,7 @@ function LeadCard({ lead, password, onLeadChange, onLeadDelete, onAuthLost, show
 
 // ─── Dashboard ──────────────────────────────────────────────────
 
-function PurchasesPanel({ purchases, error, password, onAuthLost, onPurchaseChange, showToast }) {
+function PurchasesPanel({ purchases, error, accessToken, onAuthLost, onPurchaseChange, showToast }) {
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
   const [retrying, setRetrying] = useState({});
@@ -935,7 +902,7 @@ function PurchasesPanel({ purchases, error, password, onAuthLost, onPurchaseChan
   const checkEmailSetup = async () => {
     setCheckingSetup(true);
     try {
-      const result = await apiRequest(RETRY_PURCHASE_URL, password, { action: 'checkConfiguration' });
+      const result = await apiRequest(RETRY_PURCHASE_URL, accessToken, { action: 'checkConfiguration' });
       if (result.code === 'unauthorised') onAuthLost?.();
       setEmailSetup(result);
     } finally { setCheckingSetup(false); }
@@ -951,7 +918,7 @@ function PurchasesPanel({ purchases, error, password, onAuthLost, onPurchaseChan
     setRetrying((current) => ({ ...current, [purchase.reference]: true }));
     setRetryErrors((current) => ({ ...current, [purchase.reference]: '' }));
     try {
-      const result = await apiRequest(RETRY_PURCHASE_URL, password, { reference: purchase.reference });
+      const result = await apiRequest(RETRY_PURCHASE_URL, accessToken, { reference: purchase.reference });
       if (result.purchase) onPurchaseChange?.(result.purchase);
       if (result.ok) showToast?.('success', result.skipped ? 'Thank-you email was already sent.' : 'Thank-you email sent.');
       else if (result.code === 'unauthorised') onAuthLost?.();
@@ -1005,7 +972,7 @@ function PurchasesPanel({ purchases, error, password, onAuthLost, onPurchaseChan
   );
 }
 
-function BookingsPanel({ bookings, error, now = 0, password, onAuthLost }) {
+function BookingsPanel({ bookings, error, now = 0, accessToken, onAuthLost }) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [page, setPage] = useState(1);
@@ -1023,18 +990,18 @@ function BookingsPanel({ bookings, error, now = 0, password, onAuthLost }) {
     {error ? <p role="alert" className="rounded-xl border border-red-500/20 p-5 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">{query || status !== 'all' || serviceFilter!=='all' ? 'No bookings match these filters.' : 'No bookings have synced yet. Calendly polling imports meetings from the last 3 hours through the next 60 days; older meetings are not backfilled.'}</p> : <div className="grid gap-4 lg:grid-cols-2">{filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map((booking) => <article key={booking.id} className="min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5">
       <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="font-medium text-zinc-100">{booking.full_name || 'Name not provided'}</h3><a href={`mailto:${booking.email}`} className="mt-1 block break-all text-sm text-zinc-400 underline-offset-4 hover:underline">{booking.email}</a></div><span className={`rounded border px-2 py-1 text-[10px] uppercase tracking-wider ${['canceled','cancelled'].includes(booking.status) ? 'border-red-400/25 text-red-300' : 'border-white/15 text-zinc-300'}`}>{booking.status}</span></div>
       <p className="mt-5 text-lg font-medium tracking-tight">{booking.start_time ? formatDate(booking.start_time) : 'Time not recorded'}</p><p className="mt-1 text-xs text-zinc-400">Displayed in your device timezone · Invitee timezone: {booking.timezone || 'Not recorded'}</p>
-      <dl className="mt-5 space-y-2 text-xs text-zinc-400"><div><dt className="inline text-zinc-400">Meeting: </dt><dd className="inline">{booking.event_name || 'Strategy call'}</dd></div><div><dt className="inline text-zinc-400">Source: </dt><dd className="inline">{booking.source === 'lead' ? 'Brand review' : booking.source === 'service' ? `Services${booking.service_id ? ` / ${booking.service_id}` : ''}` : booking.source === 'legacy' ? 'Legacy onsite booking' : 'Direct Calendly'}</dd></div><div><dt className="inline text-zinc-400">Last synced: </dt><dd className="inline">{formatDate(booking.last_synced_at)}</dd></div></dl>
+      <dl className="mt-5 space-y-2 text-xs text-zinc-400"><div><dt className="inline text-zinc-400">Meeting: </dt><dd className="inline">{booking.event_name || 'Strategy call'}</dd></div><div><dt className="inline text-zinc-400">Source: </dt><dd className="inline">{booking.source === 'lead' ? 'Brand review' : booking.source === 'team' ? 'Team inquiry' : booking.source === 'service' ? `Services${booking.service_id ? ` / ${booking.service_id}` : ''}` : booking.source === 'legacy' ? 'Legacy onsite booking' : 'Direct Calendly'}</dd></div><div><dt className="inline text-zinc-400">Last synced: </dt><dd className="inline">{formatDate(booking.last_synced_at)}</dd></div></dl>
       {booking.review_id && <p className="mt-4 break-all font-mono text-[10px] text-zinc-400">Linked lead: {booking.review_id}</p>}
       <p className="mt-3 text-xs text-zinc-300">Service: {SERVICE_NAMES[booking.service_id] || 'Not specified / direct booking'}</p>
       <p className="mt-2 text-xs text-zinc-400">TMH confirmation: {booking.confirmation_email_sent ? 'Accepted by email provider' : booking.source==='calendly'?'No matching onsite review or intent':'Not recorded as accepted'} · Calendly sends the joining invitation separately.</p>
       {booking.start_time && <p className="mt-2 text-xs text-zinc-400">Lagos: {new Intl.DateTimeFormat('en-NG',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Lagos'}).format(new Date(booking.start_time))} WAT{booking.end_time ? ` · Ends ${new Intl.DateTimeFormat('en-NG',{timeStyle:'short',timeZone:'Africa/Lagos'}).format(new Date(booking.end_time))}` : ''}</p>}
-      <TeamAssignment kind="booking" targetId={String(booking.id)} onAuthLost={onAuthLost} onRequest={payload=>apiRequest(ASSIGNMENT_URL,password,payload)} />
+      <TeamAssignment kind="booking" targetId={String(booking.id)} onAuthLost={onAuthLost} onRequest={payload=>apiRequest(ASSIGNMENT_URL,accessToken,payload)} />
     </article>)}</div>}
     {pages > 1 && <nav aria-label="Booking pages" className="flex items-center justify-end gap-3 text-xs"><button disabled={current <= 1} onClick={() => setPage(current - 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Prev</button><span>{current} / {pages}</span><button disabled={current >= pages} onClick={() => setPage(current + 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Next</button></nav>}
   </section>;
 }
 
-function StandaloneSessionRow({ session, password, onAuthLost, onVisitorChange, showToast, onSessionChange }) {
+function StandaloneSessionRow({ session, accessToken, onAuthLost, onVisitorChange, showToast, onSessionChange }) {
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const changeFlag = async (event) => {
@@ -1043,7 +1010,7 @@ function StandaloneSessionRow({ session, password, onAuthLost, onVisitorChange, 
     if (reason === null) return;
     setSaving(true);
     try {
-      const result = await apiRequest(FLAG_URL, password, { visitorId: session.visitor_id, sessionId: session.id, status, reason: reason.trim() });
+      const result = await apiRequest(FLAG_URL, accessToken, { visitorId: session.visitor_id, sessionId: session.id, status, reason: reason.trim() });
       if (result.visitor) onVisitorChange(result.visitor,result.review);
       if (result.ok) showToast('success', 'Visitor flag updated.');
       else if (result.code === 'unauthorised') onAuthLost();
@@ -1063,7 +1030,7 @@ function StandaloneSessionRow({ session, password, onAuthLost, onVisitorChange, 
       <div className="space-y-2 text-right"><FlagSelect lead={session} onChange={changeFlag} disabled={saving || Boolean(session.flag_error)} />{session.flag_error && <p className="max-w-xs text-xs text-amber-300">{session.flag_error}</p>}</div>
     </div>
     {session.service_id === 'team-inquiry' && <div className="flex flex-wrap gap-3 border-t border-white/[0.04] px-5 py-3 text-[11px] text-zinc-400"><span className="capitalize">{session.inquiry_status || 'new'}</span><span>{session.inquiry_owner || 'Unassigned'}</span>{session.inquiry_next_followup_on && <span className={inquiryDue(session,lagosDate()) ? 'text-amber-200' : ''}>Follow up {session.inquiry_next_followup_on}{inquiryDue(session,lagosDate()) ? ' · due' : ''}</span>}</div>}
-    {expanded && <div id={`transcript-${session.id}`} className="border-t border-white/[0.06] p-4 sm:p-5">{session.service_id === 'team-inquiry' && <InquiryWorkflow session={session} onSessionChange={onSessionChange} onSave={async payload => { const result=await apiRequest(UPDATE_URL,password,payload); if(result.code==='unauthorised')onAuthLost(); if(result.ok)showToast('success','Inquiry follow-up saved.'); return result; }} />}{session.service_id === 'team-inquiry' && <TeamAssignment kind="inquiry" targetId={session.id} onAuthLost={onAuthLost} onRequest={payload=>apiRequest(ASSIGNMENT_URL,password,payload)} onSaved={assignment=>onSessionChange?.({...session,inquiry_owner:assignment.assignee_name,inquiry_revision:(session.inquiry_revision||0)+1})} />}<TranscriptPanel key={`${session.id}:${session.updated_at || ''}`} session={session} password={password} onAuthLost={onAuthLost} /></div>}
+    {expanded && <div id={`transcript-${session.id}`} className="border-t border-white/[0.06] p-4 sm:p-5">{session.service_id === 'team-inquiry' && <InquiryWorkflow session={session} onSessionChange={onSessionChange} onSave={async payload => { const result=await apiRequest(UPDATE_URL,accessToken,payload); if(result.code==='unauthorised')onAuthLost(); if(result.ok)showToast('success','Inquiry follow-up saved.'); return result; }} />}{session.service_id === 'team-inquiry' && <TeamAssignment kind="inquiry" targetId={session.id} onAuthLost={onAuthLost} onRequest={payload=>apiRequest(ASSIGNMENT_URL,accessToken,payload)} onSaved={assignment=>onSessionChange?.({...session,inquiry_owner:assignment.assignee_name,inquiry_revision:(session.inquiry_revision||0)+1})} />}<TranscriptPanel key={`${session.id}:${session.updated_at || ''}`} session={session} accessToken={accessToken} onAuthLost={onAuthLost} /></div>}
   </article>;
 }
 
@@ -1077,7 +1044,7 @@ function exportInquiryCsv(sessions) {
   const link=document.createElement('a');link.href=url;link.download='tmh-team-inquiries-'+lagosDate()+'.csv';link.click();URL.revokeObjectURL(url);
 }
 
-function SessionsPanel({ scope, sessions, error, password, onAuthLost, onVisitorChange, showToast, onSessionChange }) {
+function SessionsPanel({ scope, sessions, error, accessToken, onAuthLost, onVisitorChange, showToast, onSessionChange }) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [stage,setStage]=useState('all');
@@ -1094,24 +1061,24 @@ function SessionsPanel({ scope, sessions, error, password, onAuthLost, onVisitor
       <div className="mb-4 flex flex-wrap items-center gap-3">{scope==='team' && <><select aria-label="Filter inquiry status" value={stage} onChange={event=>{setStage(event.target.value);setPage(1);}} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs"><option value="all">All inquiry statuses</option>{INQUIRY_STATUSES.map(status=><option key={status} value={status}>{status}</option>)}</select><label className="flex items-center gap-2 text-xs text-zinc-400"><input type="checkbox" checked={dueOnly} onChange={event=>{setDueOnly(event.target.checked);setPage(1);}} />Follow-up due</label><button type="button" onClick={()=>exportInquiryCsv(filtered)} className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-300">Export inquiries CSV</button></>}<select aria-label="Filter access flag" value={flag} onChange={event=>{setFlag(event.target.value);setPage(1);}} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs"><option value="all">All access flags</option><option value="white">White</option><option value="yellow">Yellow</option><option value="red">Red</option></select></div>
       <input aria-label={`Search ${scope} chats`} value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search name, session, owner or notes" className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm outline-none focus:border-white/30" />
     </div>
-    {error ? <p role="alert" className="rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/[0.06] p-6 text-center text-sm text-zinc-500">{query ? 'No conversations match this search.' : `No ${scope==='team'?'team inquiries':scope+' chats'} have been recorded yet.`}</p> : filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map((session) => <StandaloneSessionRow key={session.id} session={session} password={password} onAuthLost={onAuthLost} onVisitorChange={onVisitorChange} showToast={showToast} onSessionChange={onSessionChange} />)}
+    {error ? <p role="alert" className="rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/[0.06] p-6 text-center text-sm text-zinc-500">{query ? 'No conversations match this search.' : `No ${scope==='team'?'team inquiries':scope+' chats'} have been recorded yet.`}</p> : filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map((session) => <StandaloneSessionRow key={session.id} session={session} accessToken={accessToken} onAuthLost={onAuthLost} onVisitorChange={onVisitorChange} showToast={showToast} onSessionChange={onSessionChange} />)}
     {pages > 1 && <nav aria-label={`${label} chat pages`} className="flex items-center justify-end gap-3 text-xs"><button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Prev</button><span>{currentPage} / {pages}</span><button type="button" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Next</button></nav>}
   </section>;
 }
 
 export default function AdminDashboard() {
-  const [password, setPassword] = useState(() => sessionStorage.getItem(PASSWORD_KEY) || '');
+  const [accessToken, setAccessToken] = useState('');
   const [authorised, setAuthorised] = useState(false);
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [filters, setFilters] = useState({
+  const [filters, setFiltersState] = useState({
     temperature: 'All',
     followup: 'All',
     dateRange: 'all',
     search: '',
   });
-  const [sortId, setSortId] = useState('newest');
+  const [sortId, setSortIdState] = useState('newest');
   const [page, setPage] = useState(1);
   const [toast, setToast] = useState(null);
   const [purchases, setPurchases] = useState([]);
@@ -1134,6 +1101,7 @@ export default function AdminDashboard() {
   const authEpoch = useRef(0);
   const [bookings, setBookings] = useState([]);
   const [bookingsError, setBookingsError] = useState('');
+  const [authReady,setAuthReady]=useState(false);
 
   const showToast = useCallback((kind, text) => {
     setToast({ kind, text, id: Date.now() });
@@ -1148,8 +1116,8 @@ export default function AdminDashboard() {
   const handleAuthLost = useCallback(() => {
     authEpoch.current += 1;
     overviewLock.current = false;
-    sessionStorage.removeItem(PASSWORD_KEY);
-    setPassword('');
+    sessionStorage.removeItem('tmh_admin_password');
+    setAccessToken('');
     setAuthorised(false);
     setLeads([]);
     setPurchases([]);
@@ -1166,7 +1134,7 @@ export default function AdminDashboard() {
     if (flagEmailLock.current) return;
     flagEmailLock.current = true; setRetryingFlagEmails(true); setFlagEmailError('');
     try {
-      const result = await apiRequest(FLAG_URL, password, { action: 'retryNotifications' });
+      const result = await apiRequest(FLAG_URL, accessToken, { action: 'retryNotifications' });
       if (result.ok) showToast('success', `Flag email queue checked. ${result.attempted || 0} pending events processed.`);
       else if (result.code === 'unauthorised') handleAuthLost();
       else setFlagEmailError(result.error || 'Flag email retry is still pending.');
@@ -1180,7 +1148,7 @@ export default function AdminDashboard() {
     const epoch = authEpoch.current;
     setLoading(true);
     setError('');
-    const result = await apiFetchLeads(pw || password);
+    const result = await apiFetchLeads(pw || accessToken);
     if (epoch !== authEpoch.current) return;
     overviewLock.current = false;
     setLoading(false);
@@ -1202,15 +1170,15 @@ export default function AdminDashboard() {
     } else {
       setError(result.error || 'Could not load leads.');
     }
-  }, [password, handleAuthLost]);
+  }, [accessToken, handleAuthLost]);
 
   useEffect(() => {
-    const cached = sessionStorage.getItem(PASSWORD_KEY);
-    if (cached) {
-      setPassword(cached);
-      void load(cached);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    try { sessionStorage.removeItem('tmh_admin_password');localStorage.removeItem('tmh_admin_password'); } catch { /* Old shared credentials are retired. */ }
+    return observeAdminSession(supabase.auth,session=>{
+      if(session){setAccessToken(session.access_token);setAuthorised(true);}else handleAuthLost();setAuthReady(true);
+    });
+  },[handleAuthLost]);
+  useEffect(()=>{if(accessToken&&authorised){const task=setTimeout(()=>void load(accessToken),0);return()=>clearTimeout(task);}},[accessToken,authorised,load]);
 
   useEffect(() => {
     if (!authorised) return;
@@ -1223,9 +1191,11 @@ export default function AdminDashboard() {
     return () => { window.clearInterval(timer); window.removeEventListener('focus', refreshVisible); };
   }, [authorised, load]);
 
+  const securityUpdate=useCallback(payload=>apiRequest(UPDATE_URL,accessToken,payload),[accessToken]);
+  const usageRequest=useCallback(payload=>apiRequest(FETCH_URL,accessToken,payload),[accessToken]);
+
   const onAuth = (pw) => {
-    sessionStorage.setItem(PASSWORD_KEY, pw);
-    setPassword(pw);
+    setAccessToken(pw);
     setAuthorised(true);
     void load(pw);
   };
@@ -1284,7 +1254,8 @@ export default function AdminDashboard() {
     return [...filtered].sort(comparators[sortId] || byCreated);
   }, [leads, filters, sortId, lastRefreshed]);
 
-  useEffect(() => { setPage(1); }, [filters, sortId]);
+  const setFilters=next=>{setPage(1);setFiltersState(next);};
+  const setSortId=next=>{setPage(1);setSortIdState(next);};
 
   const totalPages = Math.max(1, Math.ceil(processed.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -1319,6 +1290,7 @@ export default function AdminDashboard() {
     window.location.reload();
   };
 
+  if (!authorised && !authReady) return <main role="status" className="grid min-h-screen place-items-center bg-zinc-950 text-zinc-300">Checking team access…</main>;
   if (!authorised) return <LoginScreen onAuth={onAuth} />;
 
   return (
@@ -1355,7 +1327,7 @@ export default function AdminDashboard() {
               Clear Data
             </button>
             <button
-              onClick={handleAuthLost}
+              onClick={async()=>{try{await supabase.auth.signOut({scope:'local'});}finally{handleAuthLost();}}}
               className="rounded-lg border border-zinc-700 px-3 py-2 text-xs sm:text-sm hover:bg-zinc-800"
             >
               Log out
@@ -1386,7 +1358,9 @@ export default function AdminDashboard() {
           <QueueCard title="Calls in the next 7 days" value={bookingsError?'Unavailable':metrics.upcomingBookings} detail="Active bookings · Africa/Lagos" onClick={()=>setActiveTab('bookings')} />
         </section>
         {operations && <section aria-label="Haven operational health" className="mb-4 rounded-xl border border-white/[0.06] px-4 py-3 text-xs text-zinc-400"><p className="mb-3 text-zinc-500">Past 24 hours</p><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><span>Gemini replies <strong className="ml-1 font-medium text-zinc-200">{operations.gemini_replies}</strong></span><span>Groq replies <strong className="ml-1 font-medium text-zinc-200">{operations.groq_replies}</strong></span><span>Failed turns <strong className={`ml-1 ${operations.failed_turns?'text-amber-200':'text-zinc-200'}`}>{operations.failed_turns}</strong></span><span>Stalled turns <strong className={`ml-1 ${operations.stale_turns?'text-amber-200':'text-zinc-200'}`}>{operations.stale_turns}</strong></span></div><button type="button" disabled={retryingFlagEmails} onClick={retryFlagEmails} className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-zinc-300 disabled:opacity-40">{retryingFlagEmails?'Retrying flag notices…':`${operations.pending_flag_events} flag events awaiting acceptance · Retry`}</button></section>}
-        <AISetupPanel password={password} onAuthLost={handleAuthLost} />
+        <VerificationAttemptsPanel onRead={usageRequest} onUpdate={securityUpdate} onAuthLost={handleAuthLost} />
+        <APIUsagePanel onRequest={usageRequest} onAuthLost={handleAuthLost} />
+        <AISetupPanel accessToken={accessToken} onAuthLost={handleAuthLost} />
         {operationsError && <p role="alert" className="mb-4 text-xs text-amber-200">{operationsError}</p>}
         {activeTab === 'purchases' && <section aria-label="Playbook follow-up queue" className="mb-5 rounded-xl border border-white/10 p-4 text-xs text-zinc-400">
           <h2 className="font-medium text-zinc-200">One-time Playbook check-in</h2>
@@ -1395,13 +1369,12 @@ export default function AdminDashboard() {
             : <p role="status" className="mt-3 text-amber-200">{followupStatsError || 'Queue counts are unavailable. Refresh to retry.'}</p>}
         </section>}
         {flagEmailError && <p role="alert" className="mb-4 text-xs text-amber-200">{flagEmailError}</p>}
-        {operations?.adminSecurity?.strong===false&&<p role="alert" className="mb-4 rounded-xl border border-amber-300/20 p-4 text-xs leading-relaxed text-amber-100">Admin password check: {operations.adminSecurity.recommendation}</p>}
         <p className="mb-5 text-[11px] leading-relaxed text-zinc-500">Work queue counts cover loaded records, not lifetime totals. Provider counts are completed replies, not token usage or billing. Flag events cover the saved delivery queue. Inquiry status is maintained by the team; confirmed bookings appear in Bookings.</p>
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-200">{error}</p>}
         <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
-        {activeTab === 'bookings' && <BookingsPanel bookings={bookings} error={bookingsError} now={lastRefreshed || 0} password={password} onAuthLost={handleAuthLost} />}
-        {activeTab === 'purchases' && <PurchasesPanel purchases={purchases} error={purchasesError} password={password} onAuthLost={handleAuthLost} onPurchaseChange={updatePurchase} showToast={showToast} />}
-        {['team','support','service'].includes(activeTab) && <SessionsPanel key={activeTab} scope={activeTab} sessions={activeTab==='team'?teamInquiries:activeTab === 'support' ? supportSessions : serviceSessions} error={chatErrors[activeTab]} password={password} onAuthLost={handleAuthLost} onVisitorChange={updateVisitor} showToast={showToast} onSessionChange={updateInquiry} />}
+        {activeTab === 'bookings' && <BookingsPanel bookings={bookings} error={bookingsError} now={lastRefreshed || 0} accessToken={accessToken} onAuthLost={handleAuthLost} />}
+        {activeTab === 'purchases' && <PurchasesPanel purchases={purchases} error={purchasesError} accessToken={accessToken} onAuthLost={handleAuthLost} onPurchaseChange={updatePurchase} showToast={showToast} />}
+        {['team','support','service'].includes(activeTab) && <SessionsPanel key={activeTab} scope={activeTab} sessions={activeTab==='team'?teamInquiries:activeTab === 'support' ? supportSessions : serviceSessions} error={chatErrors[activeTab]} accessToken={accessToken} onAuthLost={handleAuthLost} onVisitorChange={updateVisitor} showToast={showToast} onSessionChange={updateInquiry} />}
         {activeTab === 'leads' && <>
 
         <p className="mb-3 text-xs text-zinc-500">Reviews show the newest 500 records maximum. Counts, filters and exports apply to loaded reviews.</p>
@@ -1476,7 +1449,7 @@ export default function AdminDashboard() {
                   <LeadRow
                     key={lead.id}
                     lead={lead}
-                    password={password}
+                    accessToken={accessToken}
                     onLeadChange={updateLead}
                     onLeadDelete={deleteLead}
                     onAuthLost={handleAuthLost}
@@ -1499,7 +1472,7 @@ export default function AdminDashboard() {
               <LeadCard
                 key={lead.id}
                 lead={lead}
-                password={password}
+                accessToken={accessToken}
                 onLeadChange={updateLead}
                 onLeadDelete={deleteLead}
                 onAuthLost={handleAuthLost}

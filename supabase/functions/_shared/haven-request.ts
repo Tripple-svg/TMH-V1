@@ -82,7 +82,7 @@ export function validateChatBody(body: Record<string, unknown>) {
       throw new HavenRequestError('Messages must contain a user or agent role and at most 4000 characters.');
     }
     total += item.content.length;
-    return { role: item.role as 'user' | 'agent', content: item.content };
+    return { role: item.role as 'user' | 'agent', content: item.content.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim() };
   });
   if (total > 24000 || messages[messages.length - 1].role !== 'user') {
     throw new HavenRequestError('Conversation history is too long or does not end with your message.');

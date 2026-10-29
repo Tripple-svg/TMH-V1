@@ -1,7 +1,8 @@
+const makeId = () => Date.now()+'-'+Math.random().toString(36).slice(2,11);
 // src/components/review/HavenChat.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, CheckCircle2, X, Rocket, Package, Lightbulb, Send, Code, Share2, TrendingUp, HelpCircle } from 'lucide-react';
+import { MessageCircle, X, Rocket, Package, Lightbulb, Send, Code, Share2, TrendingUp, HelpCircle } from 'lucide-react';
 
 const contextConfig = {
   audit: {
@@ -67,7 +68,15 @@ export default function HavenChat({ userData, mode, context = 'audit', onClose }
   const greetingName = name ? name : 'there';
   const brand = userData?.brandName || 'your business';
 
-  const makeId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+
+  const pushMessage=useCallback((text,from)=>{
+    requestAnimationFrame(() => setTyping(true));
+    setTimeout(() => {
+      setMessages(prev => [...prev, { id: makeId(), from, text }]);
+      setTyping(false);
+    }, 800);
+  },[]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -141,19 +150,12 @@ export default function HavenChat({ userData, mode, context = 'audit', onClose }
         }, msg.delay);
       });
     }
-  }, [mode, context, name, greetingName, brand, messages.length]);
+  }, [mode, context, name, greetingName, brand, messages.length,pushMessage]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typing]);
 
-  const pushMessage = (text, from) => {
-    setTyping(true);
-    setTimeout(() => {
-      setMessages(prev => [...prev, { id: makeId(), from, text }]);
-      setTyping(false);
-    }, 800);
-  };
 
   const handleQuickReply = (reply) => {
     setShowQuickReplies(false);

@@ -1,3 +1,4 @@
+import {adminFixtureRequest} from './helpers/security-fixture.mjs';
 import { withSecurityRpc } from './helpers/security-fixture.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,7 +20,7 @@ function endpoint(name,{db,fetch=async()=>new Response(JSON.stringify({id:'accep
   vm.runInNewContext(code,{require:specifier=>specifier.includes('server.ts')?{serve:fn=>{handler=fn;}}:{createClient:()=>withSecurityRpc(db)},Deno:{env:{get:name=>({...env,...environment})[name]}},fetch,Request,Response,Headers,AbortSignal,TextEncoder,TextDecoder,Uint8Array,crypto:webcrypto,console:{error(){}}});
   return handler;
 }
-const request=(body,extra={})=>new Request('https://project.supabase.co/functions/v1/test',{method:'POST',headers:{origin:'http://localhost:5173','content-type':'application/json',...extra},body:JSON.stringify(body)});
+const request=(body,extra={})=>adminFixtureRequest('https://project.supabase.co/functions/v1/test',body,{method:'POST',headers:{origin:'http://localhost:5173','content-type':'application/json',...extra}});
 function database(seed){
   const rows=structuredClone(seed),calls=[];
   const db={rpc:async(name,args)=>{
@@ -138,24 +139,24 @@ test('assignment email: button uses a scoped fragment link and never claims to b
   assert.match(result.html,/Open preparation brief/);assert.match(result.html,/#token=private/);assert.match(result.text,/Keep this email private/);
   assert.doesNotMatch(result.text,/Join the Meeting|transcript/);assert.deepEqual(result.to,['teammate@example.com']);
 });
-test('assignment admin: password and field validation happen before any write or email',async()=>{
+test('assignment admin: JWT and field validation happen before any write or email',async()=>{
   const db=database({});let sent=false;
   const handler=endpoint('admin-team-assignment',{db:db.db,fetch:async()=>{sent=true;throw new Error('No send expected');}});
   assert.equal((await handler(request({action:'save'}))).status,401);
-  assert.equal((await handler(request({password:'admin-secret',action:'save',kind:'booking',targetId:'1',name:'Unknown',email:'person@example.com',note:'',expectedRevision:0}))).status,400);
+  assert.equal((await handler(request({accessToken:'test-admin-jwt',action:'save',kind:'booking',targetId:'1',name:'Unknown',email:'person@example.com',note:'',expectedRevision:0}))).status,400);
   assert.equal(db.calls.length,0);assert.equal(sent,false);
 });
 test('assignment admin: cancelled meetings cannot send a notification',async()=>{
   const item=assignment();const db=database({team_assignments:[item],strategy_call_bookings:[{...booking,status:'canceled'}]});
   const handler=endpoint('admin-team-assignment',{db:db.db,fetch:async()=>{throw new Error('Must not send');}});
-  assert.equal((await handler(request({password:'admin-secret',action:'send',id,expectedRevision:1}))).status,409);
+  assert.equal((await handler(request({accessToken:'test-admin-jwt',action:'send',id,expectedRevision:1}))).status,409);
   assert.ok(!db.calls.some(call=>call.name==='claim_team_assignment_email'));
 });
 test('assignment admin: verified success records acceptance; retry does not resend a stored provider acknowledgement',async()=>{
   const item=assignment();const db=database({team_assignments:[item],strategy_call_bookings:[booking]});let sends=0;
   const oldRpc=db.db.rpc;db.db.rpc=async(name,args)=>name==='claim_team_assignment_email'?{data:{payload:args.p_payload,provider_email_id:db.rows.team_assignments[0].provider_email_id}}:oldRpc(name,args);
   const handler=endpoint('admin-team-assignment',{db:db.db,fetch:async()=>{sends++;return new Response(JSON.stringify({id:'accepted-id'}));}});
-  const input=()=>request({password:'admin-secret',action:'send',id,expectedRevision:1});
+  const input=()=>request({accessToken:'test-admin-jwt',action:'send',id,expectedRevision:1});
   assert.equal((await handler(input())).status,200);assert.equal(sends,1);assert.ok(db.rows.team_assignments[0].email_sent_at);
   db.rows.team_assignments[0].email_sent_at=null;
   assert.equal((await handler(input())).status,200);assert.equal(sends,1);
