@@ -6,27 +6,30 @@ import { supabase } from '../lib/supabase';
 export default function DataDeletionConfirmPage() {
   const [searchParams] = useSearchParams();
   const [result, setResult] = useState(null);
-  const requestedTokenRef = useRef(null);
+  const requestInProgressRef = useRef(false);
   const token = searchParams.get('token')?.trim() || '';
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' });
+  }, []);
 
-    if (!token) {
-      return;
-    }
-
-    if (requestedTokenRef.current === token) return;
-    requestedTokenRef.current = token;
-
-    const confirmDeletion = async () => {
-      try {
+  // Opening an emailed link is not confirmation: scanners and previews may
+  // visit it. Only the explicit button below starts the destructive request.
+  const confirmDeletion = async () => {
+    if (!token || requestInProgressRef.current) return;
+    requestInProgressRef.current = true;
+    setResult({ token, status: 'confirming', error: '' });
+    try {
       const { data, error: confirmationError } = await supabase.functions.invoke('confirm-data-deletion', {
         body: { token },
       });
 
       if (confirmationError || data?.ok !== true) {
-        setResult({ token, status: 'error', error: data?.error || 'Invalid token' });
+        let detail = data?.error;
+        if (!detail && confirmationError?.context?.json) {
+          try { detail = (await confirmationError.context.json())?.error; } catch { /* Show a safe retry message. */ }
+        }
+        setResult({ token, status: 'error', error: detail || 'Unable to confirm deletion. Please retry or contact the team.' });
         return;
       }
 
@@ -34,17 +37,14 @@ export default function DataDeletionConfirmPage() {
         for (const key of ['tmh_haven_user_profile_v1','tmh_haven_audit_sessions','tmh_haven_audit_preflight_v1']) window.localStorage.removeItem(key);
       } catch { /* Browser storage may be disabled. Server deletion already succeeded. */ }
       setResult({ token, status: 'success', error: '' });
-      } catch {
-        setResult({ token, status: 'error', error: 'Unable to confirm deletion. Please try again or contact the team.' });
-      }
-    };
-
-    confirmDeletion();
-  }, [token]);
+    } catch {
+      setResult({ token, status: 'error', error: 'Unable to confirm deletion. Please try again or contact the team.' });
+    } finally { requestInProgressRef.current = false; }
+  };
 
   const displayStatus = !token
     ? 'error'
-    : result?.token === token ? result.status : 'confirming';
+    : result?.token === token ? result.status : 'ready';
   const displayError = !token
     ? 'Invalid token'
     : result?.token === token ? result.error : '';
@@ -53,6 +53,14 @@ export default function DataDeletionConfirmPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-white px-4 py-10 text-zinc-900 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-100">
       <section className="w-full max-w-md rounded-3xl border border-zinc-200/80 bg-white/85 p-6 text-center shadow-2xl shadow-zinc-950/10 backdrop-blur-xl sm:p-8 dark:border-white/20 dark:bg-zinc-950/40 dark:shadow-black/40">
+        {displayStatus === 'ready' && (
+          <div className="py-4">
+            <AlertTriangle className="mx-auto h-12 w-12 text-amber-500" />
+            <h1 className="mt-5 text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">Delete your saved review?</h1>
+            <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">This permanently removes the matching saved review, its linked chats and stored screenshots. Purchase access and booking records remain separate. This action cannot be undone.</p>
+            <button type="button" onClick={confirmDeletion} className="mt-6 rounded-xl bg-red-700 px-4 py-3 text-sm font-semibold text-white hover:bg-red-800">Delete my saved review</button>
+          </div>
+        )}
         {displayStatus === 'confirming' && (
           <div className="py-8">
             <LoaderCircle className="mx-auto h-12 w-12 animate-spin text-zinc-700 dark:text-zinc-300" />
@@ -84,19 +92,21 @@ export default function DataDeletionConfirmPage() {
               {linkExpired ? 'This link has expired' : 'Deletion could not be confirmed'}
             </h1>
             <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-              If the link has expired, request a new one from the footer. Otherwise contact info@themarketinghaven.xyz so the team can check the request and any records already processed.
+              {linkExpired ? 'Request a new deletion link from the website footer.' : displayError} If you need help, contact the team so we can check any records already processed.
             </p>
+            {token && !linkExpired && displayError !== 'Already used' && displayError !== 'Invalid token' && <button type="button" onClick={confirmDeletion} className="mt-5 rounded-xl border border-zinc-300 px-4 py-3 text-sm font-semibold dark:border-white/20">Retry confirmation</button>}
           </div>
         )}
 
-        {displayStatus !== 'confirming' && (
+        {displayStatus !== 'confirming' && (<>
+          <a href="mailto:info@themarketinghaven.xyz?subject=Saved%20review%20deletion%20help" className="mt-5 block text-sm underline underline-offset-4">Contact info@themarketinghaven.xyz</a>
           <Link
             to="/"
             className="mt-6 inline-flex rounded-xl bg-zinc-950 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
           >
             Back to home
           </Link>
-        )}
+        </>)}
       </section>
     </main>
   );

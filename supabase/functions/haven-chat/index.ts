@@ -1,5 +1,6 @@
 import { recordAIUsage,usageGeminiModel } from '../_shared/ai-usage.ts';
-import { providerRequest, safeProviderDiagnostic, type ProviderDiagnostic } from '../_shared/provider-request.ts';
+import { safeProviderDiagnostic, type ProviderDiagnostic } from '../_shared/provider-request.ts';
+import { aiBudgetPlan, reserveAIBudget, type AIBudgetReservation } from '../_shared/ai-budget.ts';
 import { captureConversationMemory, savedConversationMemory } from '../_shared/haven-memory.js';
 import { enforceHavenLimits } from '../_shared/haven-limits.ts';
 // supabase/functions/haven-chat/index.ts
@@ -27,7 +28,7 @@ function parseChips(rawText: string) {
 }
 
 // One short retry for a transient Gemini HTTP failure, then a bounded Groq fallback.
-async function askGemini(db:any,systemPrompt: string, messages: HavenMessage[], screenshot: string | null) {
+async function askGemini(db:any,budget:AIBudgetReservation,systemPrompt: string, messages: HavenMessage[], screenshot: string | null) {
   if (!geminiProcessingEnabled()) throw new Error('gemini_disabled_or_unconfigured');
   const contents = messages.filter(message => message.content?.trim() || screenshot).map((message, index) => ({
     role: message.role === 'agent' ? 'model' : 'user',
@@ -36,7 +37,7 @@ async function askGemini(db:any,systemPrompt: string, messages: HavenMessage[], 
       { text: message.content || 'Please review this screenshot.' },
     ],
   }));
-  const response = await providerRequest('gemini',
+  const response = await budget.request('gemini',
     'https://generativelanguage.googleapis.com/v1beta/models/' + geminiModel() + ':generateContent',
     { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': Deno.env.get('GEMINI_API_KEY')!.trim() },
 
@@ -44,15 +45,16 @@ async function askGemini(db:any,systemPrompt: string, messages: HavenMessage[], 
         generationConfig: geminiGenerationConfig() }) });
   if (!response.ok) throw new Error('gemini_http_' + response.status);
   const payload=await response.json();
+  budget.recordUsage('gemini',payload);
   await recordAIUsage(db,'gemini',geminiModel(),payload);
   const text = geminiText(payload);
   if (!text) throw new Error('gemini_empty_response');
   return text;
 }
-async function askGroq(db:any,systemPrompt: string, messages: HavenMessage[]) {
+async function askGroq(db:any,budget:AIBudgetReservation,systemPrompt: string, messages: HavenMessage[]) {
   const key = Deno.env.get('GROQ_API_KEY')?.trim();
   if (!key) throw new Error('groq_unconfigured');
-  const response = await providerRequest('groq', 'https://api.groq.com/openai/v1/chat/completions', {
+  const response = await budget.request('groq', 'https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
     body: JSON.stringify({ model: Deno.env.get('GROQ_MODEL')?.trim() || 'openai/gpt-oss-120b',
       messages: [{ role: 'system', content: systemPrompt }, ...messages.map(message => ({
@@ -61,19 +63,20 @@ async function askGroq(db:any,systemPrompt: string, messages: HavenMessage[]) {
   }, 12000, 0);
   if (!response.ok) throw new Error('groq_http_' + response.status);
   const data = await response.json();
+  budget.recordUsage('groq',data);
   await recordAIUsage(db,'groq',Deno.env.get('GROQ_MODEL')?.trim()||'openai/gpt-oss-120b',data);
   if (data.choices?.[0]?.finish_reason && data.choices[0].finish_reason !== 'stop') throw new Error('groq_incomplete_response');
   const text = data.choices?.[0]?.message?.content?.trim();
   if (!text) throw new Error('groq_empty_response');
   return text;
 }
-async function callModel(db:any,systemPrompt: string, messages: HavenMessage[], screenshot: string | null): Promise<{text: string; model: ModelUsed; diagnostics: ProviderDiagnostic[]}> {
+async function callModel(db:any,budget:AIBudgetReservation,systemPrompt: string, messages: HavenMessage[], screenshot: string | null): Promise<{text: string; model: ModelUsed; diagnostics: ProviderDiagnostic[]}> {
   const diagnostics: ProviderDiagnostic[]=[];
-  try { return { text: await askGemini(db,systemPrompt, messages, screenshot), model: 'gemini', diagnostics }; }
+  try { return { text: await askGemini(db,budget,systemPrompt, messages, screenshot), model: 'gemini', diagnostics }; }
   catch (error) { diagnostics.push(safeProviderDiagnostic(error,'gemini')); console.warn('Primary model unavailable',diagnostics[0].code); await recordAIUsage(db,'gemini',usageGeminiModel(),{},diagnostics[0].code); }
   const fallbackMessages = screenshot ? messages.map((message, index) => index === messages.length - 1
     ? { ...message, content: '[The image reader is unavailable. You cannot see the image. Ask the user to describe it; never pretend to inspect it.] ' + (message.content || '') } : message) : messages;
-  try { return { text: await askGroq(db,systemPrompt, fallbackMessages), model: 'groq', diagnostics }; }
+  try { return { text: await askGroq(db,budget,systemPrompt, fallbackMessages), model: 'groq', diagnostics }; }
   catch(error) {
     diagnostics.push(safeProviderDiagnostic(error,'groq'));await recordAIUsage(db,'groq',Deno.env.get('GROQ_MODEL')||'openai/gpt-oss-120b',{},diagnostics.at(-1)!.code);
     const unavailable=new HavenRequestError('The AI services are temporarily unavailable. Your message is saved; please retry shortly.',503);
@@ -182,9 +185,20 @@ Deno.serve(async (request) => {
       history.unshift({ role: message.role, content }); chars += content.length;
     }
     const directAbuse = detectHavenAbuse(latest);
+    const modelMessages = history.length ? history : [{ role:'user', content:latest }];
+    const generateReply = async () => {
+      const budget = await reserveAIBudget(supabase,request,key,'chat',{
+        visitorId:conversation.visitor.id,reviewId:conversation.review?.id,
+      },[
+        ...(geminiProcessingEnabled() ? [aiBudgetPlan('gemini',{systemPrompt,messages:modelMessages,screenshot},4096,2,Boolean(screenshot))] : []),
+        ...(Deno.env.get('GROQ_API_KEY')?.trim() ? [aiBudgetPlan('groq',{systemPrompt,messages:modelMessages},2000,1)] : []),
+      ]);
+      try { return await callModel(supabase,budget,systemPrompt,modelMessages,screenshot); }
+      finally { await budget.settle(); }
+    };
     const { text: modelText, model, diagnostics=[] } = directAbuse ? { text: moderationReply(directAbuse), model: null, diagnostics:[] } : directHelp
       ? { text: directHelp, model: null, diagnostics:[] }
-      : await callModel(supabase,systemPrompt, history.length ? history : [{ role:'user', content:latest }], screenshot);
+      : await generateReply();
     const captured = captureConversationMemory(modelText, session.conversation_memory, latest, requestId);
     let rawText = captured.text;
     if (!rawText.trim()) throw new Error('Empty model response');

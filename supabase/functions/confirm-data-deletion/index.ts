@@ -1,196 +1,65 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
+import { publicRequestLimit } from '../_shared/abuse-limits.ts';
+import { HavenRequestError, readBoundedJson, responseHeaders, verifyOrigin } from '../_shared/haven-request.ts';
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-
-const ALLOWED_ORIGINS = [
-  'https://themarketinghaven.xyz',
-  'https://www.themarketinghaven.xyz',
-  'http://localhost:5173',
-];
-const FROM_ADDRESS = 'info@themarketinghaven.xyz';
-
-function corsHeaders(origin: string | null) {
-  const headers: Record<string, string> = {
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    Vary: 'Origin',
-  };
-
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
-    headers['Access-Control-Allow-Origin'] = origin;
-  }
-
-  return headers;
-}
-
-function json(body: unknown, origin: string | null, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
-  });
-}
+const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[0-9a-f]{32}$/i;
 
 async function sendDeletionConfirmation(email: string) {
+  const key = Deno.env.get('RESEND_API_KEY')?.trim();
+  if (!key) { console.error('confirm-data-deletion: completion email not configured'); return; }
   try {
-    if (!RESEND_API_KEY) {
-      console.error('RESEND_API_KEY is missing; deletion confirmation email was not sent');
-      return;
-    }
-
-    const resendResponse = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST', signal: AbortSignal.timeout(10000),
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: FROM_ADDRESS,
-        to: [email],
+        from: 'info@themarketinghaven.xyz', to: [email],
         subject: 'Your saved review deletion is complete',
-        text: 'Your confirmed request removed matching saved brand reviews, their linked chat sessions and stored screenshots.\n\nPurchase, booking, deletion-request, security and email-delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review remaining records or exercise your privacy rights. We may need to verify ownership and explain any lawful retention reason.\n\nThe Marketing Haven',
+        text: 'Your confirmed request removed matching saved brand reviews, their linked chat sessions and stored screenshots.\n\nPurchase, booking, deletion-request, security and email-delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review remaining records or exercise your privacy rights. We may need to verify ownership and explain any lawful retention reason.\n\nYour friends over at Team Haven',
       }),
     });
-
-    if (!resendResponse.ok) {
-      const detail = await resendResponse.text().catch(() => '');
-      console.error('Resend rejected data deletion confirmation:', resendResponse.status, detail);
-    }
-  } catch (error) {
-    console.error('Could not send data deletion confirmation:', error);
-  }
+    // Provider bodies may contain recipient details. Log only a safe status.
+    if (!response.ok) console.error('confirm-data-deletion: completion email rejected', response.status);
+    await response.body?.cancel();
+  } catch { console.error('confirm-data-deletion: completion email unavailable'); }
 }
 
-serve(async (req) => {
-  const origin = req.headers.get('origin');
-
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders(origin) });
-  }
-
-  if (req.method !== 'POST') {
-    return json({ ok: false, error: 'Method not allowed' }, origin, 405);
-  }
-
+serve(async request => {
+  const headers: Record<string, string> = responseHeaders(request);
+  const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+  if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   try {
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      console.error('confirm-data-deletion is missing required Supabase secrets');
-      return json({ ok: false, error: 'Unable to complete deletion' }, origin, 500);
+    verifyOrigin(request);
+    const payload = await readBoundedJson(request, 1024);
+    const token = Object.keys(payload).length === 1 && typeof payload.token === 'string' ? payload.token.trim() : '';
+    if (!TOKEN_PATTERN.test(token)) return json({ ok: false, error: 'Invalid token' }, 400);
+    const url = Deno.env.get('SUPABASE_URL'), key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!url || !key) throw new HavenRequestError('Unable to complete deletion. Please try again shortly.', 503);
+    const db = createClient(url, key, { auth: { persistSession: false } });
+    await publicRequestLimit(db, request, key, 'confirm-deletion', 10, 600);
+    // Atomically snapshot cleanup paths and remove reviews/chats. Retry resumes
+    // those paths even when the original review row has already been removed.
+    const { data: prepared, error } = await db.rpc('prepare_saved_review_deletion', { p_token: token });
+    if (error || !prepared) throw new HavenRequestError('Unable to prepare deletion. Please contact the team if this continues.', 503);
+    if (prepared.error) return json({ ok: false, error: prepared.error }, 400);
+    if (!Array.isArray(prepared.paths) || !Number.isSafeInteger(prepared.deleted) || typeof prepared.requestId !== 'string' || typeof prepared.email !== 'string') {
+      throw new HavenRequestError('Unable to complete deletion.', 503);
     }
-
-    const payload = await req.json().catch(() => null);
-    const keys = payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? Object.keys(payload)
-      : [];
-    const token = keys.length === 1 && keys[0] === 'token' && typeof payload.token === 'string'
-      ? payload.token.trim()
-      : '';
-
-    if (!token) {
-      return json({ ok: false, error: 'Invalid token' }, origin);
+    if (prepared.paths.length) {
+      const { error: cleanupError } = await db.storage.from('tmh-screenshots').remove(prepared.paths);
+      if (cleanupError) throw new HavenRequestError('Your saved review records were removed, but screenshot cleanup is still pending. Retry this confirmation to finish, or contact the team.', 503);
     }
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { persistSession: false },
-    });
-    const { data: request, error: requestError } = await supabase
-      .from('data_deletion_requests')
-      .select('id, email, expires_at, status')
-      .eq('token', token)
-      .maybeSingle();
-
-    if (requestError) {
-      console.error('Data deletion token lookup failed:', requestError);
-      return json({ ok: false, error: 'Unable to complete deletion' }, origin, 500);
-    }
-
-    if (!request) {
-      return json({ ok: false, error: 'Invalid token' }, origin);
-    }
-
-    if (request.status === 'confirmed') {
-      return json({ ok: false, error: 'Already used' }, origin);
-    }
-
-    if (new Date(request.expires_at).getTime() < Date.now()) {
-      const { error: expireError } = await supabase
-        .from('data_deletion_requests')
-        .update({ status: 'expired' })
-        .eq('id', request.id);
-
-      if (expireError) console.error('Could not mark data deletion request expired:', expireError);
-      return json({ ok: false, error: 'Link expired' }, origin);
-    }
-
-    const { data: reviews, error: reviewsError } = await supabase
-      .from('brand_reviews')
-      .select('id, screenshot_url')
-      .eq('email', request.email);
-
-    if (reviewsError) {
-      console.error('Could not load reviews for data deletion:', reviewsError);
-      return json({ ok: false, error: 'Unable to complete deletion' }, origin, 500);
-    }
-
-    const reviewIds = (reviews || [])
-      .map((review) => review.id)
-      .filter((id): id is string => typeof id === 'string');
-    const screenshotPaths = (reviews || [])
-      .map((review) => review.screenshot_url)
-      .filter((path): path is string => typeof path === 'string' && path.length > 0);
-
-    for (const reviewId of reviewIds) {
-      const { error: sessionError } = await supabase
-        .from('haven_sessions')
-        .delete()
-        .eq('review_id', reviewId);
-
-      if (sessionError) {
-        console.error('Could not delete Haven session:', sessionError);
-        return json({ ok: false, error: 'Unable to complete deletion' }, origin, 500);
-      }
-    }
-
-    if (reviewIds.length > 0) {
-      const { error: reviewDeleteError } = await supabase
-        .from('brand_reviews')
-        .delete()
-        .eq('email', request.email);
-
-      if (reviewDeleteError) {
-        console.error('Could not delete brand reviews:', reviewDeleteError);
-        return json({ ok: false, error: 'Unable to complete deletion' }, origin, 500);
-      }
-    }
-
-    if (screenshotPaths.length > 0) {
-      const { error: storageError } = await supabase
-        .storage
-        .from('tmh-screenshots')
-        .remove(screenshotPaths);
-
-      if (storageError) {
-        console.error('Could not delete screenshots:', storageError);
-        return json({ ok: false, error: 'Unable to complete deletion' }, origin, 500);
-      }
-    }
-
-    const { error: confirmationError } = await supabase
-      .from('data_deletion_requests')
-      .update({ status: 'confirmed', confirmed_at: new Date().toISOString() })
-      .eq('id', request.id);
-
-    if (confirmationError) {
-      console.error('Could not confirm data deletion request:', confirmationError);
-      return json({ ok: false, error: 'Unable to complete deletion' }, origin, 500);
-    }
-
-    await sendDeletionConfirmation(request.email);
-    return json({ ok: true, deleted: reviewIds.length }, origin);
+    const { data: completed, error: completionError } = await db.rpc('complete_saved_review_deletion', { p_request: prepared.requestId });
+    if (completionError) throw new HavenRequestError('Deletion cleanup finished, but confirmation could not be saved. Retry this confirmation.', 503);
+    if (completed === true) await sendDeletionConfirmation(prepared.email);
+    return json({ ok: true, deleted: prepared.deleted });
   } catch (error) {
-    console.error('confirm-data-deletion failed:', error);
-    return json({ ok: false, error: 'Unable to complete deletion' }, origin, 500);
+    if (error instanceof HavenRequestError) {
+      if (error.status === 429) headers['Retry-After'] = String(error.retryAfter || 600);
+      return json({ ok: false, error: error.message }, error.status);
+    }
+    console.error('confirm-data-deletion: request failed');
+    return json({ ok: false, error: 'Unable to complete deletion. Please try again or contact the team.' }, 503);
   }
 });

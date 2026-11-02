@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
 import { HavenRequestError,readBoundedJson } from '../_shared/haven-request.ts';
 import { hashReviewToken,verifyReviewAccess,ReviewAccessError } from '../_shared/review-access.ts';

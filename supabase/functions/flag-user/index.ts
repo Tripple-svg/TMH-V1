@@ -2,9 +2,10 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { applyAutomaticFlag, drainModerationNotifications, ModerationError } from '../_shared/haven-moderation.ts';
 import { requireAdmin, AdminAuthError,readAdminBody } from '../_shared/admin-auth.ts';
+import { runAdminMutation } from '../_shared/admin-audit.ts';
+import { PUBLIC_ORIGINS as ORIGINS } from '../_shared/cors.ts';
 import { isInternalRequest } from '../_shared/internal-auth.js';
 
-const ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz', 'http://localhost:5173', 'http://localhost:5175', 'http://localhost:3000'];
 const STATUSES = ['white', 'yellow', 'red'];
 
 serve(async (req) => {
@@ -16,9 +17,9 @@ serve(async (req) => {
   };
   if (origin && ORIGINS.includes(origin)) headers['Access-Control-Allow-Origin'] = origin;
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers,...(status===429?{'Retry-After':'60'}:{})} });
+  if (origin && !ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, 403);
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
-  if (origin && !ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, 403);
 
   const url = Deno.env.get('SUPABASE_URL');
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -30,9 +31,12 @@ serve(async (req) => {
     if(body?.source==='ai'){
       if(!serviceCaller)return json({ok:false,error:'Internal service authentication required'},401);
       if(body.action)return json({ok:false,error:'Invalid automatic moderation action'},400);
-    }else await requireAdmin(supabase,req,key);
+    }
+    const actor=body?.source==='ai'?null:await requireAdmin(supabase,req,key);
 
     if (body?.action === 'retryNotifications') {
+      const {error}=await runAdminMutation(supabase,req,key,actor!,'moderation_retry','notification_queue');
+      if(error)return json({ok:false,error:'Could not record the notification retry.'},503);
       // Drain committed delivery work without changing anyone's access status.
       const delivery = await drainModerationNotifications(supabase);
       return json({ ok: !delivery.deliveryPending, ...delivery,
@@ -59,9 +63,8 @@ serve(async (req) => {
     if (body.sessionId != null && (typeof body.sessionId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.sessionId))) return json({ ok: false, error: 'Invalid sessionId' }, 400);
     if (!STATUSES.includes(status)) return json({ ok: false, error: "Invalid flag status" }, 400);
     if (reason === undefined || (reason && reason.length > 2000)) return json({ ok: false, error: "Invalid flag reason (maximum 2000 characters)" }, 400);
-    const { data, error } = await supabase.rpc("set_haven_moderation_flag", {
-      p_email: email, p_visitor_id: visitorId, p_status: status, p_reason: reason,
-      p_session_id: body.sessionId || null,
+    const { data, error } = await runAdminMutation(supabase,req,key,actor!,'moderation_update',visitorId||'selected_review',{
+      email,visitor_id:visitorId,status,reason,session_id:body.sessionId||null,
     });
     if (error) {
       const code = error.code === "P0002" ? 404 : error.code === "22023" ? 400 : 503;

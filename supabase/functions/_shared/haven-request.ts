@@ -1,13 +1,12 @@
 import { STEPS } from './haven-prompts.js';
+import { PUBLIC_ORIGINS } from './cors.ts';
+import { decodeScreenshotDataUrl, ScreenshotValidationError } from './screenshot-validation.ts';
 
 export class HavenRequestError extends Error {
   constructor(message: string, public status = 400, public retryAfter?: number) { super(message); }
 }
 
-export const ALLOWED_ORIGINS = [
-  'https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz',
-  'http://localhost:5173', 'http://localhost:5175', 'http://localhost:3000',
-];
+export const ALLOWED_ORIGINS = PUBLIC_ORIGINS;
 
 export function responseHeaders(request: Request) {
   const origin = request.headers.get('origin');
@@ -52,14 +51,13 @@ export async function readBoundedJson(request: Request, maxBytes = 8 * 1024 * 10
 }
 
 export function screenshotPart(screenshot: unknown) {
-  if (typeof screenshot !== 'string' || screenshot.length > 7 * 1024 * 1024) {
-    throw new HavenRequestError('Please upload a PNG, JPEG or WebP image smaller than 5 MB.', 413);
+  try {
+    const {mimeType,base64}=decodeScreenshotDataUrl(screenshot);
+    return { inline_data: { mime_type: mimeType, data: base64 } };
+  } catch(error) {
+    if(error instanceof ScreenshotValidationError)throw new HavenRequestError(error.message,error.status);
+    throw error;
   }
-  const match = screenshot.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/);
-  if (!match || match[2].length % 4 !== 0) throw new HavenRequestError('Screenshot must be a PNG, JPEG or WebP data URL.');
-  const size = match[2].length * 3 / 4 - (match[2].endsWith('==') ? 2 : match[2].endsWith('=') ? 1 : 0);
-  if (size > 5 * 1024 * 1024) throw new HavenRequestError('Screenshot exceeds 5 MB.', 413);
-  return { inline_data: { mime_type: match[1], data: match[2] } };
 }
 
 export function textValue(value: unknown, max: number, fallback = '') {

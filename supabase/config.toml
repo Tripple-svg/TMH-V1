@@ -1,5 +1,20 @@
 project_id = "tmh-platform"
 
+[functions.admin-fetch-leads]
+verify_jwt = false
+
+[functions.admin-update-lead]
+verify_jwt = false
+
+[functions.check-email-exists]
+verify_jwt = false
+
+[functions.request-data-deletion]
+verify_jwt = false
+
+[functions.confirm-data-deletion]
+verify_jwt = false
+
 [functions.haven-chat]
 verify_jwt = false
 
@@ -70,4 +85,25 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.send-ai-usage-alerts]
+verify_jwt = false
+
+[functions.support-request]
+verify_jwt = false
+
+[functions.admin-support]
+verify_jwt = false
+
+[functions.send-support-notification]
+verify_jwt = false
+
+[functions.zoho-support-webhook]
+verify_jwt = false
+
+[functions.record-cookie-consent]
+verify_jwt = false
+
+[functions.site-presence]
+verify_jwt = false
+
+[functions.admin-security]
 verify_jwt = false

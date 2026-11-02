@@ -1,3 +1,4 @@
+import {readCookiePreference} from './cookiePreference';
 const VISIT_COUNT_KEY = 'tmh_visit_count';
 const FIRST_VISIT_KEY = 'tmh_first_visit_at';
 
@@ -13,7 +14,7 @@ function getOrCreateVisitorId() {
 
 export function captureTrackingData() {
   let consented = false;
-  try { consented = localStorage.getItem('tmh_cookie_consent') === 'true'; } catch { /* Optional analytics stays off. */ }
+  try { consented = readCookiePreference(localStorage)===true; } catch { /* Optional analytics stays off. */ }
   const params = new URLSearchParams(window.location.search);
   let firstVisitAt = new Date().toISOString();
   let visitCount = 1;

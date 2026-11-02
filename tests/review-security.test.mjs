@@ -1,10 +1,10 @@
 import { withSecurityRpc } from './helpers/security-fixture.mjs';
+import { PNG_DATA_URL } from './helpers/image-fixtures.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { webcrypto, createHash } from 'node:crypto';
-import { transformSync, buildSync } from 'esbuild';
+import { buildSync } from 'esbuild';
 
 const reviewId = '11111111-1111-4111-8111-111111111111';
 const sessionId = '22222222-2222-4222-8222-222222222222';
@@ -49,13 +49,6 @@ function database({ present = true, failTable, rpcError, uploadError } = {}) {
 function load(name, db, options = {}) {
   let handler;
   const env = { SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-test', HCAPTCHA_SECRET: 'captcha-test', ...options.env };
-  const shared = { exports: {} };
-  const context = { module: shared, exports: shared.exports, crypto: webcrypto, TextEncoder,TextDecoder, Uint8Array };
-  vm.runInNewContext(transformSync(readFileSync(new URL('../supabase/functions/_shared/review-access.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'cjs' }).code, context);
-  const requestModule = { exports: {} };
-  vm.runInNewContext(transformSync(readFileSync(new URL('../supabase/functions/_shared/haven-request.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'cjs' }).code, {
-    module: requestModule, exports: requestModule.exports, require: () => ({ STEPS: {} }), TextDecoder,
-  });
   const code=buildSync({entryPoints:[new URL('../supabase/functions/'+name+'/index.ts',import.meta.url).pathname.replace(/^\/(\w:)/,'$1')],bundle:true,write:false,format:'cjs',platform:'node',external:['https://*'],logLevel:'silent'}).outputFiles[0].text;
   vm.runInNewContext(code,{
     require: specifier=>specifier.includes('server.ts')?{serve:fn=>{handler=fn;}}:{createClient:()=>withSecurityRpc(db.client)},
@@ -69,6 +62,15 @@ function load(name, db, options = {}) {
 
 const syncPayload = () => ({ ...credentials, snapshotAt, messages: [{ id: 'one', role: 'user', content: 'Help me understand my review.' }], clickedBookingLink: true });
 const creationPayload = () => ({ id: reviewId, sessionId, accessToken, fullName: 'Owner', brandName: 'Example Brand', email: 'owner@example.com', whatsapp: '+2348012345678', platformType: 'website', websiteUrl: 'https://example.com', agreedToTerms: true, hcaptchaToken: 'solved-captcha' });
+
+test('social review rejects disguised and truncated image content before CAPTCHA, database writes or upload',async()=>{
+  for(const screenshotBase64 of ['data:image/png;base64,PHN2Zy8+','data:image/png;base64,iVBORw0KGgo=','data:image/png;base64,YR==']){
+    const db=database({present:false});let fetches=0;
+    const handler=load('create-brand-review',db,{fetch:async()=>{fetches++;return Response.json({success:true});}});
+    const response=await handler(request({...creationPayload(),platformType:'social',websiteUrl:null,screenshotBase64}));
+    assert.equal(response.status,400);assert.equal(db.calls.length,0);assert.equal(db.uploads.length,0);assert.equal(fetches,0);
+  }
+});
 
 test('sync verifies both row relationship and private token before making any write', async () => {
   for (const patch of [{ accessToken: 'b'.repeat(64) }, { reviewId: '33333333-3333-4333-8333-333333333333' }, { accessToken: undefined }, { sessionId: 'missing' }]) {
@@ -146,7 +148,7 @@ test('failed or missing CAPTCHA and invalid required fields never create a revie
 
 test('failed creation transaction returns failure; no screenshot is uploaded and no success IDs escape', async () => {
   const db = database({ present: false, rpcError: { message: 'session insert failed' } });
-  const response = await load('create-brand-review', db)(request({ ...creationPayload(), platformType:'social', websiteUrl:null, screenshotBase64: 'data:image/png;base64,YQ==' }));
+  const response = await load('create-brand-review', db)(request({ ...creationPayload(), platformType:'social', websiteUrl:null, screenshotBase64: PNG_DATA_URL }));
   assert.equal(response.status, 500);
   const body = await response.json(); assert.equal(body.ok, false); assert.equal(body.reviewId, undefined);
   assert.equal(db.uploads.length, 0);
@@ -166,7 +168,7 @@ test('screenshot upload failure is recoverable with same saved credentials and p
   let uploads = 0;
   const db = database({ present: false, uploadError: () => ++uploads === 1 ? { message: 'storage offline' } : null });
   const handler = load('create-brand-review', db);
-  const payload = { ...creationPayload(), platformType:'social', websiteUrl:null, screenshotBase64: 'data:image/png;base64,YQ==' };
+  const payload = { ...creationPayload(), platformType:'social', websiteUrl:null, screenshotBase64: PNG_DATA_URL };
   assert.equal((await handler(request(payload))).status, 500);
   assert.equal((await handler(request({ ...payload, hcaptchaToken: '' }))).status, 200);
   assert.equal(db.calls.length, 1); assert.equal(db.uploads.length, 2);
@@ -180,7 +182,7 @@ test('creation cannot acknowledge or orphan a screenshot when its review is dele
     async upload() { db.rows.brand_reviews = []; db.rows.haven_sessions = []; db.rows.review_access_tokens = []; return { error: null }; },
     async remove(paths) { removed.push({ bucket, paths }); return { error: null }; },
   });
-  const response = await load('create-brand-review', db)(request({ ...creationPayload(), platformType:'social', websiteUrl:null, screenshotBase64: 'data:image/png;base64,YQ==' }));
+  const response = await load('create-brand-review', db)(request({ ...creationPayload(), platformType:'social', websiteUrl:null, screenshotBase64: PNG_DATA_URL }));
   assert.equal(response.status, 403);
   assert.equal((await response.json()).ok, false);
   assert.deepEqual(JSON.parse(JSON.stringify(removed)), [{ bucket: 'tmh-screenshots', paths: [`${reviewId}/review.png`] }]);

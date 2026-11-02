@@ -115,3 +115,14 @@ test('mobile review action closes navigation and calls the existing review flow 
   assert.equal(ui.reviewRequests, 1);
   assert.equal(ui.render().some((node) => node.props.id === 'tmh-mobile-menu'), false);
 });
+
+test('desktop and mobile navigation follow the page section order with Class before Playbook', () => {
+  const ui = header();
+  const tree = ui.open();
+  const expected = ['#hero', '#about', '#services', '#free-class', '#shop', '#testimonials'];
+  const children = (node) => (node.props.children || []).flat(Infinity).filter((child) => child && typeof child === 'object');
+  for (const label of ['Primary navigation', 'Mobile navigation']) {
+    const nav = tree.find((node) => node.type === 'nav' && node.props['aria-label'] === label);
+    assert.deepEqual(children(nav).map((node) => node.props.href), expected);
+  }
+});

@@ -3,12 +3,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { ASSIGNMENT_FIELDS, TEAM_NAMES, assignmentBrief, assignmentEmail, assignmentToken } from '../_shared/team-assignment.js';
 import { deliverEmail, mailConfiguration, MailDeliveryError } from '../_shared/resend-delivery.js';
 import { requireAdmin, AdminAuthError,readAdminBody } from '../_shared/admin-auth.ts';
+import { runAdminMutation } from '../_shared/admin-audit.ts';
+import { PUBLIC_ORIGINS as ORIGINS } from '../_shared/cors.ts';
 
-const ORIGINS=['https://themarketinghaven.xyz','https://www.themarketinghaven.xyz','http://localhost:5173','http://localhost:5175','http://127.0.0.1:5173'];
 const uuid=(value:unknown)=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 serve(async(req)=>{
   const origin=req.headers.get('origin');
-  const headers={'Access-Control-Allow-Origin':origin&&ORIGINS.includes(origin)?origin:ORIGINS[0],
+  const headers={...(origin&&ORIGINS.includes(origin)?{'Access-Control-Allow-Origin':origin}:{}),
     'Access-Control-Allow-Headers':'authorization,x-client-info,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS',
     'Content-Type':'application/json','Cache-Control':'no-store',Vary:'Origin'};
   const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...headers,...(status===429?{'Retry-After':'60'}:{})}});
@@ -20,7 +21,7 @@ serve(async(req)=>{
     if(!url||!key)return json({ok:false,error:'Assignments are not configured.'},503);
     const body=await readAdminBody(req);
     const db=createClient(url,key,{auth:{persistSession:false}});
-    if(!await requireAdmin(db,req,key))return json({ok:false,error:'Unauthorised'},401);
+    const actor=await requireAdmin(db,req,key);
     const load=async(id:string)=>{
       const result=await db.from('team_assignments').select(ASSIGNMENT_FIELDS).eq('id',id).maybeSingle();
       if(result.error)throw new Error('assignment_read_failed');return result.data;
@@ -33,7 +34,7 @@ serve(async(req)=>{
       }
       if(!TEAM_NAMES.includes(body.name)||typeof body.email!=='string'||body.email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim())
         ||typeof body.note!=='string'||body.note.length>2000||!Number.isSafeInteger(body.expectedRevision)||body.expectedRevision<0)return json({ok:false,error:'Check the teammate, email and preparation note.'},400);
-      const {data,error}=await db.rpc('save_team_assignment',{p_kind:body.kind,p_target:String(body.targetId),p_revision:body.expectedRevision,p_name:body.name,p_email:body.email.trim().toLowerCase(),p_note:body.note.trim()});
+      const {data,error}=await runAdminMutation(db,req,key,actor,'assignment_save',String(body.targetId),{kind:body.kind,revision:body.expectedRevision,name:body.name,email:body.email.trim().toLowerCase(),note:body.note.trim()});
       if(error)return json({ok:false,error:error.code==='P0002'?'Select an active upcoming booking or existing team inquiry.':'Could not save the assignment. Check the migration and retry.'},error.code==='P0002'?404:503);
       if(data?.conflict)return json({ok:false,error:'The assignment changed. Reload its saved details before editing.'},409);
       if(data?.busy)return json({ok:false,error:'An email is being processed. Wait a minute before changing the assignment.'},409);
@@ -45,7 +46,7 @@ serve(async(req)=>{
     if(!item)return json({ok:false,error:'Assignment not found.'},404);
     if(item.revision!==body.expectedRevision)return json({ok:false,error:'The assignment changed. Reload before continuing.'},409);
     if(body.action==='revoke'){
-      const {data,error}=await db.from('team_assignments').update({revoked_at:new Date().toISOString()}).eq('id',item.id).eq('revision',item.revision).select(ASSIGNMENT_FIELDS).maybeSingle();
+      const {data,error}=await runAdminMutation(db,req,key,actor,'assignment_revoke',item.id,{revision:item.revision});
       if(error||!data)return json({ok:false,error:'Revocation could not be confirmed. Reload and try again.'},409);
       return json({ok:true,assignment:data});
     }
@@ -56,7 +57,7 @@ serve(async(req)=>{
     const secret=Deno.env.get('TEAM_ASSIGNMENT_LINK_SECRET')?.trim()||key;
     const link='https://themarketinghaven.xyz/team-brief#token='+await assignmentToken(item,secret);
     const payload={from:configuration.from,...assignmentEmail(item,brief,link)};
-    const {data:claim,error:claimError}=await db.rpc('claim_team_assignment_email',{p_id:item.id,p_revision:item.revision,p_payload:payload});
+    const {data:claim,error:claimError}=await runAdminMutation(db,req,key,actor,'assignment_email_claim',item.id,{revision:item.revision,payload});
     if(claimError)throw new Error('assignment_claim_failed');
     if(!claim||claim.busy)return json({ok:false,error:'An attempt is in progress or the assignment changed. Wait a minute and reload.'},409);
     if(claim.expired_retry)return json({ok:false,error:'The safe retry window ended. Check Resend, then save a fresh assignment to send a new invitation.'},409);
@@ -64,13 +65,12 @@ serve(async(req)=>{
     let providerId=claim.provider_email_id;
     try{
       if(!providerId)providerId=await deliverEmail({key:configuration.key,from:claim.payload.from},claim.payload,`team-assignment/${item.id}/${item.revision}`);
-      const {data,error}=await db.from('team_assignments').update({provider_email_id:providerId,email_sent_at:new Date().toISOString(),email_last_error:null})
-        .eq('id',item.id).eq('revision',item.revision).select(ASSIGNMENT_FIELDS).maybeSingle();
+      const {data,error}=await runAdminMutation(db,req,key,actor,'assignment_email_result',item.id,{revision:item.revision,provider_id:providerId,error:null});
       if(error||!data)throw new MailDeliveryError('assignment_email_marker_failed','Resend accepted the message; refresh and retry to repair its saved status.',503);
       return json({ok:true,assignment:data});
     }catch(error){
       const code=error instanceof MailDeliveryError?error.code:'assignment_email_failed';
-      await db.from('team_assignments').update({email_last_error:code,...(providerId?{provider_email_id:providerId}:{})}).eq('id',item.id).eq('revision',item.revision);
+      await runAdminMutation(db,req,key,actor,'assignment_email_result',item.id,{revision:item.revision,error:code,...(providerId?{provider_id:providerId}:{})});
       throw error;
     }
   }catch(error){

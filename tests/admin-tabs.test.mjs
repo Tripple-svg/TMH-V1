@@ -70,12 +70,13 @@ function harness({ dashboard = false, send = async () => ({ status: 200, ...sess
   };
 }
 
-test('admin tabs: six counted sections switch panels without leaving other section content visible', () => {
+test('admin tabs: eight sections switch panels, with counts only for loaded data', () => {
   const ui = harness({ dashboard: true });
   let tree = ui.render('AdminDashboard');
   const tabs = tree.filter((node) => node.props.role === 'tab');
-  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Leads', 'Playbook Purchases', 'Bookings', 'Team Inquiries', 'Support Chats', 'Service Chats']);
-  assert.ok(tabs.every((node) => node.props.children[1].props.children[0] === (['tab-bookings','tab-team'].includes(node.props.id) ? 0 : 1)));
+  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Leads', 'Playbook Purchases', 'Bookings', 'Team Inquiries', 'Support Chats', 'Support Requests', 'Service Chats','Security & AI']);
+  assert.ok(tabs.filter(node=>!['tab-requests','tab-security'].includes(node.props.id)).every((node) => node.props.children[1].props.children[0] === (['tab-bookings','tab-team'].includes(node.props.id) ? 0 : 1)));
+  assert.equal(tabs.find(node=>node.props.id==='tab-requests').props.children[1],false);
   assert.ok(tree.some((node) => node.type === 'table'));
   tabs[4].props.onClick();
   tree = ui.render('AdminDashboard');
@@ -87,6 +88,9 @@ test('admin tabs: six counted sections switch panels without leaving other secti
   tree = ui.render('AdminDashboard');
   assert.ok(tree.some((node) => node.type?.name === 'PurchasesPanel'));
   assert.ok(!tree.some((node) => node.type?.name === 'SessionsPanel'));
+  tree.find(node=>node.props.id==='tab-requests').props.onClick();
+  tree=ui.render('AdminDashboard');
+  assert.ok(!tree.some(node=>node.type?.name==='PurchasesPanel'||node.type?.name==='SessionsPanel'));
 });
 
 test('lead conversations: scope switcher keeps all linked scopes under one lead', () => {

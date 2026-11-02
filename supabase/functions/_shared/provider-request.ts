@@ -10,9 +10,12 @@ export function providerRetryAfter(response: Response) {
 }
 // A transient 503 gets one short backoff within a fixed request budget. Long
 // quota cooldowns are returned to the UI rather than retried in a tight loop.
-export async function providerRequest(provider: string,url: string,init: RequestInit,timeoutMs=18000,retries=1) {
+export async function providerRequest(provider: string,url: string,init: RequestInit,timeoutMs=18000,retries=1,onAttempt?:()=>void) {
   let last: ProviderDiagnostic={provider,code:provider+'_unavailable'};
   for(let attempt=0;attempt<=retries;attempt++) {
+    // The caller reserves all possible attempts before entering this helper.
+    // A failed HTTP request/timeout can still be billable, so count it at send.
+    onAttempt?.();
     try {
       const response=await fetch(url,{...init,signal:AbortSignal.timeout(timeoutMs)});
       if(response.ok) return response;

@@ -1,4 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
+import { readAdminAuthLink } from './adminPassword';
+
+// Supabase may remove callback fragments while initializing. Retain only safe
+// status metadata so an expired link cannot be confused with an existing login.
+export const initialAdminAuthLink = readAdminAuthLink(typeof window !== 'undefined' ? window.location.href : '');
 
 // Auth owns this session. It is separate from visitor/review/purchase storage.
 // No admin password or service-role credential is embedded in the frontend.

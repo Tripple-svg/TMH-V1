@@ -14,3 +14,49 @@
     color: #f4f4f5;
   }
 }
+
+.service-glass-card {
+  --service-light-x: 50%;
+  --service-light-y: 20%;
+  backdrop-filter: blur(14px);
+  transition: border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.service-glass-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(260px circle at var(--service-light-x) var(--service-light-y), rgba(255,255,255,.85), transparent 75%);
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+.dark .service-glass-card::before {
+  background: radial-gradient(260px circle at var(--service-light-x) var(--service-light-y), rgba(255,255,255,.075), transparent 75%);
+}
+
+.service-glass-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.service-glass-card:focus-within::before {
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .service-glass-card:hover::before { opacity: 1; }
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .service-glass-card { transition: translate 220ms ease, border-color 220ms ease, box-shadow 220ms ease; }
+  .service-glass-number, .service-glass-arrow { transition: translate 220ms ease; }
+  .service-glass-card:hover { translate: 0 -3px; }
+  .service-glass-card:hover .service-glass-number { translate: 0 -2px; }
+  .service-glass-card:hover .service-glass-arrow { translate: 4px 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .service-glass-card, .service-glass-card::before { transition: none; }
+}

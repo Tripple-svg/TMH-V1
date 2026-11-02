@@ -103,6 +103,9 @@ export default function AboutSection() {
                 We bring brand strategy, content and web engineering together. We start by understanding your business, the people you want to reach and what is getting in the way before recommending the work.
               </p>
               <p>
+                Haven reviews the offer, audience, trust signals and buying instructions visible on your page or screenshot. We help you choose a useful next step, from applying The Unseen Playbook to agreeing a project with our strategy, content and web team.
+              </p>
+              <p>
                 Whether you are starting in Nigeria or reaching customers further afield, we help you make a clear plan and put the right pieces in place.
               </p>
             </div>

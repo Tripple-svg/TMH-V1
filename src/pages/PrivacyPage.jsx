@@ -60,7 +60,7 @@ export default function PrivacyPage() {
           <article className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100/70 backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.03]">
             <div className="border-b border-zinc-200 px-6 py-10 sm:px-10 sm:py-14 dark:border-white/[0.08]">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                Effective Date: 26 October 2026 · Notice version 2026-10-26
+                Effective Date: 26 October 2026 · Updated: 1 November 2026 · Chat notice version 2026-10-26
               </p>
               <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl dark:text-white">
                 Privacy Policy
@@ -109,6 +109,7 @@ export default function PrivacyPage() {
               </section>
 
               <section id="how-we-use-your-information" className="scroll-mt-10">
+                <p className="mb-5 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300"><span className="font-semibold text-zinc-900 dark:text-white">Support requests:</span> our <Link to="/support" className="underline underline-offset-4">support form</Link> records your contact email, optional name, issue category, description and request reference. Where your browser proves access to a saved visitor identity, we attach that identifier. We also keep a keyed network identifier for abuse prevention and limited attempt resets; it is not your raw IP address. A typed contact email does not verify ownership or unlock private records. Authorized staff can view requests, record notes and take audited recovery actions. If the Zoho incoming-mail integration is enabled, we also record sender, subject, received time and a message identifier; it does not import attachments or the full email body. Separate emails remain in the mail provider under its retention settings.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">3. How We Use Your Information</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   <p>Your information is used to:</p>
@@ -165,6 +166,7 @@ export default function PrivacyPage() {
                     <li><span className="font-semibold text-zinc-900 dark:text-white">Jina AI:</span> reads your website URL when you request a website brand review.</li>
                     <li><span className="font-semibold text-zinc-900 dark:text-white">Calendly:</span> handles bookings for free strategy calls.</li>
                     <li><span className="font-semibold text-zinc-900 dark:text-white">Resend:</span> transactional purchase, booking, warning, restriction and team-alert emails, with delivery metadata.</li>
+                    <li><span className="font-semibold text-zinc-900 dark:text-white">Zoho Mail:</span> our support inbox and replies; when configured, incoming-mail metadata can create an admin support notice. Team email notifications include limited request details.</li>
                     <li><span className="font-semibold text-zinc-900 dark:text-white">hCaptcha:</span> verifies that form submissions come from real visitors and not automated bots.</li>
                     <li><span className="font-semibold text-zinc-900 dark:text-white">Netlify:</span> hosts this website.</li>
                   </ul>
@@ -173,6 +175,7 @@ export default function PrivacyPage() {
               </section>
 
               <section id="cookies-and-local-storage" className="scroll-mt-10">
+                <p className="mb-4 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Optional visit analytics stay off until you accept the current notice and that choice is recorded. We ask again after 13 calendar months, or when an old affirmative choice has no current dated receipt. Declining does not stop reviews, purchases or support. If you accept, first-party presence records use a separate browser identifier and private token digest, with first and last activity times. Visible pages send an occasional heartbeat. Admin sees aggregate counts of consented browser profiles and recent activity, not a list of everyone online, identities of people, email addresses or a browsing-path history. Withdrawing the choice stops future heartbeats; retained records expire after 13 months without activity.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">6. Cookies and Local Storage</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   <p>We use browser cookies and local storage to run this website. Specifically:</p>
@@ -188,6 +191,7 @@ export default function PrivacyPage() {
               </section>
 
               <section id="data-storage-and-security" className="scroll-mt-10">
+                <p className="mb-4 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Authorized staff actions are recorded in an internal audit trail using the staff account identifier, action, record reference, changed field names, time and a keyed network identifier. The audit does not copy full private notes, passwords, tokens or raw IP addresses. Server-side AI request budgets and operational diagnostics help prevent abuse and excessive spending. If a personal data incident occurs, we assess it and make the notifications required by applicable law.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">7. Data Storage and Security</h2>
                 <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   Records are stored in Supabase with row level security and protected backend access checks. Review screenshots are stored in a private bucket. The admin workspace can expose personal information to people holding its access credentials, so those credentials and browser access keys must be protected. Payment card details are handled by Paystack. No website can promise absolute security; contact us if you believe information or an access key has been exposed.
@@ -195,6 +199,8 @@ export default function PrivacyPage() {
               </section>
 
               <section id="data-retention" className="scroll-mt-10">
+                <p className="mb-4 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Conversation text, turn responses, compact memory and routing evidence are scheduled for removal after 180 days without session activity. Minimal session, saved-review and ownership metadata can remain for the service and operational purposes described here. Optional analytics consent receipts are scheduled for removal after two years; inactive presence profiles expire after 13 months. Browser-local copies and records held by providers follow their separate controls. Contact us for an access, correction, portability, objection or restriction request; these categories may require human ownership verification and are not all automated by the review-deletion button.</p>
+                <p className="mb-4 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Resolved website support requests and their action history are scheduled for removal 90 days after the last update. Open requests remain until resolved or reviewed for deletion. Contact us about a support record or email held by a provider. A review-deletion request does not silently delete a separate support ticket. Failed screenshot removals retain a private cleanup record so the deletion can be retried.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">8. Data Retention</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   <p>Retention depends on the purpose of the record, your request and applicable obligations. We do not publish a fixed retention period for every record category here. Ask us which records remain, why they are needed and what deletion or restriction is available. The online chat viewer shows bounded saved history; this does not mean every related operational record has been erased.</p>
@@ -247,7 +253,8 @@ export default function PrivacyPage() {
                 <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   The Marketing Haven<br />
                   A business unit of Move Multi Brand (RC 26338986)<br />
-                  Email: info@themarketinghaven.xyz<br />
+                  Email: <a href="mailto:info@themarketinghaven.xyz" className="underline underline-offset-4">info@themarketinghaven.xyz</a><br />
+                  <Link to="/support" className="underline underline-offset-4">Send a support or privacy request</Link><br />
                   Website: themarketinghaven.xyz
                 </p>
               </section>

@@ -244,7 +244,8 @@ test('failed save preserves the form/image, shows the exact alert, resets CAPTCH
   await ui.ready(); await ui.submit().props.onClick();
   const failed = ui.render();
   assert.equal(ui.closed, 0); assert.equal(ui.cleared, 0); assert.equal(ui.resets, 1);
-  assert.equal(failed.find((node) => node.props.role === 'alert').props.children.join(''), SAVE_ERROR);
+  assert.equal(textContent(failed.find((node) => node.props.role === 'alert')), SAVE_ERROR+' Contact support');
+  assert.ok(failed.some(node=>node.type==='a'&&node.props.href==='/support?issue=review_access'));
   assert.ok(failed.some((node) => node.type === 'img' && node.props.src === attempts[0].screenshotBase64));
   ui.verify('captcha-retry'); await ui.submit().props.onClick();
   assert.equal(attempts[1].id, attempts[0].id); assert.equal(attempts[1].screenshotBase64, attempts[0].screenshotBase64);
@@ -255,7 +256,7 @@ test('a rejected submit promise keeps the draft and reports failure instead of r
   const ui = reviewModal(async () => { throw new Error('Connection failed'); });
   await ui.ready(); await ui.submit().props.onClick();
   assert.equal(ui.cleared, 0); assert.equal(ui.closed, 0);
-  assert.equal(ui.render().find((node) => node.props.role === 'alert').props.children.join(''), SAVE_ERROR);
+  assert.equal(textContent(ui.render().find((node) => node.props.role === 'alert')), SAVE_ERROR+' Contact support');
 });
 
 test('a reloaded pending modal restores the original screenshot and reuses its submission ID', async () => {

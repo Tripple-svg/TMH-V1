@@ -67,6 +67,13 @@ export default function ServiceGrid() {
 
   const { openDrawer } = useHaven();
 
+  const moveCardLight = event => {
+    if (reduceMotion || event.pointerType !== 'mouse' || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    event.currentTarget.style.setProperty('--service-light-x', `${((event.clientX - bounds.left) / bounds.width) * 100}%`);
+    event.currentTarget.style.setProperty('--service-light-y', `${((event.clientY - bounds.top) / bounds.height) * 100}%`);
+  };
+
   useEffect(() => {
     if (!selectedService) return;
     const previousOverflow = document.body.style.overflow;
@@ -133,14 +140,15 @@ export default function ServiceGrid() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: reduceMotion ? 0 : 0.4, delay: reduceMotion ? 0 : i * 0.06 }}
-                className="group relative text-left rounded-2xl bg-white/90 dark:bg-zinc-900/80 border border-zinc-200/80 dark:border-white/[0.08] p-6 sm:p-8 hover:border-zinc-400 dark:hover:border-white/20 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.8)] dark:shadow-[0_16px_40px_-28px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors duration-200 flex flex-col justify-between"
+                onPointerMove={moveCardLight}
+                className="service-glass-card group relative isolate overflow-hidden text-left rounded-2xl bg-white/90 dark:bg-zinc-900/80 border border-zinc-200/80 dark:border-white/[0.08] p-6 sm:p-8 hover:border-zinc-400 dark:hover:border-white/20 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.8)] dark:shadow-[0_16px_40px_-28px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.05)] flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-center justify-between mb-6">
                     <div className="w-12 h-12 rounded-xl bg-zinc-100/80 dark:bg-white/[0.04] border border-zinc-200/80 dark:border-white/[0.08] flex items-center justify-center">
                       <Icon className="w-5 h-5 text-zinc-600 dark:text-zinc-300" />
                     </div>
-                    <span aria-hidden="true" className="text-[10px] tracking-[0.2em] tabular-nums text-zinc-400 dark:text-zinc-500">0{i + 1}</span>
+                    <span aria-hidden="true" className="service-glass-number text-[10px] tracking-[0.2em] tabular-nums text-zinc-400 dark:text-zinc-500">0{i + 1}</span>
                   </div>
                   <h3 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-white mb-3">
                     {s.title}
@@ -164,7 +172,7 @@ export default function ServiceGrid() {
                   className="mt-8 flex items-center text-xs font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider hover:text-zinc-950 dark:hover:text-white w-full pt-4 border-t border-zinc-200/70 dark:border-white/[0.06] cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-500"
                 >
                   <span>{SERVICE_CTA_LABELS[s.id]}</span>
-                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1.5 transition-transform" />
+                  <ArrowRight className="service-glass-arrow w-4 h-4 ml-2" />
                 </button>
               </motion.div>
             );

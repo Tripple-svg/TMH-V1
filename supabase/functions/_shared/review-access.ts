@@ -1,3 +1,5 @@
+import { validateScreenshotBytes, ScreenshotValidationError } from './screenshot-validation.ts';
+
 // A private bearer capability binds a visitor to one saved review and audit session.
 // Only its SHA-256 digest is stored; never include the token or digest in logs/API lists.
 export class ReviewAccessError extends Error {
@@ -54,6 +56,8 @@ export async function storedReviewScreenshot(supabase: any, review: Record<strin
   const mime=String(data.type||'').split(';')[0].toLowerCase();
   if(!['image/png','image/jpeg','image/webp'].includes(mime)||data.size>5*1024*1024) throw new ReviewAccessError('Upload a PNG, JPEG or WebP screenshot smaller than 5 MB.',400);
   const bytes=new Uint8Array(await data.arrayBuffer());
+  try{validateScreenshotBytes(bytes,mime);}
+  catch(error){if(error instanceof ScreenshotValidationError)throw new ReviewAccessError(error.message,error.status);throw error;}
   let binary='';
   for(let index=0;index<bytes.length;index+=4096) binary+=String.fromCharCode(...bytes.subarray(index,index+4096));
   return 'data:'+mime+';base64,'+btoa(binary);

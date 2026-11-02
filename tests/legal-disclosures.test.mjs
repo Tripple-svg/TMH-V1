@@ -101,7 +101,11 @@ test('deletion disclosures: policies and request/confirmation pages describe the
 function deletionHandler(name) {
   let handler;
   const emails = [];
-  const client = { from(table) {
+  const client = { async rpc(name) {
+    if (name === 'prepare_saved_review_deletion') return { data: { requestId: 'request-1', email: 'owner@example.com', paths: [], deleted: 0 } };
+    if (name === 'complete_saved_review_deletion') return { data: true };
+    throw new Error('Unexpected RPC: ' + name);
+  }, from(table) {
     return {
       select() { return this; }, eq() { return this; }, ilike() { return this; }, limit() { return this; },
       update() { return this; }, insert() { return this; },
@@ -113,7 +117,7 @@ function deletionHandler(name) {
   vm.runInNewContext(code, { ...securityGlobals,
     require: (module) => module.includes('server.ts') ? { serve: (callback) => { handler = callback; } } : { createClient: () => withSecurityRpc(client) },
     Deno: { env: { get: () => 'configured-for-test' } },
-    Response, Request, Uint8Array, crypto: webcrypto,
+    Response, Request, Uint8Array, AbortSignal, crypto: webcrypto,
     fetch: async (_, options) => { emails.push(JSON.parse(options.body)); return new Response(JSON.stringify({ id: 'email-1' })); },
     console: { error() {} },
   });
@@ -125,7 +129,7 @@ test('deletion emails: request and completion messages avoid promising every rec
     const { handler, emails } = deletionHandler(name);
     const response = await handler(new Request('https://project.supabase.co/functions/v1/delete', {
       method: 'POST', headers: { 'Content-Type': 'application/json', origin: 'https://themarketinghaven.xyz' },
-      body: JSON.stringify(name === 'request-data-deletion' ? { email: 'owner@example.com' } : { token: 'verified-request' }),
+      body: JSON.stringify(name === 'request-data-deletion' ? { email: 'owner@example.com' } : { token: '11111111-1111-4111-8111-111111111111' + 'a'.repeat(32) }),
     }));
     assert.equal(response.status, 200);
     assert.equal(emails.length, 1);

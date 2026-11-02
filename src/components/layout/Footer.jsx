@@ -102,6 +102,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
               <address className="mt-6 space-y-2 text-sm not-italic text-zinc-600 dark:text-zinc-400">
                 <h4 className="text-xs font-semibold uppercase tracking-wider">Contact Information</h4>
                 <a href={`mailto:${TMH_CONTACT.email}`} className="block break-all underline-offset-4 hover:text-zinc-950 hover:underline dark:hover:text-white">{TMH_CONTACT.email}</a>
+                <Link to="/support" className="block underline underline-offset-4 hover:text-zinc-950 dark:hover:text-white">Send a support request</Link>
                 <a href={TMH_CONTACT.whatsappUrl} target="_blank" rel="noopener noreferrer" className="block underline-offset-4 hover:text-zinc-950 hover:underline dark:hover:text-white">WhatsApp · {TMH_CONTACT.whatsapp}</a>
                 <p>{TMH_CONTACT.location}</p>
               </address>
@@ -174,7 +175,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
           {/* Copyright */}
           <div className="mt-14 pt-8 border-t border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 text-center sm:text-left">
             <p className="text-xs text-zinc-500 dark:text-zinc-500">
-              Built with precision. Engineered for performance.
+              Building With Intention.
             </p>
             <p className="text-xs text-zinc-500 dark:text-zinc-500">
               © 2026 The Marketing Haven. All rights reserved.

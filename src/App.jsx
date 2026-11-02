@@ -14,6 +14,7 @@ import Footer from './components/layout/Footer';
 import BrandReviewModal from './components/modals/BrandReviewModal';
 import Preloader from './components/Preloader';
 import CookieBanner from './components/CookieBanner';
+import SitePresence from './components/SitePresence';
 import SiteErrorBoundary from './components/layout/SiteErrorBoundary';
 import DataDeletionModal from './components/legal/DataDeletionModal';
 
@@ -30,6 +31,7 @@ const TermsPage = lazy(() => import('./pages/TermsPage'));
 const DataDeletionConfirmPage = lazy(() => import('./pages/DataDeletionConfirmPage'));
 const TeamBriefPage = lazy(() => import('./pages/TeamBriefPage'));
 const AdminInvitePage = lazy(() => import('./pages/AdminInvitePage'));
+const SupportPage = lazy(() => import('./pages/SupportPage'));
 
 function AppInner() {
   const { openDrawer, hasExistingReview, getSavedReviewFormData } = useHaven();
@@ -229,11 +231,13 @@ export default function App() {
   return (
     <BrowserRouter>
       <SiteErrorBoundary>
+      <SitePresence />
       <Suspense fallback={<div role="status" className="flex min-h-screen items-center justify-center bg-zinc-950 text-sm text-zinc-400">Loading page…</div>}>
       <Routes>
         <Route path="/admin" element={<AdminRoute />} />
         <Route path="/admin/accept-invite" element={<AdminInvitePage />} />
         <Route path="/team-brief" element={<TeamBriefPage />} />
+        <Route path="/support" element={<SupportPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/data-deletion/confirm" element={<DataDeletionConfirmPage />} />

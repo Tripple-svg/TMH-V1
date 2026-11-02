@@ -65,7 +65,7 @@ export default function TermsPage() {
           <article className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100/70 backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.03]">
             <div className="border-b border-zinc-200 px-6 py-10 sm:px-10 sm:py-14 dark:border-white/[0.08]">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                Effective Date: 26 October 2026 · Notice version 2026-10-26
+                Effective Date: 26 October 2026 · Updated: 1 November 2026 · Chat notice version 2026-10-26
               </p>
               <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl dark:text-white">
                 Terms of Service
@@ -200,6 +200,7 @@ export default function TermsPage() {
               </section>
 
               <section id="limitation-of-liability" className="scroll-mt-10">
+                <p className="mb-5 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Use the <Link to="/support" className="underline underline-offset-4">support form</Link> to record an access, payment or booking issue for human review. Submitting a request does not guarantee a response time or automatically remove a restriction. Rate-limit cooldowns are distinct from behaviour flags. Staff may reset specific attempt budgets after investigation, but a reset never grants private review or purchase access. Ownership checks and inbox verification still apply. An email-link click alone is not a submitted support request.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">12. Limitation of Liability</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   <p>
@@ -252,7 +253,8 @@ export default function TermsPage() {
                 <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   The Marketing Haven<br />
                   A business unit of Move Multi Brand (RC 26338986)<br />
-                  Email: info@themarketinghaven.xyz<br />
+                  Email: <a href="mailto:info@themarketinghaven.xyz" className="underline underline-offset-4">info@themarketinghaven.xyz</a><br />
+                  <Link to="/support" className="underline underline-offset-4">Send a support request</Link><br />
                   Website: themarketinghaven.xyz
                 </p>
               </section>

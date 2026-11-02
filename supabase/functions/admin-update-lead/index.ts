@@ -3,10 +3,12 @@
 // Whitelists the columns that can be updated.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
+import { PUBLIC_ORIGINS as ALLOWED_ORIGINS } from '../_shared/cors.ts';
 import { internalHeaders } from '../_shared/internal-auth.js';
 import { invocationFailure } from '../_shared/resend-delivery.js';
 import { requireAdmin, AdminAuthError,readAdminBody } from '../_shared/admin-auth.ts';
+import { runAdminMutation } from '../_shared/admin-audit.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -14,17 +16,9 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const ALLOWED_FOLLOWUP_STATUS = ['pending', 'contacted', 'booked', 'closed', 'lost'];
 const WELCOME_FIELDS = 'id,email,welcome_email_sent,welcome_email_id,welcome_email_attempted_at,welcome_email_last_error';
 
-const ALLOWED_ORIGINS = [
-  'https://themarketinghaven.xyz',
-  'https://www.themarketinghaven.xyz',
-  'http://localhost:5173',
-  'http://localhost:3000',
-];
-
 function corsHeaders(origin: string | null) {
-  const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
-    'Access-Control-Allow-Origin': allowed,
+    ...(origin && ALLOWED_ORIGINS.includes(origin)?{'Access-Control-Allow-Origin':origin}:{}),
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Vary': 'Origin',
@@ -41,9 +35,9 @@ function json(body: unknown, origin: string | null, status = 200) {
 serve(async (req) => {
   const origin = req.headers.get('origin');
 
+  if (origin && !ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, origin, 403);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(origin) });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, origin, 405);
-  if (origin && !ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, origin, 403);
 
   try {
     if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
@@ -54,13 +48,11 @@ serve(async (req) => {
         const reviewId = typeof body?.reviewId === 'string' ? body.reviewId : '';
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-    if (!await requireAdmin(supabase,req,SERVICE_ROLE_KEY)) {
-      return json({ ok: false, error: 'Unauthorised' }, origin, 401);
-    }
+    const actor=await requireAdmin(supabase,req,SERVICE_ROLE_KEY);
     if(body.action==='unlockVerification'){
       if(typeof body.visitorId!=='string'||!/^[a-f0-9-]{36}$/i.test(body.visitorId))return json({ok:false,error:'Select a saved visitor.'},origin,400);
-      const {data,error}=await supabase.from('verification_attempts').update({attempts:0,cooldown_until:null,locked_at:null,updated_at:new Date().toISOString()}).eq('visitor_id',body.visitorId).select('visitor_id');
-      return json(error?{ok:false,error:'Verification attempts could not be reset.'}:{ok:true,reset:data?.length||0},origin,error?503:200);
+      const {data,error}=await runAdminMutation(supabase,req,SERVICE_ROLE_KEY,actor,'verification_unlock',body.visitorId);
+      return json(error?{ok:false,error:'Verification attempts could not be reset.'}:{ok:true,reset:data?.reset||0},origin,error?503:200);
     }
     if (body.action === 'updateInquiry') {
       const allowed = ['action','sessionId','expectedRevision','status','owner','notes','followupOn'];
@@ -74,8 +66,8 @@ serve(async (req) => {
           || !Number.isFinite(Date.parse(followup)) || new Date(followup).toISOString().slice(0,10)!==followup))) {
         return json({ ok:false,error:'Check the inquiry status, owner, notes and follow-up date.' },origin,400);
       }
-      const {data,error}=await supabase.rpc('update_haven_inquiry',{
-        p_session_id:body.sessionId,p_revision:body.expectedRevision,p_status:body.status,p_owner:body.owner.trim(),p_notes:body.notes,p_followup:followup,
+      const {data,error}=await runAdminMutation(supabase,req,SERVICE_ROLE_KEY,actor,'inquiry_update',body.sessionId,{
+        revision:body.expectedRevision,status:body.status,owner:body.owner.trim(),notes:body.notes,followup,
       });
       if(error) return json({ok:false,error:error.code==='P0002'?'Team inquiry not found.':'Could not save the inquiry. Check the migration and retry.'},origin,error.code==='P0002'?404:503);
       if(data?.conflict) return json({ok:false,code:'conflict',error:'Another team member updated this inquiry. Your draft is still here. Copy it if needed, then reload the saved details.',session:data.session},origin,409);
@@ -91,6 +83,8 @@ serve(async (req) => {
       if (readError) return json({ ok: false, error: 'Could not load the saved review email status. Check the email migration and retry.' }, origin, 503);
       if (!review) return json({ ok: false, error: 'Review not found' }, origin, 404);
       if (review.welcome_email_sent === true) return json({ ok: true, skipped: 'already accepted', review }, origin);
+      const {error:auditError}=await runAdminMutation(supabase,req,SERVICE_ROLE_KEY,actor,'review_email_retry',reviewId);
+      if(auditError)return json({ok:false,error:'Could not record the email retry. Please retry.'},origin,503);
       // The sender reloads the stored name, source and email by ID. A browser
       // cannot change the recipient or choose an earlier template on retry.
       const { data: delivery, error: sendError } = await supabase.functions.invoke('send-welcome-email', {
@@ -101,7 +95,7 @@ serve(async (req) => {
       if (sendError || delivery?.ok !== true || updated.welcome_email_sent !== true) {
         const diagnostic = await invocationFailure(delivery, sendError);
         if (!updated.welcome_email_last_error && updated.welcome_email_sent !== true) {
-          await supabase.from('brand_reviews').update({ welcome_email_last_error: diagnostic.code }).eq('id', reviewId).eq('welcome_email_sent', false);
+          await runAdminMutation(supabase,req,SERVICE_ROLE_KEY,actor,'review_email_error',reviewId,{code:diagnostic.code});
           updated.welcome_email_last_error = diagnostic.code;
         }
         return json({ ok: false, ...diagnostic, review: updated }, origin, 502);
@@ -115,11 +109,9 @@ serve(async (req) => {
       }
       // One database transaction removes the review and its associated sessions.
       // The RPC is executable only by service_role, never by browser credentials.
-      const { data: deletion, error: deletionError } = await supabase.rpc('admin_delete_lead', {
-        p_review_id: reviewId,
-      });
+      const { data: deletion, error: deletionError } = await runAdminMutation(supabase,req,SERVICE_ROLE_KEY,actor,'review_delete',reviewId);
       if (deletionError) {
-        console.error('admin-update-lead: deletion failed', deletionError);
+        console.error('admin-update-lead: deletion_failed');
         return json({ ok: false, error: 'Could not delete the lead. Check the admin deletion migration and try again.' }, origin, 500);
       }
       if (!deletion?.deleted) return json({ ok: false, error: 'Review not found' }, origin, 404);
@@ -133,7 +125,7 @@ serve(async (req) => {
             const { error: storageError } = await supabase.storage.from('tmh-screenshots').remove([deletion.screenshot_path]);
             if (storageError) throw storageError;
           } catch (error) {
-            console.error('admin-update-lead: screenshot cleanup failed', error);
+            console.error('admin-update-lead: screenshot_cleanup_failed');
             warning = 'Lead deleted, but its screenshot could not be removed. Retry cleanup in Supabase Storage.';
           }
         }
@@ -145,7 +137,7 @@ serve(async (req) => {
     }
 
     // Whitelist-safe update object.
-    const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const update: Record<string, unknown> = {};
 
     if (typeof body.followupStatus === 'string') {
       if (!ALLOWED_FOLLOWUP_STATUS.includes(body.followupStatus)) {
@@ -169,16 +161,11 @@ serve(async (req) => {
       update.call_booked_at = body.callBookedAt;
     }
 
-    const { data, error } = await supabase
-      .from('brand_reviews')
-      .update(update)
-      .eq('id', reviewId)
-      .select('id, followup_status, followup_notes, updated_at')
-      .maybeSingle();
+    const { data, error } = await runAdminMutation(supabase,req,SERVICE_ROLE_KEY,actor,'review_update',reviewId,update);
 
     if (error) {
-      console.error('admin-update-lead failed:', error);
-      return json({ ok: false, error: error.message }, origin, 500);
+      console.error('admin-update-lead: update_failed');
+      return json({ ok: false, error: 'Could not save the lead. Please retry.' }, origin, 500);
     }
     if (!data) {
       return json({ ok: false, error: 'Review not found' }, origin, 404);
@@ -187,7 +174,7 @@ serve(async (req) => {
     return json({ ok: true, review: data }, origin);
   } catch (err) {
     if(err instanceof AdminAuthError)return json({ok:false,error:err.message},origin,err.status);
-    console.error('admin-update-lead error:', err);
-    return json({ ok: false, error: String(err) }, origin, 500);
+    console.error('admin-update-lead: operation_failed');
+    return json({ ok: false, error: 'Could not update the lead. Please retry.' }, origin, 500);
   }
 });

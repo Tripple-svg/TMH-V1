@@ -1,4 +1,8 @@
 import VerificationAttemptsPanel from '../components/admin/VerificationAttemptsPanel';
+import SupportRequestsPanel from '../components/admin/SupportRequestsPanel';
+import AdminSecurityPanel from '../components/admin/AdminSecurityPanel';
+import AdminMfaPanel from '../components/admin/AdminMfaPanel';
+import VisitorActivityPanel from '../components/admin/VisitorActivityPanel';
 import APIUsagePanel from '../components/admin/APIUsagePanel';
 import {observeAdminSession} from '../lib/adminSession';
 import LoginScreen from '../components/admin/AdminSignIn';
@@ -21,6 +25,8 @@ const UPDATE_URL = `${SUPABASE_URL}/functions/v1/admin-update-lead`;
 const FLAG_URL = `${SUPABASE_URL}/functions/v1/flag-user`;
 const RETRY_PURCHASE_URL = `${SUPABASE_URL}/functions/v1/admin-retry-purchase-email`;
 const ASSIGNMENT_URL = `${SUPABASE_URL}/functions/v1/admin-team-assignment`;
+const SUPPORT_URL = `${SUPABASE_URL}/functions/v1/admin-support`;
+const SECURITY_URL = `${SUPABASE_URL}/functions/v1/admin-security`;
 
 const PAGE_SIZE = 25;
 const transcriptCache = new Map();
@@ -31,7 +37,9 @@ const ADMIN_TABS = [
   { id: 'bookings', label: 'Bookings' },
   { id: 'team', label: 'Team Inquiries' },
   { id: 'support', label: 'Support Chats' },
+  { id: 'requests', label: 'Support Requests' },
   { id: 'service', label: 'Service Chats' },
+  { id: 'security', label: 'Security & AI' },
 ];
 
 const TEMPERATURES = ['All', 'Hot', 'Warm', 'Cold'];
@@ -1192,6 +1200,8 @@ export default function AdminDashboard() {
   }, [authorised, load]);
 
   const securityUpdate=useCallback(payload=>apiRequest(UPDATE_URL,accessToken,payload),[accessToken]);
+  const supportRequest=useCallback(payload=>apiRequest(SUPPORT_URL,accessToken,payload),[accessToken]);
+  const securityRequest=useCallback(payload=>apiRequest(SECURITY_URL,accessToken,payload),[accessToken]);
   const usageRequest=useCallback(payload=>apiRequest(FETCH_URL,accessToken,payload),[accessToken]);
 
   const onAuth = (pw) => {
@@ -1306,6 +1316,7 @@ export default function AdminDashboard() {
             <p className="mt-2 text-[11px] text-zinc-500">{loading ? 'Refreshing saved records…' : lastRefreshed ? `Last refreshed ${formatDate(lastRefreshed)}` : 'Saved records'} · Counts reflect loaded records · refreshes every 30s while visible</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <a href="/admin/accept-invite?flow=change" className="rounded-lg border border-zinc-700 px-3 py-2 text-xs sm:text-sm hover:bg-zinc-800">Change password</a>
             <button
               onClick={() => void load()}
               disabled={loading}
@@ -1337,7 +1348,7 @@ export default function AdminDashboard() {
 
         <div role="tablist" aria-label="Admin sections" className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-white/[0.07] bg-white/[0.02] p-1.5">
           {ADMIN_TABS.map((tab, index) => {
-            const count = tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'bookings' ? bookings.length : tab.id === 'team' ? teamInquiries.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
+            const count = ['requests','security'].includes(tab.id) ? null : tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'bookings' ? bookings.length : tab.id === 'team' ? teamInquiries.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
             return <button key={tab.id} id={`tab-${tab.id}`} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1}
               onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
                 const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -1347,7 +1358,7 @@ export default function AdminDashboard() {
                 setActiveTab(ADMIN_TABS[next].id);
                 event.currentTarget.parentElement.querySelectorAll('[role="tab"]')[next]?.focus();
               }} className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-medium transition-colors sm:text-sm ${activeTab === tab.id ? 'border-white/15 bg-white/[0.08] text-white shadow-sm' : 'border-transparent text-zinc-500 hover:bg-white/[0.035] hover:text-zinc-200'}`}>
-              {tab.label}<span className="rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] tabular-nums text-zinc-500">{count}</span>
+              {tab.label}{count!==null&&<span className="rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] tabular-nums text-zinc-500">{count}</span>}
             </button>;
           })}
         </div>
@@ -1359,6 +1370,7 @@ export default function AdminDashboard() {
         </section>
         {operations && <section aria-label="Haven operational health" className="mb-4 rounded-xl border border-white/[0.06] px-4 py-3 text-xs text-zinc-400"><p className="mb-3 text-zinc-500">Past 24 hours</p><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><span>Gemini replies <strong className="ml-1 font-medium text-zinc-200">{operations.gemini_replies}</strong></span><span>Groq replies <strong className="ml-1 font-medium text-zinc-200">{operations.groq_replies}</strong></span><span>Failed turns <strong className={`ml-1 ${operations.failed_turns?'text-amber-200':'text-zinc-200'}`}>{operations.failed_turns}</strong></span><span>Stalled turns <strong className={`ml-1 ${operations.stale_turns?'text-amber-200':'text-zinc-200'}`}>{operations.stale_turns}</strong></span></div><button type="button" disabled={retryingFlagEmails} onClick={retryFlagEmails} className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-zinc-300 disabled:opacity-40">{retryingFlagEmails?'Retrying flag notices…':`${operations.pending_flag_events} flag events awaiting acceptance · Retry`}</button></section>}
         <VerificationAttemptsPanel onRead={usageRequest} onUpdate={securityUpdate} onAuthLost={handleAuthLost} />
+        <VisitorActivityPanel onRequest={usageRequest} onAuthLost={handleAuthLost} />
         <APIUsagePanel onRequest={usageRequest} onAuthLost={handleAuthLost} />
         <AISetupPanel accessToken={accessToken} onAuthLost={handleAuthLost} />
         {operationsError && <p role="alert" className="mb-4 text-xs text-amber-200">{operationsError}</p>}
@@ -1372,6 +1384,13 @@ export default function AdminDashboard() {
         <p className="mb-5 text-[11px] leading-relaxed text-zinc-500">Work queue counts cover loaded records, not lifetime totals. Provider counts are completed replies, not token usage or billing. Flag events cover the saved delivery queue. Inquiry status is maintained by the team; confirmed bookings appear in Bookings.</p>
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-200">{error}</p>}
         <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
+        {activeTab === 'requests' && <SupportRequestsPanel onRequest={supportRequest} onAuthLost={handleAuthLost} />}
+        {activeTab === 'security' && (
+          <div className="space-y-6">
+            <AdminMfaPanel />
+            <AdminSecurityPanel onRequest={securityRequest} onAuthLost={handleAuthLost} />
+          </div>
+        )}
         {activeTab === 'bookings' && <BookingsPanel bookings={bookings} error={bookingsError} now={lastRefreshed || 0} accessToken={accessToken} onAuthLost={handleAuthLost} />}
         {activeTab === 'purchases' && <PurchasesPanel purchases={purchases} error={purchasesError} accessToken={accessToken} onAuthLost={handleAuthLost} onPurchaseChange={updatePurchase} showToast={showToast} />}
         {['team','support','service'].includes(activeTab) && <SessionsPanel key={activeTab} scope={activeTab} sessions={activeTab==='team'?teamInquiries:activeTab === 'support' ? supportSessions : serviceSessions} error={chatErrors[activeTab]} accessToken={accessToken} onAuthLost={handleAuthLost} onVisitorChange={updateVisitor} showToast={showToast} onSessionChange={updateInquiry} />}

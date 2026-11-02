@@ -90,7 +90,7 @@ function DataDeletionDialog({ onClose }) {
                   Check your inbox
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-                  If {email} matches a saved review, we will attempt to send a confirmation link valid for 24 hours. If it does not arrive, contact info@themarketinghaven.xyz.
+                  If {email} matches a saved review, we will attempt to send a confirmation link valid for 24 hours. If it does not arrive, <a href="/support?issue=review_access" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">contact Team Haven Support</a>.
                 </p>
                 <button
                   type="button"

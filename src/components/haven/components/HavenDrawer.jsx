@@ -315,6 +315,9 @@ export default function HavenDrawer() {
      || auditPreflight.status === 'failed');
 
   const hasUserMessage = messages.some((m) => m.role === 'user');
+  // A saved failed turn stays attached to its conversation while the source is open.
+  // Only the chat view can display or retry it; scoring has its own loading state.
+  const showChat = !showPreflight && viewState !== 'landing';
   const showConsentLine = !hasUserMessage && !showPreflight;
 
   useEffect(() => {
@@ -374,7 +377,7 @@ export default function HavenDrawer() {
   }, []);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !showChat) return;
     const el = scrollRef.current;
     const content = scrollContentRef.current;
     if (!el || !content) return;
@@ -394,18 +397,18 @@ export default function HavenDrawer() {
       observer.disconnect();
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [isOpen, autoFollow]);
+  }, [isOpen, autoFollow, showChat]);
 
   useEffect(() => {
-    if (!autoFollow) return;
+    if (!showChat || !autoFollow) return;
     if (!scrollRef.current) return;
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'instant' });
     });
-  }, [messages.length, isThinking, autoFollow, reduceMotion]);
+  }, [messages.length, isThinking, autoFollow, reduceMotion, showChat]);
 
   useEffect(() => {
-    if (!forceScrollOnNextAgentMsg.current) return;
+    if (!showChat || !forceScrollOnNextAgentMsg.current) return;
     const lastMsg = messages[messages.length - 1];
     if (lastMsg?.role !== 'agent') return;
     forceScrollOnNextAgentMsg.current = false;
@@ -414,7 +417,7 @@ export default function HavenDrawer() {
       setAutoFollow(true);setShowScrollBtn(false);
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'instant' });
     });
-  }, [messages, autoFollow, reduceMotion]);
+  }, [messages, autoFollow, reduceMotion, showChat]);
 
   useEffect(() => {
     if (!showOptionsMenu) return;
@@ -649,7 +652,7 @@ export default function HavenDrawer() {
               {needsReviewRecovery && (
                 <p role="status" className="relative px-5 py-3 border-b border-white/[0.08] text-xs leading-relaxed text-amber-100/80">
                   This device is missing the secure access key for its saved review. A local chat copy may still be available, but reopening the saved review requires ownership verification. Contact{' '}
-                  <a href="mailto:info@themarketinghaven.xyz" className="underline underline-offset-2">info@themarketinghaven.xyz</a>{' '}
+                  <a href="/support?issue=review_access" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">Team Haven Support</a>{' '}
                   to recover the review. You can also <button type="button" className="underline underline-offset-2" onClick={() => openDrawer('support')}>ask for help in Support</button>.
                 </p>
               )}
@@ -742,7 +745,7 @@ export default function HavenDrawer() {
                       />
                     ))
                   )}
-                  {currentSession?.failedTurn && !isThinking && (
+                  {showChat && currentSession?.failedTurn && !isThinking && (
                     <div role="alert" className="relative rounded-xl border border-amber-200/15 bg-amber-200/[0.04] p-4 pr-10 text-xs leading-relaxed text-zinc-300">
                       <button type="button" onClick={dismissFailedTurn} aria-label="Dismiss saved message retry" className="absolute right-2 top-2 rounded p-1 text-zinc-400 hover:text-white"><X className="h-4 w-4" /></button>
                       <p>{currentSession.failedTurn.error}</p>
@@ -750,13 +753,13 @@ export default function HavenDrawer() {
                         onClick={() => sendMessage(currentSession.failedTurn.content, currentSession.failedTurn.image)}>{currentSession.failedTurn.retryAt > retryNow ? `Retry in ${Math.ceil((currentSession.failedTurn.retryAt - retryNow) / 1000)}s` : 'Retry saved message'}</button>
                     </div>
                   )}
-                  {isThinking && <ThinkingIndicator />}
+                  {showChat && isThinking && <ThinkingIndicator />}
                   <div ref={endRef} />
                 </div>
               </div>
 
               <AnimatePresence>
-                {showScrollBtn && (
+                {showChat && showScrollBtn && (
                   <motion.button
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -794,7 +797,7 @@ export default function HavenDrawer() {
                   {isRestricted && (
                     <div role="status" className="mt-3 text-xs leading-relaxed text-zinc-300">
                       Your access is currently restricted. Contact{' '}
-                      <a href="mailto:info@themarketinghaven.xyz" className="underline underline-offset-2">info@themarketinghaven.xyz</a>{' '}for help.
+                      <a href="/support" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">Team Haven Support</a>{' '}for help.
                       <button type="button" disabled={checkingAccess} className="ml-2 underline underline-offset-2 disabled:opacity-50" onClick={async () => {
                         setCheckingAccess(true); setAccessError('');
                         try { await recheckHavenAccess(); } catch { setAccessError('Could not check access. Please try again.'); }

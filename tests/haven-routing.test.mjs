@@ -149,6 +149,96 @@ test('support: public business contact is available, and human handoff is truthf
   const reply=supportHelpReply('I want a human','support');assert.match(reply,/info@themarketinghaven.xyz/);assert.match(reply,/have not created a support ticket/);
   assert.equal(supportHelpReply('I want a human to discuss building my website','support',{teamInquiry:true}),null);
 });
+test('support: reopening or correcting a review uses the existing source controls without creating a fresh review',()=>{
+  for(const latest of ['How can I reopen or correct my saved brand review?','I uploaded the wrong screenshot for my review','Can I do another brand review?']){
+    const reply=supportHelpReply(latest,'support');
+    assert.match(reply,/Review source/);assert.match(reply,/Wrong website\/screenshot\? Try Again/);
+    assert.match(reply,/same review/);assert.match(reply,/None yet/);assert.match(reply,/https:\/\/themarketinghaven.xyz\/support/);
+    const result=resolveHavenRouting('Clear your browser cache or use incognito, then submit a new review.',context(latest,{scope:'support'}));
+    assert.match(result.text,/Do not clear storage or use a private window/);
+    assert.doesNotMatch(result.text,/Clear your browser cache|then submit a new review|BOOK_CALL|\[\[PLAYBOOK/);
+  }
+});
+test('support: a cooldown has a waiting period and tracked escalation, not an automatic abuse flag or chat unlock',()=>{
+  const reply=supportHelpReply('I am locked out after too many brand review attempts','support');
+  assert.match(reply,/waiting time/);assert.match(reply,/separate from a behaviour restriction/);
+  assert.match(reply,/support reference/);assert.match(reply,/cannot clear them from chat/);
+  assert.doesNotMatch(reply,/Your access is.*restricted|BOOK_CALL|\[\[PLAYBOOK/);
+});
+test('support: the form creates a reference only after submission and email contact alone is not a ticket',()=>{
+  const reply=supportHelpReply('I need a human about my access problem','support');
+  assert.match(reply,/successful submission gives you a request reference/);
+  assert.match(reply,/have not created a support ticket/);
+  const prompt=buildHavenSystemPrompt({entryPoint:'CUSTOMER_SUPPORT'});
+  assert.match(prompt,/mailto click means an email was sent or received/);
+  assert.match(prompt,/Never\s+recommend clearing cache\/storage/);
+});
+const platformQuestions = [
+  ['How do I use the support form?', /Choose the closest issue/, /I have not submitted a request/],
+  ['What is the status of my support request?', /cannot look up support requests/, /include it when emailing/],
+  ['I forgot my admin password. How can I reset it?', /choose Forgot password/, /does not grant an admin role/],
+  ['My staff account authenticator is missing. Can you reset MFA?', /verify its code only in Admin/, /lost authenticator/],
+  ['Haven says my daily AI allowance is paused with 503. What should I do?', /waiting time or service notice/, /does not prove that credit is exhausted/],
+  ['I need your team to fix the story video on your site. How do I play it with sound?', /watch inline with sound/, /cannot repair the player directly/],
+];
+
+test('support: platform FAQs provide factual operational help in every conversation scope',()=>{
+  for (const scope of ['support','audit','service']) {
+    for (const [latest, instruction, limit] of platformQuestions) {
+      const reply = supportHelpReply(latest, scope);
+      assert.ok(reply, `${scope}: ${latest}`);
+      assert.match(reply, instruction); assert.match(reply, limit);
+      assert.doesNotMatch(reply, /\[\[(?:BOOK_CALL|PLAYBOOK)|DIAGNOSTIC_QUESTION/);
+    }
+  }
+});
+
+test('routing: platform FAQ answers take precedence over booking, provider offers and service delegation',()=>{
+  for (const scope of ['support','audit','service']) {
+    for (const [latest, instruction] of platformQuestions) {
+      const result = resolveHavenRouting('Book a strategy call [[BOOK_CALL]] or buy this [[PLAYBOOK]].', context(latest, {
+        scope, serviceId:'web', bookingStatus:{confirmed:true},
+      }));
+      assert.match(result.text, instruction, `${scope}: ${latest}`);
+      assert.doesNotMatch(result.text, /already have an upcoming call|\[\[(?:BOOK_CALL|PLAYBOOK)|DIAGNOSTIC_QUESTION|buy this/i);
+      assert.equal(result.routingState.lastAction, 'answer');
+      if (scope === 'support') assert.equal(result.routingState.need, 'support');
+    }
+  }
+});
+
+test('routing: an operational detour preserves marketing evidence and a pending invitation for the next reply',()=>{
+  for (const scope of ['audit','service']) {
+    for (const pendingAction of ['call','playbook']) {
+      const state = {
+        version:2, need:pendingAction === 'call' ? 'implementation' : 'learning',
+        complexity:pendingAction === 'call' ? 'complex' : 'simple',
+        preference:pendingAction === 'call' ? 'delegate' : 'learn', bookFit:pendingAction === 'playbook',
+        evidence:[learning], missing:['scope'], permission:'asked', pendingAction,
+        lastAction:pendingAction === 'call' ? 'offer_call' : 'offer_playbook',
+      };
+      for (const [latest, instruction] of platformQuestions) {
+        const detour = resolveHavenRouting('Buy the Playbook [[PLAYBOOK]].', context(latest, {scope, routingState:state}));
+        assert.match(detour.text, instruction);
+        for (const key of ['need','complexity','preference','bookFit','evidence','missing','permission','pendingAction']) {
+          assert.deepEqual(detour.routingState[key], state[key], `${scope}/${pendingAction}: ${key}`);
+        }
+        const continued = resolveHavenRouting('What is your goal?', context('Yes please', {scope, routingState:detour.routingState}));
+        assert.match(continued.text, pendingAction === 'call' ? /\[\[BOOK_CALL\]\]/ : /\[\[PLAYBOOK\]\]/);
+      }
+    }
+  }
+});
+
+test('support: applying a purchased book remains conversational help after operational FAQ expansion',()=>{
+  const latest = 'I bought the Playbook. How do I apply its audience framework to my bakery?';
+  const answer = 'Start with one likely buyer and write down what they need from your bakery.';
+  assert.equal(supportHelpReply(latest, 'support'), null);
+  const result = resolveHavenRouting(answer, context(latest, {scope:'support', playbookVerified:true}));
+  assert.equal(result.text, answer);
+  assert.doesNotMatch(result.text, /BOOK_CALL|\[\[PLAYBOOK|support form|recovery/i);
+});
+
 test('support: an explicit new service request can route without turning a support human request into a call',()=>{
   const request='I want your team to redesign my website.';
   const result=resolveHavenRouting('Let us discuss the work.',context(request,{scope:'support'}));assert.match(result.text,/BOOK_CALL/);

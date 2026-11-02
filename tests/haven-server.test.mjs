@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { PNG_BYTES, PNG_DATA_URL, largePngBytes } from './helpers/image-fixtures.mjs';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { createHash, webcrypto } from 'node:crypto';
@@ -38,7 +39,8 @@ function bundled(name) {
 }
 
 function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scoring = LOW_SCORE,
-  reader = GOOD_TEXT, readerStatus = 200, fetchImpl, writeError = null, env = {}, visitor = {}, modelText, rateAllowed = true, correctionError = null } = {}) {
+  reader = GOOD_TEXT, readerStatus = 200, fetchImpl, writeError = null, env = {}, visitor = {}, modelText, rateAllowed = true, correctionError = null,
+  budget = {allowed:true}, budgetError = null, storedImageBytes = null } = {}) {
   let handler;
   const queries = [], writes = [], requests = [], rpcCalls = [], deliveries = [], objectOperations = [];
   const rows = {
@@ -56,7 +58,7 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
   const client = {
     storage: { from(bucket) { assert.equal(bucket, 'tmh-screenshots'); return { async download(path) {
       assert.equal(path, rows.brand_reviews[0].screenshot_url);
-      return { data: new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], { type: 'image/png' }), error: null };
+      return { data: new Blob([storedImageBytes || PNG_BYTES], { type: 'image/png' }), error: null };
     }, async upload(path, bytes, options) { objectOperations.push({ action: 'upload', path, bytes: bytes.length, options }); return { error: null }; },
     async remove(paths) { objectOperations.push({ action: 'remove', paths }); return { error: null }; } }; } },
     functions: { async invoke(name, { body }) { deliveries.push({ name, body }); const event = rows.flag_alert_notifications.find((row) => row.id === body.notificationId);
@@ -64,6 +66,8 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
     async rpc(name, args) {
       rpcCalls.push({ name, args: structuredClone(args) });
       if(name==='record_ai_usage')return {data:null,error:null};
+      if(name==='reserve_ai_budget')return {data:budget,error:budgetError};
+      if(name==='settle_ai_budget')return {data:true,error:null};
       if(name==='visitor_strategy_booking')return {data:{pending:false},error:null};
       if (name === 'consume_playbook_limit') return { data:rateAllowed,error:null };
       if (name === 'correct_haven_review_source') {
@@ -266,7 +270,7 @@ test('source correction requires ownership, validates public URLs and preserves 
 test('screenshot corrections upload privately and clean the appropriate object only after a confirmed save', async () => {
   for (const conflict of [false, true]) {
     const app = load('update-review-source', { review: { platform_type: 'social', scoring_revision: conflict ? 1 : 0 } });
-    const response = await app.handler(app.request({ context: ACCESS, revision: 0, screenshot: 'data:image/png;base64,iVBORw0KGgo=' }));
+    const response = await app.handler(app.request({ context: ACCESS, revision: 0, screenshot: PNG_DATA_URL }));
     assert.equal(response.status, conflict ? 409 : 200);
     const upload = app.objectOperations[0]; assert.equal(upload.action, 'upload'); assert.ok(upload.path.startsWith(REVIEW + '/source-'));
     assert.equal(upload.options.upsert, false); assert.equal(upload.options.contentType, 'image/png');
@@ -438,12 +442,12 @@ test('website scoring: an owned fresh saved result can be reused but force retry
 test('social scoring: only owned profiles accept screenshots; valid low and unreadable states persist separately', async () => {
   for (const state of ['valid', 'insufficient_evidence']) {
     const app = load('score-social', { review: { platform_type: 'social' }, scoring: { ...SOCIAL_SCORE, state } });
-    const response = await app.handler(app.request({ context: ACCESS, screenshot: 'data:image/png;base64,YQ==' }));
+    const response = await app.handler(app.request({ context: ACCESS, screenshot: PNG_DATA_URL }));
     assert.equal(response.status, 200); const data = await response.json();
     assert.equal(data.state, state); assert.equal(data.score, state === 'valid' ? 20 : null);
     assert.equal(app.rows.brand_reviews[0].scrape_state, state);
   }
-  const unowned = load('score-social'); const response = await unowned.handler(unowned.request({ screenshot: 'data:image/png;base64,YQ==' }));
+  const unowned = load('score-social'); const response = await unowned.handler(unowned.request({ screenshot: PNG_DATA_URL }));
   assert.equal(response.status, 403); assert.equal(unowned.requests.length, 0);
 });
 test('prompt strategy: contextual tone, hesitation, transformation, and no-income-guarantees remain in server instructions', () => {
@@ -522,7 +526,7 @@ test('provider configuration: explicit disabling skips Gemini while text chat an
 });
 test('provider configuration: explicit disabling never invents a vision score', async () => {
   const app=load('score-social',{review:{platform_type:'social'},env:{GEMINI_ENABLED:'false'}});
-  const response=await app.handler(app.request({context:ACCESS,screenshot:'data:image/png;base64,YQ=='}));
+  const response=await app.handler(app.request({context:ACCESS,screenshot:PNG_DATA_URL}));
   assert.equal(response.status,503);assert.equal(app.requests.length,0);
   assert.equal((await response.json()).state,'failed');
 });
@@ -626,8 +630,56 @@ test('conversation memory survives the recent-history window, accepts evidenced 
 test('paid scoring and chat reject exhausted budgets before provider calls and preserve a prior saved score',async()=>{
   for(const name of ['haven-chat','scrape-website','score-social']){
     const app=load(name,{rateAllowed:false,review:{platform_type:name==='score-social'?'social':'website'}});
-    const body=name==='haven-chat'?chatBody():{context:ACCESS,screenshot:'data:image/png;base64,YQ=='};
+    const body=name==='haven-chat'?chatBody():{context:ACCESS,screenshot:PNG_DATA_URL};
     assert.equal((await app.handler(app.request(body))).status,429);assert.equal(app.requests.length,0);
     assert.equal(app.rows.brand_reviews[0].haven_score,20);
+  }
+});
+
+test('durable AI controls: daily exhaustion, runtime pauses and missing migrations stop every provider without losing saved work or adding strikes',async()=>{
+  for(const name of ['haven-chat','scrape-website','score-social']){
+    for(const [budget,budgetError,status,code] of [
+      [{allowed:false,paused:false,retryAfter:3600},null,429,'ai_daily_budget_exceeded'],
+      [{allowed:false,paused:true,retryAfter:60},null,503,'ai_paused'],
+      [null,{code:'PGRST202'},503,'ai_budget_unavailable'],
+    ]){
+      const app=load(name,{budget,budgetError,review:{platform_type:name==='score-social'?'social':'website'}});
+      const response=await app.handler(app.request(name==='haven-chat'?chatBody():{context:ACCESS,force:true}));
+      const body=await response.json();assert.equal(response.status,status,name);assert.equal(body.code,code,name);
+      assert.ok(Number(response.headers.get('Retry-After'))>0);assert.ok(body.retryAfter>0);
+      assert.equal(app.requests.filter(r=>/googleapis|groq/.test(r.url)).length,0,name);
+      assert.equal(app.rows.brand_reviews[0].haven_score,20);assert.equal(app.rows.brand_reviews[0].flag_status,'white');
+      assert.equal(app.rows.haven_chat_visitors[0].flag_status,'white');assert.equal(app.rpcCalls.filter(c=>c.name==='settle_ai_budget').length,0);
+      if(name==='haven-chat'){
+        assert.equal(app.rows.haven_sessions[0].messages.filter(m=>m.role==='user').length,1);
+        assert.equal(app.rows.haven_chat_turns[0].status,'failed');
+      }
+    }
+  }
+});
+
+test('durable AI controls: retry/fallback reservation precedes provider requests and settles known usage including a charged partial primary result',async()=>{
+  let app;
+  app=load('haven-chat',{fetchImpl:async url=>{
+    const reserved=app.rpcCalls.find(c=>c.name==='reserve_ai_budget');assert.ok(reserved);assert.equal(reserved.args.p_calls,3);
+    if(url.includes('googleapis'))return Response.json({candidates:[{finishReason:'MAX_TOKENS',content:{parts:[{text:'Partial'}]}}],usageMetadata:{totalTokenCount:8000,promptTokenCount:5000,candidatesTokenCount:1000,thoughtsTokenCount:2000}});
+    return Response.json({choices:[{finish_reason:'stop',message:{content:'Which part of your offer is unclear to customers?'}}],usage:{total_tokens:700,prompt_tokens:500,completion_tokens:200}});
+  }});
+  const response=await app.handler(app.request(chatBody()));assert.equal(response.status,200);
+  const settlement=app.rpcCalls.find(c=>c.name==='settle_ai_budget');assert.equal(settlement.args.p_calls,2);assert.equal(settlement.args.p_tokens,8700);
+  assert.equal(app.rpcCalls.filter(c=>c.name==='record_ai_usage'&&c.args.p_total!==null).length,2);
+  assert.equal(app.rows.brand_reviews[0].flag_status,'white');
+});
+
+test('durable AI controls: full 5 MiB chat and social images fit default daily ceilings without shortening image/output inputs',async()=>{
+  const image=largePngBytes(5*1024*1024);
+  for(const name of ['haven-chat','score-social']){
+    const app=load(name,{storedImageBytes:image,scoring:SOCIAL_SCORE,review:{platform_type:name==='score-social'?'social':'website'}});
+    const response=await app.handler(app.request(name==='haven-chat'?chatBody({screenshot:'data:image/png;base64,'+image.toString('base64')}):{context:ACCESS,force:true}));
+    assert.equal(response.status,200,name);
+    const reserved=app.rpcCalls.find(c=>c.name==='reserve_ai_budget');assert.ok(reserved.args.p_tokens<100000000);assert.ok(reserved.args.p_tokens>20000000);
+    assert.equal(app.requests[0].payload.generationConfig.maxOutputTokens,4096);
+    const parts=app.requests[0].payload.contents.at(-1).parts;
+    assert.equal(parts.find(p=>p.inline_data).inline_data.data.length,image.toString('base64').length);
   }
 });

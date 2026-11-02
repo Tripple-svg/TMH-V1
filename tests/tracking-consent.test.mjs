@@ -2,12 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import {readCookiePreference,COOKIE_NOTICE_VERSION} from '../src/lib/cookiePreference.js';
 
 const source = readFileSync(new URL('../src/lib/trackingUtils.js', import.meta.url), 'utf8')
-  .replaceAll('export async function', 'async function').replaceAll('export function', 'function').replace('export { getOrCreateVisitorId };','');
+  .replace(/^import .*;\r?\n/gm,'').replaceAll('export async function', 'async function').replaceAll('export function', 'function').replace('export { getOrCreateVisitorId };','');
 function capture(consent, blocked = false) {
-  const values = new Map(consent === undefined ? [] : [['tmh_cookie_consent', String(consent)]]), writes = [];
-  const context = { URLSearchParams, Date, navigator: { userAgent: 'Android Mobile' },
+  const values = new Map(consent === undefined ? [] : [['tmh_cookie_consent', String(consent)],['tmh_cookie_consent_version',COOKIE_NOTICE_VERSION],['tmh_cookie_consent_recorded','true'],['tmh_cookie_consent_at',new Date().toISOString()]]), writes = [];
+  const context = { readCookiePreference,URLSearchParams, Date, navigator: { userAgent: 'Android Mobile' },
     window: { location: { search: '?utm_source=test&utm_campaign=launch' } }, document: { referrer: 'https://example.com' },
     localStorage: { getItem: (key) => { if (blocked) throw new Error('disabled'); return values.get(key) ?? null; },
       setItem: (key, value) => { writes.push(key); values.set(key, value); } },

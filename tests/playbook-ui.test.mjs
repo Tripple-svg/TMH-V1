@@ -115,7 +115,8 @@ test('downloads refresh expiring URLs and allow one action per visit with future
 test('failed verification hides downloads and offers recovery without another charge',async()=>{
   const ui=shop(saved(),async()=>({data:{ok:false,code:'recovery_required'}}));
   ui.mount();await flush();
-  const tree=ui.render();assert.equal(tree.filter(node=>node.type==='a').length,0);
+  const tree=ui.render();assert.ok(!tree.some(node=>node.type==='a'&&node.props.href!=='/support?issue=purchase'));
+  assert.ok(tree.some(node=>node.type==='a'&&node.props.href==='/support?issue=purchase'));
   assert.match(text(tree),/one-time code|do not need to pay again/);
   assert.ok(recoveryForm(tree));assert.ok(!tree.some(node=>node.type==='form'&&node.props.id==='paystack-form'));
 });
@@ -147,6 +148,25 @@ test('fresh checkout verifies its private proof and exposes the download without
   assert.deepEqual(calls.map(call=>call.name),['verify-paystack','verify-paystack']);
   assert.equal(calls[1].body.downloadToken,token);assert.equal(JSON.parse(ui.storage.get('tmh_playbook_purchase')).downloadToken,token);
   assert.ok(!tree.some(node=>node.props.autoComplete==='one-time-code'));
+});
+
+test('follow-up consent is visible, optional, unchecked, and sent to Paystack only when selected',async()=>{
+  for (const optIn of [false, true]) {
+    let payment;
+    const ui=shop(null,async()=>({data:{ok:true,reference:'UNSEEN_consent',email:'buyer@example.com',downloadToken:token,amount:963900}}));
+    ui.window.PaystackPop={setup(options){payment=options;return {openIframe(){}};}};
+    let tree=ui.mount();
+    const consent=tree.find(node=>node.props.id==='playbook-followup-consent');
+    assert.equal(consent.props.type,'checkbox');assert.equal(consent.props.checked,false);assert.ok(!consent.props.required);
+    assert.equal(consent.props['aria-describedby'],'playbook-followup-details');
+    assert.match(text(tree.find(node=>node.props.id==='playbook-followup-details')),/about 24 hours/);
+    assert.match(text(tree),/Your purchase and download work without it/);
+    if(optIn)consent.props.onChange({target:{checked:true}});
+    input(ui.render(),'email').props.onChange({target:{value:'buyer@example.com'}});
+    await ui.render().find(node=>node.props.id==='paystack-form').props.onSubmit({preventDefault(){}});
+    assert.equal(payment.metadata.playbook_followup_opt_in,optIn);
+    payment.onClose();
+  }
 });
 
 test('a payment verification outage retains checkout proof and offers a retry without asking for OTP or payment',async()=>{

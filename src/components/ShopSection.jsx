@@ -436,8 +436,8 @@ export default function ShopSection() {
           transition={{ duration: reduceMotion ? 0 : 0.4 }}
         >
           <div className="grid grid-cols-1 md:grid-cols-2">
-            <div className="relative aspect-square md:aspect-auto flex items-center justify-center p-8 bg-zinc-100 dark:bg-zinc-900 transition-colors duration-300">
-              <motion.div initial={false} whileHover={reduceMotion ? undefined : { y: -6, rotate: 0 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }} transition={{ duration: 0.25 }} className={`relative w-48 h-64 sm:w-56 sm:h-72 rounded-lg shadow-2xl overflow-hidden ${reduceMotion ? '' : 'rotate-[-2deg] hover:rotate-0 transition-transform duration-300'}`}>
+            <div style={{perspective:900}} className="relative aspect-square md:aspect-auto flex items-center justify-center p-8 bg-zinc-100 dark:bg-zinc-900 transition-colors duration-300">
+              <motion.div initial={false} whileHover={reduceMotion ? undefined : { y: -6, rotate: 0, rotateX: -3, rotateY: 7 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }} transition={{ duration: 0.25 }} className={`relative w-48 h-64 sm:w-56 sm:h-72 rounded-lg shadow-2xl overflow-hidden ${reduceMotion ? '' : 'rotate-[-2deg] hover:rotate-0 transition-transform duration-300'}`}>
                 <img
                   src="/Playbook.jpeg"
                   alt="The Unseen Playbook"
@@ -445,6 +445,7 @@ export default function ShopSection() {
                   decoding="async"
                   className="w-full h-full object-cover rounded-lg"
                 />
+                <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-lg ring-1 ring-inset ring-zinc-950/15 dark:ring-white/20" />
               </motion.div>
             </div>
 
@@ -477,6 +478,9 @@ export default function ShopSection() {
               >
                 Get The Unseen Playbook <ArrowRight className="w-4 h-4" />
               </button>
+              <p className="mt-3 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                Your next step, ready to put into practice. Get the complete Playbook as a PDF as soon as your payment is confirmed.
+              </p>
 
             </div>
           </div>
@@ -667,7 +671,7 @@ export default function ShopSection() {
                         <label className="block text-xs text-zinc-400">Paystack reference<input required disabled={verifying} value={recoveryReference} onChange={event => setRecoveryReference(event.target.value)} placeholder="UNSEEN_…" className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-3 text-base text-white" autoCapitalize="none" spellCheck={false} /></label>
                         <button disabled={verifying} className="rounded-lg bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-950 disabled:opacity-50">{verifying ? 'Sending code…' : 'Send my access code'}</button>
                       </form>)}
-                      {verificationError && <p role="alert" className="mt-3 text-xs leading-relaxed text-red-300">{verificationError}</p>}
+                      {verificationError && <p role="alert" className="mt-3 text-xs leading-relaxed text-red-300">{verificationError} <a href="/support?issue=purchase" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">Contact support</a></p>}
                       {verifying && !recoveryOpen && <p role="status" className="mt-3 text-xs text-zinc-400">Checking your saved purchase…</p>}
                     </div>}
 
@@ -687,10 +691,15 @@ export default function ShopSection() {
                       <p className="text-xs text-zinc-400">
                         Use an email you can access for your receipt. Your download opens here after payment is verified.
                       </p>
-                      <label className="flex items-start gap-3 text-xs leading-relaxed text-zinc-400">
-                        <input type="checkbox" checked={followupOptIn} onChange={event => setFollowupOptIn(event.target.checked)} className="mt-0.5 accent-zinc-400" />
-                        <span>Send me one follow-up email in about 24 hours with help applying the Playbook and an introduction to TMH services. Optional.</span>
-                      </label>
+                      <div className="rounded-xl border border-white/15 bg-white/[0.03] p-4">
+                        <label htmlFor="playbook-followup-consent" className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed text-zinc-200">
+                          <input id="playbook-followup-consent" type="checkbox" checked={followupOptIn} onChange={event => setFollowupOptIn(event.target.checked)} aria-describedby="playbook-followup-details" className="mt-1 h-4 w-4 shrink-0 accent-zinc-400" />
+                          <span>Send me a Playbook check-in <span className="text-xs text-zinc-400">(optional)</span></span>
+                        </label>
+                        <p id="playbook-followup-details" className="mt-2 pl-7 text-xs leading-relaxed text-zinc-400">
+                          One email in about 24 hours with a practical starting point and a link to TMH services. No call is booked. Your purchase and download work without it.
+                        </p>
+                      </div>
                     </form>}
 
                     <div className="flex items-center gap-2 text-zinc-400 text-xs">

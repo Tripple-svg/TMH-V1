@@ -19,6 +19,16 @@ export async function requireAdmin(db: any, request: Request, serviceKey: string
   try{result=await db.auth.getUser(match[1]);}
   catch{throw new AdminAuthError('Authentication is temporarily unavailable. Please retry.',503);}
   if(result.error || !result.data?.user)throw new AdminAuthError('Unauthorised',401);
+  if(result.data.user.deleted_at || (result.data.user.banned_until && Date.parse(result.data.user.banned_until)>Date.now()))throw new AdminAuthError('Admin access required.',403);
   if(result.data.user.app_metadata?.role!=='admin')throw new AdminAuthError('Admin access required.',403);
+  // Decode assurance only after Auth has verified this exact bearer. A fresh
+  // database gate also checks fields that Auth's public user response may omit.
+  let aal='aal1';
+  try{const payload=match[1].split('.')[1];if(JSON.parse(atob(payload.replace(/-/g,'+').replace(/_/g,'/'))).aal==='aal2')aal='aal2';}catch{/* Missing/invalid assurance stays AAL1. */}
+  let access;
+  try{access=await db.rpc('admin_access_allowed',{p_actor:result.data.user.id,p_aal:aal});}
+  catch{throw new AdminAuthError('Authentication checks are unavailable. Please retry.',503);}
+  if(access?.error||typeof access?.data!=='boolean')throw new AdminAuthError('Authentication checks are unavailable. Please retry.',503);
+  if(!access.data)throw new AdminAuthError('Admin access or authenticator verification required.',403);
   return result.data.user;
 }

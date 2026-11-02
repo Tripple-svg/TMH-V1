@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
 import { HavenRequestError,readBoundedJson } from '../_shared/haven-request.ts';
 
@@ -92,7 +92,7 @@ serve(async (req) => {
       .limit(1);
 
     if (reviewError) {
-      console.error('Data deletion email lookup failed:', reviewError);
+      console.error('request-data-deletion: lookup_failed');
       return success(origin);
     }
 
@@ -119,7 +119,7 @@ serve(async (req) => {
       });
 
     if (requestError) {
-      console.error('Could not create data deletion request:', requestError);
+      console.error('request-data-deletion: record_failed');
       return success(origin);
     }
 
@@ -144,7 +144,7 @@ serve(async (req) => {
     }
   } catch (error) {
     if(error instanceof HavenRequestError)return json({ok:false,error:error.message},origin,error.status);
-    console.error('request-data-deletion failed:', error);
+    console.error('request-data-deletion: request_failed');
   }
 
   return success(origin);

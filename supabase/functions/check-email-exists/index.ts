@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
 import { HavenRequestError,readBoundedJson } from '../_shared/haven-request.ts';
 
@@ -79,7 +79,7 @@ serve(async (req) => {
       .limit(1);
 
     if (error) {
-      console.error('check-email-exists lookup failed:', error);
+      console.error('check-email-exists: lookup_failed');
       return response(false, origin, undefined, includeFlag ? 503 : 200);
     }
 
@@ -90,7 +90,7 @@ serve(async (req) => {
     return response(Boolean(reviews?.length), origin, flagStatus);
   } catch (error) {
     if(error instanceof HavenRequestError)return new Response(JSON.stringify({exists:false,error:error.message}),{status:error.status,headers:{...corsHeaders(origin),'Content-Type':'application/json','Cache-Control':'no-store',...(error.status===429?{'Retry-After':'600'}:{})}});
-    console.error('check-email-exists failed:', error);
+    console.error('check-email-exists: request_failed');
     return response(false, origin, undefined, includeFlag ? 503 : 200);
   }
 });

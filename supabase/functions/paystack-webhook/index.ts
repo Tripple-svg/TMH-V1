@@ -1,6 +1,7 @@
 import { acceptedPaymentAmount } from '../_shared/playbook-recovery.ts';
 import { internalHeaders } from '../_shared/internal-auth.js';
 import { invocationFailure } from '../_shared/resend-delivery.js';
+import {boundedRawBody,RawBodyError} from '../_shared/raw-body.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 
@@ -42,7 +43,7 @@ serve(async (req) => {
 
   try {
     // Authenticate the exact bytes received before decoding or parsing JSON.
-    const rawBody = new Uint8Array(await req.arrayBuffer());
+    const rawBody = await boundedRawBody(req);
     const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-512' }, false, ['verify']);
     const signatureBytes = Uint8Array.from(signature.match(/.{2}/g)!, (pair) => Number.parseInt(pair, 16));
     if (!await crypto.subtle.verify('HMAC', key, signatureBytes, rawBody)) return failure('signature_verification_failed', 'Unauthorised', 401);
@@ -62,7 +63,7 @@ serve(async (req) => {
     }
     if (expectedMode && payment.domain !== expectedMode) return failure('signed_payload_environment_mismatch', 'Payment environment mismatch', 400);
     const email = typeof payment?.customer?.email === 'string' ? payment.customer.email.trim().toLowerCase() : '';
-    if (!EMAIL_PATTERN.test(email)) return failure('invalid_purchase_email', 'Invalid purchase email', 400);
+    if (email.length>254||!EMAIL_PATTERN.test(email)) return failure('invalid_purchase_email', 'Invalid purchase email', 400);
     const url = Deno.env.get('SUPABASE_URL');
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (!url || !serviceKey) return failure('missing_database_configuration', 'Server misconfigured', 500);
@@ -98,7 +99,8 @@ serve(async (req) => {
       .select('thankyou_sent').eq('reference', purchase.reference).maybeSingle();
     if (deliveryError || delivery?.thankyou_sent !== true) return failure('delivery_marker_unconfirmed', 'Purchase email status unavailable', 502);
     return json({ ok: true });
-  } catch {
+  } catch(error) {
+    if(error instanceof RawBodyError)return json({ok:false,error:error.message},error.status);
     return failure('purchase_processing_failed', 'Unable to process purchase', 500);
   }
 });

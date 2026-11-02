@@ -438,7 +438,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
 
             {errors.submit && (
               <div role="alert" className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-                {errors.submit}
+                {errors.submit} <a href="/support?issue=review_access" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">Contact support</a>
               </div>
             )}
 
@@ -779,6 +779,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                   try { sessionStorage.removeItem(SUBMISSION_ID_KEY); } catch { /* Optional storage. */ }
                   setErrors({});
                 }} className="w-full rounded-xl border border-zinc-400 px-4 py-3 text-sm text-zinc-800 dark:text-zinc-200">Start a new submission with these details</button>}
+                {Object.keys(errors).length>0 && <p className="text-xs text-zinc-500">Still stuck? <a href="/support?issue=review_access" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">Contact Team Haven</a> without clearing your saved browser data.</p>}
                 <div className="flex gap-2 pt-2">
                   <button
                     type="button"

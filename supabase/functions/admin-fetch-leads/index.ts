@@ -131,6 +131,21 @@ serve(async (req) => {
       return json({ ok: false, error: 'Unauthorised' }, origin, 401);
     }
 
+    if(body.action==='visitorActivity'){
+      const [haven,site]=await Promise.all([
+        Promise.resolve(supabase.rpc('haven_visitor_activity')).catch(()=>({data:null,error:true})),
+        Promise.resolve(supabase.rpc('site_presence_activity')).catch(()=>({data:null,error:true})),
+      ]);
+      const valid=(result:any,keys:string[])=>!result.error&&result.data&&keys.every(key=>Number.isSafeInteger(result.data[key])&&result.data[key]>=0)&&result.data.windowMinutes===5&&typeof result.data.asOf==='string'&&Number.isFinite(Date.parse(result.data.asOf));
+      const havenValid=valid(haven,['savedBrowserIdentities','recentChatIdentities'])&&haven.data.recentChatIdentities<=haven.data.savedBrowserIdentities;
+      const siteValid=valid(site,['savedBrowserProfiles','activeBrowserProfiles'])&&site.data.activeBrowserProfiles<=site.data.savedBrowserProfiles&&site.data.heartbeatSeconds===120&&site.data.retentionMonths===13;
+      const activity=havenValid?{savedBrowserIdentities:haven.data.savedBrowserIdentities,recentChatIdentities:haven.data.recentChatIdentities,windowMinutes:5,asOf:haven.data.asOf}:null;
+      const siteActivity=siteValid?{savedBrowserProfiles:site.data.savedBrowserProfiles,activeBrowserProfiles:site.data.activeBrowserProfiles,windowMinutes:5,heartbeatSeconds:120,retentionMonths:13,asOf:site.data.asOf}:null;
+      const activityError=havenValid?null:'Haven activity is unavailable. Apply the visitor activity migration and refresh.';
+      const siteActivityError=siteValid?null:'Website analytics are unavailable. Apply the site presence migration and refresh.';
+      if(!activity&&!siteActivity)return json({ok:false,error:'Visitor activity is unavailable. Apply the activity migrations and refresh.'},origin,503);
+      return json({ok:true,activity,activityError,siteActivity,siteActivityError,coverage:{source:'consented_visible_site_heartbeats',heartbeatSeconds:120,activeWindowMinutes:5,countsPeople:false,includesUnconsentedVisitors:false}},origin);
+    }
     if(body.action==='securityAttempts'){
       const {data,error}=await supabase.from('verification_attempts').select('visitor_id,attempts,locked_at,updated_at').not('visitor_id','is',null).not('locked_at','is',null).order('updated_at',{ascending:false}).limit(100);
       return json(error?{ok:false,error:'Verification attempts could not be loaded. Apply the security migration.'}:{ok:true,rows:data},origin,error?503:200);

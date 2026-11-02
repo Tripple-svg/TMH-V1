@@ -65,8 +65,17 @@ function isDecline(text) {
     || /\b(?:let me think|not ready|rather not|not right now)\b/i.test(text)
     || /\b(?:don['’]?t|do not)\s+(?:(?:want|need)(?:\s+to)?\s+)?(?:book|buy|purchase|schedule|arrange|call|(?:the )?playbook|(?:a )?resource)\b/i.test(text);
 }
+function bookApplicationQuestion(text) {
+  // Mentioning a purchase or asking "how" is not itself an access failure.
+  // Explicit file/account trouble still takes precedence over application help.
+  return /\b(?:playbook|book|chapter|framework)\b/i.test(text)
+    && /\b(?:apply|applying|application|implement|understand|explain|learn|use|using|practice|practise|work through|help (?:me )?(?:with|start|starting)|need help starting|put .{0,30} into practice)\b/i.test(text)
+    && !/already purchased|\b(?:download|otp|refund|billing|recover(?:y)?|missing|lost|broken|expired|failed|receipt|unable to open)\b|\b(?:can['’]?t|cannot|won['’]?t|not)\s+(?:open|opening|access|download|find)\b/i.test(text);
+}
 function publicSupport(text, context) {
-  return context.scope === 'support' && !context.teamInquiry && (SUPPORT_ISSUE.test(text) || humanRequest(text));
+  return context.scope === 'support' && !context.teamInquiry
+    && (humanRequest(text) || supportHelpReply(text, context.scope, context) !== null
+      || !bookApplicationQuestion(text) && SUPPORT_ISSUE.test(text));
 }
 function normalizeState(previous = {}) {
   const oldNeed = previous.problemType === 'foundational' ? 'learning' : previous.problemType === 'operational' ? 'implementation' : 'unknown';
@@ -111,15 +120,33 @@ export function acceptedCallInvitation(latest, messages = []) {
   return isAffirmative(latest) && /\b(?:would you like|want to|shall we|can i)\b[^?\n]{0,160}\b(?:book|schedule|call)\b/i.test(previous?.content || '');
 }
 
-export function supportHelpReply(text, scope, context = {}) {
-  if (scope !== 'support') return null;
+function platformHelpReply(text) {
   const value = String(text || '').toLowerCase();
+  // Specific platform operations are useful in any Haven conversation. These
+  // factual answers do not change the marketing route or authorize an action.
+  if (/\b(?:support (?:form|ticket|request)|contact support)\b/.test(value)) {
+    if (/\b(?:status|progress|reply|answered|respond|received)\b/.test(value)) return 'I cannot look up support requests or confirm an email arrived from this chat. If you have a saved request reference, include it when emailing info@themarketinghaven.xyz. A successful form submission shows that reference; opening an email link alone does not create a request.';
+    return 'Open https://themarketinghaven.xyz/support. Choose the closest issue, add your contact email and what happened, then tick the consent box and complete the security check. Your request reference appears after it is saved. Keep passwords, one-time codes and private links out of the message. I have not submitted a request from this chat.';
+  }
+  if (/\b(?:admin|team sign[ -]?in|staff account)\b/.test(value)&&/\b(?:forgot|password|reset|authenticator|two[ -]factor|mfa|totp)\b/.test(value)) return 'Invited staff can open https://themarketinghaven.xyz/admin and choose Forgot password. Use the newest reset email once. If an authenticator is enabled, verify its code only in Admin; do not send it here. For a lost authenticator or an expired link that still fails, contact the team owner at info@themarketinghaven.xyz. A reset link does not grant an admin role.';
+  if (/\b(?:haven|ai|chat)\b/.test(value)&&/\b(?:daily (?:limit|allowance)|paused|503|bad gateway)\b/.test(value)) return 'Follow the waiting time or service notice shown in Haven, then retry your saved message. A temporary service error does not prove that credit is exhausted. If the problem continues, use https://themarketinghaven.xyz/support and include the visible error and approximate time. Do not clear your saved browser data or pay again to restore chat access.';
+  if (/\b(?:about (?:section|video)|story video|video on (?:this|your) site)\b/.test(value)&&/\b(?:play|sound|time|slider|seek|pause|control|broken|working)\b/.test(value)) return 'In About, tap Play video to watch inline with sound. The player controls show its time and let you pause, seek or change volume; the close control returns to the quiet preview. If a control does not work, send the device, browser and what happened through https://themarketinghaven.xyz/support. This chat cannot repair the player directly.';
+  return null;
+}
+
+export function supportHelpReply(text, scope, context = {}) {
+  const value = String(text || '').toLowerCase();
+  const platformHelp = platformHelpReply(value);
+  if (platformHelp) return platformHelp;
+  if (scope !== 'support') return null;
   if (/already purchased|recovery (?:page|panel|form|option)/.test(value) && /not|isn.t|missing|where|visible|show|find/.test(value)) return 'Open Get The Unseen Playbook in Digital Products on the homepage (#shop). Already purchased is a tab inside that panel, not a link below the product card. If this device already has valid purchase access, the panel shows your saved download instead. If recovery still is not available, email info@themarketinghaven.xyz with what you see. Do not clear your saved access or pay again.';
-  if (humanRequest(value) && (!context.teamInquiry || SUPPORT_ISSUE.test(value))) return `You can reach Team Haven at ${CONTACT} or through the WhatsApp contact in the footer. Tell them what happened so they can review it; I have not created a support ticket or booked a strategy call.`;
+  if (humanRequest(value) && (!context.teamInquiry || SUPPORT_ISSUE.test(value))) return `Open the support form at https://themarketinghaven.xyz/support and describe what happened. A successful submission gives you a request reference so Team Haven can follow up. You can also email ${CONTACT} or use WhatsApp in the footer. I have not created a support ticket or booked a strategy call from this chat.`;
   if (/\b(?:are you|is this)\b.{0,25}\b(?:human|real person|ai|bot)\b/.test(value)) return 'I am Haven, TMH’s AI marketing guide. I can help with marketing and questions about this platform. If you need a person, Team Haven is available through the contact details in the footer.';
-  if (/\b(?:another|new|second|redo|again)\b/.test(value) && /\b(?:brand review|review)\b/.test(value)) return 'Your saved brand review normally reopens from Request a Free Brand Review. Use the review correction controls to replace a wrong link or screenshot. For a different brand or a fresh review, contact info@themarketinghaven.xyz so the team can help without mixing your records. Deleting a review is a separate privacy action.';
+  if (/\b(?:reopen|open|correct(?:ing)?|edit(?:ing)?|change|replace|wrong|another|new|second|redo|again)\b/.test(value) && /\b(?:brand review|review)\b/.test(value)) return 'Request a Free Brand Review reopens your saved review on this browser. For a website or screenshot review, choose Review source in its chat, then Wrong website/screenshot? Try Again. That replaces the source and score for the same review while keeping its conversation. If you chose None yet, cannot see those controls, or need a review for a different brand, use the support form at https://themarketinghaven.xyz/support or contact info@themarketinghaven.xyz. Do not clear storage or use a private window to bypass saved access.';
+  if (/\b(?:rate limit|rate limited|too many|attempt limit|cooldown|locked out|blocked from trying)\b/.test(value)) return 'Follow the waiting time shown before trying again; changing email or clearing storage will not reset a network limit. A rate limit is separate from a behaviour restriction. If you remain blocked after that time, submit the support form at https://themarketinghaven.xyz/support with the error and any support reference shown. Team Haven can review eligible locks after checking the request. I cannot clear them from chat; you can also contact info@themarketinghaven.xyz.';
   if (/\b(?:lost|missing|recover|recovery|restore|disappeared)\b/.test(value) && /\b(?:chat|review|access)\b/.test(value) && !/\b(?:playbook|purchase|download)\b/.test(value)) return 'A visible older chat does not restore the secure review access key. Contact info@themarketinghaven.xyz to verify ownership and recover that review. Please do not share an access token in chat. Clearing storage again will not restore the key.';
   if (/\b(?:otp|code)\b/.test(value) && /arriv|receiv|inbox|spam|delay|sent|email/.test(value)) return 'Check the inbox and spam folder for the checkout email you entered. If the code has not arrived, wait for the resend timer in Already purchased, then request a fresh code there. Avoid requesting several codes at once. If it is still missing, contact info@themarketinghaven.xyz; I cannot resend it from chat, and you should not share a code here.';
+  if (bookApplicationQuestion(value)) return null;
   if (/\b(?:playbook|download|copy|pdf|ebook)\b/.test(value)
     && /\b(?:missing|lost|not|haven.t|didn.t|where|how|broken|recover|again|another|different|laptop|computer|expired|failed|help|problem)\b/.test(value)) {
     if (/\b(?:downloaded|download was|file|files|folder)\b/.test(value) && /\b(?:lost|find|missing|where|saved)\b/.test(value)) return 'First check Downloads or the Files app on the device you used. If the copy is missing, open Get The Unseen Playbook again. Saved purchase access can reopen it on a later page visit; on another device, choose Already purchased to verify your checkout inbox. You do not need to pay again.';
@@ -170,6 +197,16 @@ export function resolveHavenRouting(rawText, context = {}) {
   const latest = String(context.latestUserText || '').trim();
   const previous = normalizeState(context.routingState);
   const state = { ...previous, evidence: [...previous.evidence], missing: [...previous.missing] };
+  const platformHelp = platformHelpReply(latest);
+  if (platformHelp) {
+    // A platform question can be a brief detour from a marketing discussion.
+    // Answer before booking/delegation gates, retaining its pending invitation.
+    if (context.scope === 'support' && !context.teamInquiry) {
+      state.need = 'support'; state.bookFit = false; state.pendingAction = null; state.permission = 'none';
+      return result(platformHelp + '\n[[STEP:CUSTOMER_SUPPORT_OPEN]]', state, humanRequest(latest) ? 'support_handoff' : 'answer');
+    }
+    return result(platformHelp, state, 'answer');
+  }
   if ((context.bookingStatus?.confirmed || context.bookingStatus?.pending) && (/\[\[BOOK_CALL\]\]/.test(raw) || BARE_BOOKING.test(latest) || wantsDelegation(latest))) {
     state.pendingAction=null;state.permission='none';
     return result(context.bookingStatus.confirmed

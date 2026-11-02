@@ -1,13 +1,14 @@
 import { normalizeWebsiteUrl } from '../_shared/haven-scoring.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { hashReviewToken, validReviewCredentials, verifyReviewAccess, ReviewAccessError } from '../_shared/review-access.ts';
 import { readBoundedJson, HavenRequestError } from '../_shared/haven-request.ts';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
+import { decodeScreenshotDataUrl, ScreenshotValidationError } from '../_shared/screenshot-validation.ts';
+import {PUBLIC_ORIGINS as ORIGINS} from '../_shared/cors.ts';
 
-const ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz'];
 function headers(origin: string | null) {
-  const allowed = origin && (ORIGINS.includes(origin) || /^http:\/\/localhost:\d+$/.test(origin));
+  const allowed = origin && ORIGINS.includes(origin);
   return { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Vary': 'Origin',
     'Access-Control-Allow-Origin': allowed ? origin! : ORIGINS[0],
     'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
@@ -21,7 +22,7 @@ serve(async (req) => {
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers(origin),...(status===429?{'Retry-After':'600'}:{})} });
   if (req.method === 'OPTIONS') return new Response('ok', { headers: headers(origin) });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
-  if (origin && !ORIGINS.includes(origin) && !/^http:\/\/localhost:\d+$/.test(origin)) return json({ ok: false, error: 'Origin not allowed' }, 403);
+  if (origin && !ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, 403);
   try {
     const url = Deno.env.get('SUPABASE_URL');
     const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -41,12 +42,9 @@ serve(async (req) => {
     let contentType = '';
     let screenshotPath: string | null = null;
     if (body.platformType === 'social' && body.screenshotBase64) {
-      const match = typeof body.screenshotBase64 === 'string' && /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(body.screenshotBase64);
-      if (!match) return json({ ok: false, error: 'Use a PNG, JPEG or WebP screenshot' }, 400);
-      try { screenshot = Uint8Array.from(atob(match[2]), (c) => c.charCodeAt(0)); }
-      catch { return json({ ok: false, error: 'Invalid screenshot' }, 400); }
-      if (screenshot.length > 5 * 1024 * 1024) return json({ ok: false, error: 'Screenshot must be smaller than 5 MB' }, 413);
-      contentType = match[1];
+      const validated=decodeScreenshotDataUrl(body.screenshotBase64);
+      screenshot=validated.bytes;
+      contentType=validated.mimeType;
       screenshotPath = `${id}/review.${contentType.split('/')[1]}`;
     }
     const supabase = createClient(url, key, { auth: { persistSession: false } });
@@ -105,7 +103,7 @@ serve(async (req) => {
     }
     return json({ ok: true, reviewId: id, sessionId });
   } catch (error) {
-    if (error instanceof ReviewAccessError || error instanceof HavenRequestError) return json({ ok: false, error: error.message }, error.status);
+    if (error instanceof ReviewAccessError || error instanceof HavenRequestError || error instanceof ScreenshotValidationError) return json({ ok: false, error: error.message }, error.status);
     console.error('create-brand-review failed');
     return json({ ok: false, error: 'Unable to save your review. Please try again.' }, 500);
   }

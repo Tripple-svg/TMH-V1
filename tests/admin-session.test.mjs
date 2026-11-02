@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {observeAdminSession} from '../src/lib/adminSession.js';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(session=null){let event,stopped=false;const checks=[],changes=[];
-  const auth={onAuthStateChange(fn){event=fn;return {data:{subscription:{unsubscribe(){stopped=true;}}}};},getSession:async()=>({data:{session}}),getUser:async token=>{checks.push(token);return {data:{user:token==='customer'?{user_metadata:{role:'admin'}}:{app_metadata:{role:'admin'}}}};}};
+  const auth={mfa:{listFactors:async()=>({data:{all:[]}}),getAuthenticatorAssuranceLevel:async()=>({data:{currentLevel:'aal1',nextLevel:'aal1'}})},onAuthStateChange(fn){event=fn;return {data:{subscription:{unsubscribe(){stopped=true;}}}};},getSession:async()=>({data:{session}}),getUser:async token=>{checks.push(token);return {data:{user:token==='customer'?{user_metadata:{role:'admin'}}:{app_metadata:{role:'admin'}}}};}};
   const cleanup=observeAdminSession(auth,value=>changes.push(value));return {auth,changes,checks,cleanup,event:(type,session)=>event(type,session),get stopped(){return stopped;}};
 }
 test('admin session resumes a verified account, refreshes tokens, signs out and unsubscribes',async()=>{
