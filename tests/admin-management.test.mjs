@@ -148,56 +148,7 @@ function deleteDatabase({ missing = false, rpcError = false, storageError = fals
 }
 const deletion = { accessToken: 'test-admin-jwt', action: 'delete', reviewId: 'review-1', confirmation: 'review-1' };
 
-test('admin delete: wrong credentials and missing confirmation cannot reach database or storage', async () => {
-  const db = deleteDatabase();
-  const remove = handler('admin-update-lead', db.client);
-  assert.equal((await remove(request({ ...deletion, accessToken:'forged', password: 'wrong' }))).status, 401);
-  assert.equal((await remove(request({ ...deletion, confirmation: null }))).status, 400);
-  assert.equal((await remove(request({ ...deletion, action: 'truncate' }))).status, 400);
-  assert.equal(db.calls.length, 0);
-  assert.equal(db.removed.length, 0);
-});
-
-test('admin delete: confirmed request runs one transaction and removes only its saved screenshot', async () => {
-  const db = deleteDatabase();
-  const result = await handler('admin-update-lead', db.client)(request({ ...deletion, screenshot_path: 'other-review/private.png' }));
-  assert.equal(result.status, 200);
-  assert.deepEqual(await result.json(), { ok: true, deletedId: 'review-1', warning: null });
-  assert.equal(db.calls.length, 1);
-  assert.equal(db.calls[0].name, 'admin_delete_lead');
-  assert.equal(db.calls[0].args.p_review_id, 'review-1');
-  assert.deepEqual(db.removed, ['review-1/screenshot.png']);
-});
-
-test('admin delete: failed transaction returns500 without deleting screenshot; missing lead returns404', async () => {
-  for (const [options, expected] of [[{ rpcError: true }, 500], [{ missing: true }, 404]]) {
-    const db = deleteDatabase(options);
-    const result = await handler('admin-update-lead', db.client)(request(deletion));
-    assert.equal(result.status, expected);
-    assert.equal((await result.json()).ok, false);
-    assert.equal(db.removed.length, 0);
-  }
-});
-
-test('admin delete: committed deletion reports screenshot cleanup warning without pretending the row remains', async () => {
-  const db = deleteDatabase({ storageError: true });
-  const result = await handler('admin-update-lead', db.client)(request(deletion));
-  const data = await result.json();
-  assert.equal(data.ok, true);
-  assert.equal(data.deletedId, 'review-1');
-  assert.match(data.warning, /screenshot/);
-});
-
-test('admin delete: a malformed saved path cannot delete another lead screenshot', async () => {
-  for (const screenshotPath of ['other-review/private.png', 'review-1/../other-review/private.png']) {
-    const db = deleteDatabase({ screenshotPath });
-    const result = await handler('admin-update-lead', db.client)(request(deletion));
-    const data = await result.json();
-    assert.equal(data.ok, true);
-    assert.match(data.warning, /manual review/);
-    assert.equal(db.removed.length, 0);
-  }
-});
+test('legacy admin delete cannot bypass second-admin approval, with or without confirmation or supplied paths',async()=>{for(const extra of [{},{confirmation:null},{screenshot_path:'other-review/private.png'}]){const db=deleteDatabase();const response=await handler('admin-update-lead',db.client)(request({...deletion,...extra}));assert.equal(response.status,409);assert.match((await response.json()).error,/different admin/);assert.equal(db.calls.length,0);assert.equal(db.removed.length,0);}const db=deleteDatabase();assert.equal((await handler('admin-update-lead',db.client)(request({...deletion,accessToken:'forged'}))).status,401);});
 
 const uiSource = readFileSync(new URL('../src/pages/AdminDashboard.jsx', import.meta.url), 'utf8')
   .replace(/^import .* from 'react';\r?\n/m, '')
@@ -206,7 +157,7 @@ const uiSource = readFileSync(new URL('../src/pages/AdminDashboard.jsx', import.
   .replace('export default function AdminDashboard()', 'function AdminDashboard()');
 const uiCode = transformSync(`${uiSource}\nmodule.exports={useLeadActions,apiFetchLeads,PurchasesPanel,AdminDashboard};`, { loader: 'jsx', format: 'cjs' }).code;
 
-function ui({ confirm = true, networkError = false, httpStatus = 200, response = { ok: true, deletedId: 'review-1' } } = {}) {
+function ui({ confirm = true, networkError = false, httpStatus = 200, response = { ok: true, pendingApproval: true } } = {}) {
   const states = [], refs = [], requests = [], removed = [], changed = [], toasts = [], confirmations = [];
   let cursor = 0, refCursor = 0, lost = 0;
   const context = {
@@ -216,7 +167,7 @@ function ui({ confirm = true, networkError = false, httpStatus = 200, response =
     useState(initial) { const slot = cursor++; if (!(slot in states)) states[slot] = typeof initial === 'function' ? initial() : initial; return [states[slot], (v) => { states[slot] = typeof v === 'function' ? v(states[slot]) : v; }]; },
     useRef(initial) { const slot = refCursor++; return refs[slot] ||= { current: initial }; },
     useEffect() {}, useCallback: (fn) => fn, useMemo: (fn) => fn(),
-    window: { confirm(message) { confirmations.push(message); return confirm; } },
+    window: { prompt(message) { confirmations.push(message); return confirm?"Reviewed duplicate synthetic review":null; } },
     sessionStorage: { getItem: () => '' },
     fetch: async (url, options) => { requests.push({ url, ...options }); if (networkError) throw new Error('offline'); return { status: httpStatus, ok: httpStatus < 400, json: async () => response }; },
   };
@@ -235,16 +186,16 @@ function nodes(root) {
   visit(root); return all;
 }
 
-test('admin UI: cancelling concrete lead confirmation sends no delete; confirmed delete removes only acknowledged row', async () => {
+test('admin UI: cancelling deletion request sends nothing; a saved request leaves the lead visible for second approval', async () => {
   const cancelled = ui({ confirm: false });
   await cancelled.actions().onDeleteLead();
-  assert.match(cancelled.confirmations[0], /Buyer Brand.*buyer@example.com/);
-  assert.match(cancelled.confirmations[0], /cannot be undone/);
+  assert.match(cancelled.confirmations[0], /Buyer Brand/);
+  assert.match(cancelled.confirmations[0], /different admin/);
   assert.equal(cancelled.requests.length, 0);
   const approved = ui();
   await approved.actions().onDeleteLead();
-  assert.deepEqual(JSON.parse(approved.requests[0].body), {action:'delete',reviewId:'review-1',confirmation:'review-1'});
-  assert.deepEqual(approved.removed, ['review-1']);
+  assert.deepEqual(JSON.parse(approved.requests[0].body), {action:'requestDeletion',kind:'review',id:'review-1',reason:'Reviewed duplicate synthetic review'});
+  assert.deepEqual(approved.removed, []);assert.match(approved.toasts[0][1],/different admin/);
   assert.equal(approved.states[0], false);
 });
 

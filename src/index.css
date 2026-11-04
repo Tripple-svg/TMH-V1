@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+@media (max-width: 639px) {
+  .admin-workspace button { min-height: 44px; }
+  .admin-workspace input:not([type="checkbox"]):not([type="radio"]),
+  .admin-workspace select,
+  .admin-workspace textarea { font-size: 16px; }
+}
+
 @variant dark (&:where(.dark, .dark *));
 
 @layer base {

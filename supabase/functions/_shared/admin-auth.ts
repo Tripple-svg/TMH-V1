@@ -23,10 +23,10 @@ export async function requireAdmin(db: any, request: Request, serviceKey: string
   if(result.data.user.app_metadata?.role!=='admin')throw new AdminAuthError('Admin access required.',403);
   // Decode assurance only after Auth has verified this exact bearer. A fresh
   // database gate also checks fields that Auth's public user response may omit.
-  let aal='aal1';
-  try{const payload=match[1].split('.')[1];if(JSON.parse(atob(payload.replace(/-/g,'+').replace(/_/g,'/'))).aal==='aal2')aal='aal2';}catch{/* Missing/invalid assurance stays AAL1. */}
+  let aal='aal1',sessionId=null;
+  try{const payload=match[1].split('.')[1],claims=JSON.parse(atob(payload.replace(/-/g,'+').replace(/_/g,'/')));if(claims.aal==='aal2')aal='aal2';if(/^[a-f0-9-]{36}$/i.test(claims.session_id||''))sessionId=claims.session_id;}catch{/* Missing assurance/session fails the database gate. */}
   let access;
-  try{access=await db.rpc('admin_access_allowed',{p_actor:result.data.user.id,p_aal:aal});}
+  try{access=await db.rpc('admin_access_allowed',{p_actor:result.data.user.id,p_aal:aal,p_session:sessionId});}
   catch{throw new AdminAuthError('Authentication checks are unavailable. Please retry.',503);}
   if(access?.error||typeof access?.data!=='boolean')throw new AdminAuthError('Authentication checks are unavailable. Please retry.',503);
   if(!access.data)throw new AdminAuthError('Admin access or authenticator verification required.',403);

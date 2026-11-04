@@ -107,3 +107,27 @@ verify_jwt = false
 
 [functions.admin-security]
 verify_jwt = false
+
+[functions.admin-operations]
+verify_jwt = false
+
+[functions.health]
+verify_jwt = false
+
+[functions.content-performance]
+verify_jwt = false
+
+[functions.request-data-export]
+verify_jwt = false
+
+[functions.confirm-data-export]
+verify_jwt = false
+
+[functions.send-lead-followup-nudges]
+verify_jwt = false
+
+[functions.send-booking-confirmation]
+verify_jwt = false
+
+[functions.sync-haven-session]
+verify_jwt = false

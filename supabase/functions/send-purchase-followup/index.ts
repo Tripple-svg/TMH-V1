@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { isInternalRequest } from '../_shared/internal-auth.js';
@@ -6,7 +8,7 @@ import { followupOptOutUrl, purchaseFollowupPayload } from '../_shared/purchase-
 
 // Called by a private scheduled job. A due timestamp is not a promise of exact
 // inbox delivery. Existing/opted-out buyers never enter the eligible queue.
-serve(async request => {
+serve(observe('send-purchase-followup',async request => {
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
   if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   const projectUrl = Deno.env.get('SUPABASE_URL'), serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -38,7 +40,7 @@ serve(async request => {
         // Preserve a provider acceptance ID even when the final marker RPC failed.
         if (emailId) await db.from('playbook_purchase_followups').update({ provider_email_id: emailId, last_error: code }).eq('id', job.id).eq('claim_id', job.claim_id);
         else await db.rpc('complete_playbook_followup', { p_id: job.id, p_claim_id: job.claim_id, p_email_id: null, p_error: code });
-        console.error('send-purchase-followup: ' + code);
+        logEvent('error','send-purchase-followup.diagnostic_1');
         pending++;
       }
     }
@@ -46,4 +48,4 @@ serve(async request => {
   } catch {
     return json({ ok: false, error: 'Follow-up processing is temporarily unavailable.' }, 503);
   }
-});
+}));

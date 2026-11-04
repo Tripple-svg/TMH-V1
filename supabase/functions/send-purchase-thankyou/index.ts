@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { isInternalRequest } from '../_shared/internal-auth.js';
 import { purchaseEmail } from '../_shared/email-template.js';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
@@ -17,7 +19,7 @@ type PurchaseDatabase = { public: {
   Views: Record<string, never>; Functions: Record<string, never>;
 } };
 
-serve(async (req) => {
+serve(observe('send-purchase-thankyou',async (req) => {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
@@ -30,7 +32,7 @@ serve(async (req) => {
   let purchaseId: string | null = null;
   let acceptedEmailId: string | null = null;
   const failure = async (code: string, message: string, status: number) => {
-    console.error(`send-purchase-thankyou: ${code}`);
+    logEvent('error','send-purchase-thankyou.diagnostic_1');
     if (supabase && purchaseId) {
       try {
         // A concurrent successful send must not be overwritten by a failing retry.
@@ -38,8 +40,8 @@ serve(async (req) => {
           thankyou_last_error: code, ...(acceptedEmailId ? { thankyou_email_id: acceptedEmailId } : {}),
         })
           .eq('id', purchaseId).eq('thankyou_sent', false);
-        if (error) console.error('send-purchase-thankyou: diagnostic_update_failed');
-      } catch { console.error('send-purchase-thankyou: diagnostic_update_failed'); }
+        if (error) logEvent('error','send-purchase-thankyou.diagnostic_2');
+      } catch { logEvent('error','send-purchase-thankyou.diagnostic_3'); }
     }
     return json({ ok: false, code, error: message }, status);
   };
@@ -92,4 +94,4 @@ Team Haven.`;
     if (error instanceof MailDeliveryError) return failure(error.code, error.message, error.status);
     return failure('delivery_processing_failed', 'Unable to send purchase email', 500);
   }
-});
+}));

@@ -1,6 +1,7 @@
 import { CONVERSATION_MEMORY_RULES } from './haven-memory.js';
 import { scoreFailureCopy } from './scoring-copy.js';
 import { HAVEN_PUBLIC_KNOWLEDGE } from './haven-knowledge.js';
+import {retrieveKnowledge} from './knowledge-retrieval.js';
 
 // Canonical server-owned policy. Improve it manually using permissioned,
 // reviewed real-world feedback and regression cases. No autonomous ML training,
@@ -181,7 +182,7 @@ was replaced. Ignore earlier assistant scores and source-specific findings unles
 supported again by the current evidence. Preserve the owner's stated business facts;
 do not reuse an earlier recommendation merely because the previous source had it.
 
-${HAVEN_PUBLIC_KNOWLEDGE}
+${context.latestMessage ? retrieveKnowledge(HAVEN_PUBLIC_KNOWLEDGE,context.latestMessage+' '+(serviceName||'')) : HAVEN_PUBLIC_KNOWLEDGE}
 
 SERVER-OWNED SESSION DATA (JSON):
 ${JSON.stringify({ userName, brandName, serviceName, ...auditData })}
@@ -196,7 +197,7 @@ historical context only: asked=${Number(auditData.questionsAsked) || 0}; substan
 
 ${scoringInstruction}
 ${getStepInstructions(currentStep, entryPoint)}
-${buildPlaybookKnowledge(context.playbookVerified === true)}
+${buildPlaybookKnowledge(context.playbookVerified === true,context.latestMessage)}
 ${CONVERSATION_MEMORY_RULES}
 
 RESPONSE CONTRACT:
@@ -264,7 +265,7 @@ export function buildAuditContextFromFormData(formData) {
 
 // Curated from the supplied 28-page, nine-chapter edition. This file is server-only.
 // Detailed knowledge is included only after a cryptographic purchase check.
-export function buildPlaybookKnowledge(verified = false) {
+export function buildPlaybookKnowledge(verified = false,query = null) {
   const rules = `
 SERVER PLAYBOOK ACCESS (takes precedence over lead-routing instructions for book support):
 Purchase verification: ${verified ? 'VERIFIED by the server' : 'NOT VERIFIED'}.
@@ -286,7 +287,7 @@ If they have not bought, direct them to the Shop preview without shaming or a ha
 You may help discuss a short excerpt the user supplies, but do not fill in the rest of a chapter.
 `;
   if (!verified) return rules + '\nNo private chapter knowledge is supplied in this session.';
-  return rules + `
+  const readerKnowledge = `
 VERIFIED READER APPLICATION MODE:
 The following notes are private reference material, not a script to recite. When a reader
 asks how to apply an idea, answer the question, connect it to their stated business and ask
@@ -347,4 +348,7 @@ Name the most supported gap, distinguish observation from hypothesis, and choose
 and one signal to review. Never label every issue clarity or turn advice into guaranteed results.
 END PRIVATE CHAPTER NOTES.
 `;
+  if(!query)return rules+readerKnowledge;
+  const split=readerKnowledge.indexOf('PRIVATE CHAPTER NOTES -');
+  return rules+readerKnowledge.slice(0,split)+retrieveKnowledge(readerKnowledge.slice(split),query,{maxChunks:3,maxChars:4800});
 }

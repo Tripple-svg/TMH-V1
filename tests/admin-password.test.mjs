@@ -1,3 +1,4 @@
+import * as lockout from '../src/lib/adminLockout.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -80,8 +81,8 @@ test('expired password session asks for a fresh reset and never exposes raw prov
 
 function signInUi(auth) {
   const states = []; let cursor = 0;
-  const react = { useState(initial) { const index = cursor++; if (!(index in states)) states[index] = initial; return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; }, useEffect() {} };
-  const context = { module: { exports: {} }, require: name => name === 'react' ? react : name.includes('adminPassword') ? passwords : { adminSupabase: { auth } }, window: { location: { origin: 'https://themarketinghaven.xyz' } }, React: { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) } };
+  const react = { useState(initial) { const index = cursor++; if (!(index in states)) states[index] = initial; return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; }, useRef:value=>({current:value}),useEffect() {} };
+  const context = { module: { exports: {} }, require: name => name === 'react' ? react : name.includes('adminLockout')?lockout:name.includes('adminPassword') ? passwords : { adminSupabase: { auth } }, window: { location: { origin: 'https://themarketinghaven.xyz' } }, React: { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) } };
   vm.runInNewContext(transformSync(readFileSync(new URL('../src/components/admin/AdminSignIn.jsx', import.meta.url), 'utf8'), { loader: 'jsx', format: 'cjs' }).code, context);
   const render = () => { cursor = 0; const result = []; const walk = node => { if (Array.isArray(node)) return node.forEach(walk); if (!node || typeof node !== 'object') return; result.push(node); walk(node.props.children); }; walk(context.module.exports.default({ onAuth() {} })); return result; };
   return { render };

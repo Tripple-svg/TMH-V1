@@ -15,6 +15,7 @@ import BrandReviewModal from './components/modals/BrandReviewModal';
 import Preloader from './components/Preloader';
 import CookieBanner from './components/CookieBanner';
 import SitePresence from './components/SitePresence';
+import ContentPerformance from './components/ContentPerformance';
 import SiteErrorBoundary from './components/layout/SiteErrorBoundary';
 import DataDeletionModal from './components/legal/DataDeletionModal';
 
@@ -32,6 +33,7 @@ const DataDeletionConfirmPage = lazy(() => import('./pages/DataDeletionConfirmPa
 const TeamBriefPage = lazy(() => import('./pages/TeamBriefPage'));
 const AdminInvitePage = lazy(() => import('./pages/AdminInvitePage'));
 const SupportPage = lazy(() => import('./pages/SupportPage'));
+const DataAccessPage = lazy(() => import('./pages/DataAccessPage'));
 
 function AppInner() {
   const { openDrawer, hasExistingReview, getSavedReviewFormData } = useHaven();
@@ -223,6 +225,7 @@ function AppInner() {
       <HavenDrawer />
 
       <CookieBanner />
+      <ContentPerformance />
     </div>
   );
 }
@@ -238,6 +241,8 @@ export default function App() {
         <Route path="/admin/accept-invite" element={<AdminInvitePage />} />
         <Route path="/team-brief" element={<TeamBriefPage />} />
         <Route path="/support" element={<SupportPage />} />
+        <Route path="/data-access" element={<DataAccessPage />} />
+        <Route path="/data-access/confirm" element={<DataAccessPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/data-deletion/confirm" element={<DataDeletionConfirmPage />} />

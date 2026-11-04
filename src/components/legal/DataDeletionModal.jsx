@@ -19,15 +19,26 @@ function DataDeletionDialog({ onClose }) {
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
+    const previousFocus=document.activeElement;
+    const dialog=document.querySelector('[aria-labelledby="data-deletion-title"]');
+    dialog?.querySelector('input,button')?.focus();
     document.body.style.overflow = 'hidden';
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') onClose();
+      if(event.key==='Tab'){
+        const items=dialog?.querySelectorAll('button:not([disabled]),input:not([disabled]),a[href]');
+        if(!items?.length)return;
+        const first=items[0],last=items[items.length-1];
+        if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+        else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleKeyDown);
+      previousFocus?.focus?.();
     };
   }, [onClose]);
 
@@ -72,7 +83,7 @@ function DataDeletionDialog({ onClose }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="data-deletion-title"
-        className="relative w-full max-w-md rounded-3xl border border-zinc-200/80 bg-white/85 p-6 shadow-2xl shadow-zinc-950/15 backdrop-blur-xl dark:border-white/20 dark:bg-zinc-950/40 dark:shadow-black/40"
+        className="relative max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-zinc-200/80 bg-white/85 p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_20px_80px_rgba(0,0,0,0.12)] backdrop-blur-xl dark:border-white/15 dark:bg-zinc-950/85 dark:shadow-black/40 sm:p-8"
       >
         <button
               type="button"
@@ -85,7 +96,7 @@ function DataDeletionDialog({ onClose }) {
 
         {requested ? (
               <div className="py-3 text-center">
-                <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500" />
+                <CheckCircle2 className="mx-auto h-10 w-10 text-zinc-500 dark:text-zinc-300" />
                 <h2 id="data-deletion-title" className="mt-5 text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">
                   Check your inbox
                 </h2>
@@ -119,6 +130,8 @@ function DataDeletionDialog({ onClose }) {
                   <input
                     id="data-deletion-email"
                     type="email"
+                    disabled={submitting}
+                    maxLength={254}
                     autoComplete="email"
                     value={email}
                     onChange={(event) => {

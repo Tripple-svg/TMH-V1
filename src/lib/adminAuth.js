@@ -10,5 +10,6 @@ export const initialAdminAuthLink = readAdminAuthLink(typeof window !== 'undefin
 export const adminSupabase = createClient(
   import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co',
   import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key',
-  { auth: { storageKey:'tmh_admin_auth_v1',storage:typeof window!=='undefined'?window.sessionStorage:undefined,persistSession:true,autoRefreshToken:true,detectSessionInUrl:true } },
+  { auth: { storageKey:'tmh_admin_auth_v1',storage:typeof window!=='undefined'?window.sessionStorage:undefined,persistSession:true,autoRefreshToken:true,detectSessionInUrl:true },
+    global:{fetch:(input,init={})=>fetch(input,{...init,signal:typeof AbortSignal?.timeout==='function'?init.signal&&typeof AbortSignal.any==='function'?AbortSignal.any([init.signal,AbortSignal.timeout(20000)]):AbortSignal.timeout(20000):init.signal})} },
 );

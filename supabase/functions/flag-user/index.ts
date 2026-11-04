@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { applyAutomaticFlag, drainModerationNotifications, ModerationError } from '../_shared/haven-moderation.ts';
@@ -8,7 +10,7 @@ import { isInternalRequest } from '../_shared/internal-auth.js';
 
 const STATUSES = ['white', 'yellow', 'red'];
 
-serve(async (req) => {
+serve(observe('flag-user',async (req) => {
   const origin = req.headers.get('origin');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json', 'Cache-Control': 'no-store', Vary: 'Origin',
@@ -78,7 +80,7 @@ serve(async (req) => {
   } catch (error) {
     if(error instanceof AdminAuthError)return json({ok:false,error:error.message},error.status);
     if (error instanceof ModerationError) return json({ ok: false, error: error.message }, error.status);
-    console.error('flag-user: request failed');
+    logEvent('error','flag-user.diagnostic_1');
     return json({ ok: false, error: 'Unable to update flag' }, 500);
   }
-});
+}));

@@ -1,3 +1,4 @@
+import {observe} from '../_shared/observability.ts';
 import { isInternalRequest } from '../_shared/internal-auth.js';
 import { editorialEmail } from '../_shared/email-template.js';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
@@ -5,7 +6,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 
 import { deliverFlagNotification, MailDeliveryError } from '../_shared/resend-delivery.js';
 
-serve(async (req) => {
+serve(observe('send-flag-customer',async (req) => {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
@@ -35,4 +36,4 @@ serve(async (req) => {
   } catch (error) {
     if (error instanceof MailDeliveryError) return json({ ok: false, code: error.code, error: error.message }, error.status);
     return json({ ok: false, error: 'Unable to deliver notification. Please retry.' }, 502); }
-});
+}));

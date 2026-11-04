@@ -1,7 +1,11 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
 import { HavenRequestError,readBoundedJson } from '../_shared/haven-request.ts';
+import {verifyOrigin} from '../_shared/haven-request.ts';
+import {privacyEmail} from '../_shared/email-template.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -56,7 +60,7 @@ function clientIp(req: Request) {
     || null;
 }
 
-serve(async (req) => {
+serve(observe('request-data-deletion',async (req) => {
   const origin = req.headers.get('origin');
 
   if (req.method === 'OPTIONS') {
@@ -68,6 +72,7 @@ serve(async (req) => {
   }
 
   try {
+    verifyOrigin(req);
     const payload = await readBoundedJson(req,4096);
     const email = typeof payload?.email === 'string' ? payload.email.trim() : '';
 
@@ -77,7 +82,7 @@ serve(async (req) => {
     }
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !RESEND_API_KEY) {
-      console.error('request-data-deletion is missing required secrets');
+      logEvent('error','request-data-deletion.diagnostic_1');
       return success(origin);
     }
 
@@ -92,7 +97,7 @@ serve(async (req) => {
       .limit(1);
 
     if (reviewError) {
-      console.error('request-data-deletion: lookup_failed');
+      logEvent('error','request-data-deletion.diagnostic_2');
       return success(origin);
     }
 
@@ -102,7 +107,7 @@ serve(async (req) => {
 
     const storedEmail = typeof reviews[0].email === 'string' ? reviews[0].email : '';
     if (!storedEmail) {
-      console.error('Matching brand review has no usable email');
+      logEvent('error','request-data-deletion.diagnostic_3');
       return success(origin);
     }
 
@@ -119,7 +124,7 @@ serve(async (req) => {
       });
 
     if (requestError) {
-      console.error('request-data-deletion: record_failed');
+      logEvent('error','request-data-deletion.diagnostic_4');
       return success(origin);
     }
 
@@ -135,17 +140,17 @@ serve(async (req) => {
         to: [storedEmail],
         subject: 'Confirm your saved review deletion request',
         text: `We received a request to remove your matching saved brand review, its linked chat sessions and stored screenshots. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.\n\nTo confirm the request, open this link within 24 hours:\n\n${confirmationUrl}\n\nIf you did not make this request, ignore this email.`,
-        html: `<p>We received a request to remove your matching saved brand review, its linked chat sessions and stored screenshots.</p><p>Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.</p><p><a href="${confirmationUrl}">Confirm saved review deletion</a></p><p>This link expires in 24 hours. If you did not make this request, ignore this email.</p>`,
+        html: privacyEmail({title:'Your review. Your choice.',paragraphs:['We received a request to remove your matching saved brand review, its linked chat sessions and stored screenshots.','Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.','Open the secure page and confirm only if you requested deletion. This link expires in 24 hours. If you did not request this, ignore this email.'],button:{label:'Review deletion request',href:confirmationUrl}}),
       }),
     });
 
     if (!resendResponse.ok) {
-      console.error('Resend rejected data deletion request:', resendResponse.status);
+      logEvent('error','request-data-deletion.diagnostic_5');
     }
   } catch (error) {
     if(error instanceof HavenRequestError)return json({ok:false,error:error.message},origin,error.status);
-    console.error('request-data-deletion: request_failed');
+    logEvent('error','request-data-deletion.diagnostic_6');
   }
 
   return success(origin);
-});
+}));

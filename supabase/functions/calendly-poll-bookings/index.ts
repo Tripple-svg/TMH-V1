@@ -1,3 +1,6 @@
+import {recordWorkerSuccess} from '../_shared/operations-health.ts';
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { saveCalendlyBooking,matchCalendlyIntent } from '../_shared/calendly-bookings.ts';
@@ -9,7 +12,7 @@ const HOUR_MS = 60 * 60 * 1000;
 
 class CalendlyApiError extends Error {}
 
-serve(async (req) => {
+serve(observe('calendly-poll-bookings',async (req) => {
   const origin = req.headers.get('origin');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json', 'Cache-Control': 'no-store',
@@ -38,7 +41,7 @@ serve(async (req) => {
       return await result.json();
     } catch (error) {
       // Do not log tokens, invitee data, or upstream response bodies.
-      console.error('calendly-poll-bookings: Calendly API request failed', error instanceof Error ? error.name : 'unknown');
+      logEvent('error','calendly-poll-bookings.diagnostic_1');
       throw new CalendlyApiError('Calendly API request failed');
     }
   }
@@ -147,7 +150,7 @@ serve(async (req) => {
             } catch {
               allInviteesComplete = false;
               if (!retryExpired) hadFailure = true;
-              console.error('calendly-poll-bookings: booking confirmation failed', retryExpired ? 'retry window expired' : 'will retry');
+              logEvent('error','calendly-poll-bookings.diagnostic_2');
             }
           } else if (!modern && review && !intent && review.booking_confirmation_sent !== true) {
             // The browser can save its booking intent a few seconds after Calendly.
@@ -166,13 +169,14 @@ serve(async (req) => {
         // One unfinished event must not prevent other bookings from progressing.
         hadFailure = true;
         hadApiFailure ||= error instanceof CalendlyApiError;
-        console.error('calendly-poll-bookings: event failed', error instanceof CalendlyApiError ? 'Calendly API' : 'database');
+        logEvent('error','calendly-poll-bookings.diagnostic_3');
       }
     }
     if (hadFailure) return json({ ok: false }, hadApiFailure ? 502 : 500);
+    await recordWorkerSuccess(supabase,'calendly-poll-bookings');
     return json({ ok: true, scanned: events.length, matched });
   } catch (error) {
-    console.error('calendly-poll-bookings: polling failed', error instanceof CalendlyApiError ? 'Calendly API' : 'database or confirmation');
+    logEvent('error','calendly-poll-bookings.diagnostic_4');
     return json({ ok: false }, error instanceof CalendlyApiError ? 502 : 500);
   }
-});
+}));

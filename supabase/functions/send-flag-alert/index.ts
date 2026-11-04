@@ -1,3 +1,6 @@
+import {ADMIN_ALERT_RECIPIENTS} from '../_shared/admin-alerts.js';
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { isInternalRequest } from '../_shared/internal-auth.js';
 import { editorialEmail } from '../_shared/email-template.js';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
@@ -6,11 +9,11 @@ import { drainModerationNotifications } from '../_shared/haven-moderation.ts';
 
 import { deliverFlagNotification, MailDeliveryError } from '../_shared/resend-delivery.js';
 
-const TEAM_RECIPIENTS = ['francis.teamhaven@gmail.com', 'paschal.tmh@gmail.com'];
+const TEAM_RECIPIENTS = ADMIN_ALERT_RECIPIENTS;
 const SOURCE_LABELS: Record<string, string> = { lead: 'Lead / Brand review', support: 'Support', service: 'Services', admin: 'Admin action', unknown: 'Admin action / legacy record' };
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-serve(async (req) => {
+serve(observe('send-flag-alert',async (req) => {
   const headers = {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store',
@@ -44,7 +47,7 @@ serve(async (req) => {
     const { data: notification, error } = await supabase.from('flag_alert_notifications')
       .select('id,email,visitor_id,full_name,source,entry_point,session_id,status,reason,sent_at,team_skipped_at,team_email_id,email_template_version').eq('id', body.notificationId).maybeSingle();
     if (error) {
-      console.error('send-flag-alert: notification lookup failed');
+      logEvent('error','send-flag-alert.diagnostic_1');
       return json({ ok: false, error: 'Unable to load flag notification' }, 500);
     }
     if (!notification) return json({ ok: false, error: 'Flag notification not found' }, 404);
@@ -68,7 +71,7 @@ serve(async (req) => {
     return json({ ok: true });
   } catch (error) {
     if (error instanceof MailDeliveryError) return json({ ok: false, code: error.code, error: error.message }, error.status);
-    console.error('send-flag-alert: request failed');
+    logEvent('error','send-flag-alert.diagnostic_2');
     return json({ ok: false, error: 'Unable to send flag alert' }, 500);
   }
-});
+}));

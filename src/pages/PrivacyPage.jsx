@@ -60,7 +60,7 @@ export default function PrivacyPage() {
           <article className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100/70 backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.03]">
             <div className="border-b border-zinc-200 px-6 py-10 sm:px-10 sm:py-14 dark:border-white/[0.08]">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                Effective Date: 26 October 2026 · Updated: 1 November 2026 · Chat notice version 2026-10-26
+                Effective Date: 26 October 2026 · Updated: 3 November 2026 · Chat notice version 2026-10-26
               </p>
               <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl dark:text-white">
                 Privacy Policy
@@ -134,6 +134,7 @@ export default function PrivacyPage() {
               </section>
 
               <section id="artificial-intelligence-processing" className="scroll-mt-10">
+                <p className="mb-5 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">We apply daily AI call and token allowances to saved reviews, browser identities, keyed network references and the service as a whole. Counters and reservations protect availability and cost. A temporary pause or cooldown does not establish misconduct. Relevant sections of our curated knowledge are selected for each question; private Playbook guidance still requires server verification of purchase. Aggregate Insights group route interest, saved review link clicks, leak labels and first-message topics. They do not display original first messages or identify visitors.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">4. Artificial Intelligence Processing</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   <p>
@@ -175,6 +176,7 @@ export default function PrivacyPage() {
               </section>
 
               <section id="cookies-and-local-storage" className="scroll-mt-10">
+                <p className="mb-4 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">With optional analytics consent, we also count views of six named homepage sections and actions on their links or buttons. A view requires at least two seconds of visibility. We send only the section identifier and event type with the separate analytics profile proof. Short-lived receipts prevent duplicate daily counts and expire after two days; daily section totals contain no visitor identifiers and expire after 395 days. We do not collect clicked link text, destination URLs, form contents or a browsing-path history for this measurement. Declining or withdrawing optional consent stops it.</p>
                 <p className="mb-4 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Optional visit analytics stay off until you accept the current notice and that choice is recorded. We ask again after 13 calendar months, or when an old affirmative choice has no current dated receipt. Declining does not stop reviews, purchases or support. If you accept, first-party presence records use a separate browser identifier and private token digest, with first and last activity times. Visible pages send an occasional heartbeat. Admin sees aggregate counts of consented browser profiles and recent activity, not a list of everyone online, identities of people, email addresses or a browsing-path history. Withdrawing the choice stops future heartbeats; retained records expire after 13 months without activity.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">6. Cookies and Local Storage</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
@@ -191,6 +193,7 @@ export default function PrivacyPage() {
               </section>
 
               <section id="data-storage-and-security" className="scroll-mt-10">
+                <p className="mb-5 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Staff security records include sign-in time, a general browser and operating system label, observed IP address and, when configured through IPinfo, an approximate city. New device and IP combinations can trigger alerts to the authorized admin team. Sign-in device and activity records expire after 30 days. Authenticator backup codes are stored as keyed hashes and are single use. Destructive staff requests require approval by a different current admin and leave an audit record. Optional Sentry error reporting sends a restricted technical event without request bodies, emails, tokens, chat text or password fields. Error tracking is disabled when its connection is not configured.</p>
                 <p className="mb-4 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Authorized staff actions are recorded in an internal audit trail using the staff account identifier, action, record reference, changed field names, time and a keyed network identifier. The audit does not copy full private notes, passwords, tokens or raw IP addresses. Server-side AI request budgets and operational diagnostics help prevent abuse and excessive spending. If a personal data incident occurs, we assess it and make the notifications required by applicable law.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">7. Data Storage and Security</h2>
                 <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
@@ -214,6 +217,7 @@ export default function PrivacyPage() {
               </section>
 
               <section id="your-rights" className="scroll-mt-10">
+                <p className="mb-5 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Use <Link to="/data-access" className="underline underline-offset-4">Download my data</Link> to request your matching saved reviews and linked chat text. After email confirmation, we email a ZIP archive to the same inbox. The confirmation link expires after 24 hours. Temporary export snapshots are removed after provider acceptance, with expired request records scheduled for cleanup. This automated flow does not include every purchase, booking, support, staff security or unlinked guest record. Contact us for those categories and a proportionate ownership check. Access, correction, deletion, restriction and portability requests remain available regardless of whether this automated flow can locate a record.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">9. Your Rights</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   <p>The Nigeria Data Protection Act 2023 and applicable law provide rights, subject to relevant conditions and exceptions, including the ability to:</p>

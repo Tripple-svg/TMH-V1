@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import {recordAIUsage,usageGeminiModel} from '../_shared/ai-usage.ts';
 import { safeProviderDiagnostic } from '../_shared/provider-request.ts';
 import { aiBudgetPlan, reserveAIBudget, type AIBudgetReservation } from '../_shared/ai-budget.ts';
@@ -65,19 +67,19 @@ async function scoreWebsite(db:any,budget:AIBudgetReservation,summary: string) {
       if (status === 200) {
         const parsed = parseScoreJson(raw, summary);
         if (parsed) {
-          console.log(`[scoring] Gemini OK on attempt ${attempt + 1} — score ${parsed.score}`);
+          logEvent('info','scrape-website.diagnostic_1');
           return parsed;
         }
-        console.warn(`[scoring] Gemini unparseable JSON (attempt ${attempt + 1}):`, '[redacted model output]');
+        logEvent('warn','scrape-website.diagnostic_2');
       } else if (status === 503 || status === 502 || status === 504) {
-        console.warn(`[scoring] Gemini ${status} on attempt ${attempt + 1}`);
+        logEvent('warn','scrape-website.diagnostic_3');
       } else {
-        console.warn(`[scoring] Gemini ${status} — not retryable`);
+        logEvent('warn','scrape-website.diagnostic_4');
         break;
       }
     } catch (err) {
       await recordAIUsage(db,'gemini',usageGeminiModel(),{},safeProviderDiagnostic(err,'gemini').code);
-      console.warn(`[scoring] Gemini threw on attempt ${attempt + 1}:`, err instanceof Error ? err.message : err);
+      logEvent('warn','scrape-website.diagnostic_5');
     }
 
   }
@@ -86,19 +88,19 @@ async function scoreWebsite(db:any,budget:AIBudgetReservation,summary: string) {
     const raw = await scoreWithGroq(db,budget,summary);
     const parsed = parseScoreJson(raw, summary);
     if (parsed) {
-      console.log(`[scoring] Groq fallback OK — score ${parsed.score}`);
+      logEvent('info','scrape-website.diagnostic_6');
       return parsed;
     }
-    console.warn('[scoring] Groq unparseable JSON:', '[redacted model output]');
+    logEvent('warn','scrape-website.diagnostic_7');
   } catch (err) {
     await recordAIUsage(db,'groq',Deno.env.get('GROQ_MODEL')?.trim()||'openai/gpt-oss-120b',{},safeProviderDiagnostic(err,'groq').code);
-    console.warn('[scoring] Groq fallback failed:', err instanceof Error ? err.message : err);
+    logEvent('warn','scrape-website.diagnostic_8');
   }
 
   return null;
 }
 
-Deno.serve(async (request) => {
+Deno.serve(observe('scrape-website',async (request) => {
   const headers = responseHeaders(request);
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
   if (request.method === 'OPTIONS') return new Response('ok', { headers });
@@ -182,7 +184,7 @@ Deno.serve(async (request) => {
       catch { return json({ ok: false, state: 'failed', error: 'Could not save the reader status. Please try again.' }, 500); }
     }
     const known = error instanceof HavenRequestError || error instanceof ReviewAccessError;
-    console.error('scrape-website request failed', known ? error.status : 502);
+    logEvent('error','scrape-website.diagnostic_9');
     return json({ ok: false, state: 'failed', reason: error instanceof Error && error.name === 'AbortError' ? 'reader_timeout' : failureReason, error: known ? error.message : SCORING_COPY.failed }, known ? error.status : 502);
   }
-});
+}));

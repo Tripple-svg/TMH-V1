@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { normalizeWebsiteUrl } from '../_shared/haven-scoring.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
@@ -17,7 +19,7 @@ function headers(origin: string | null) {
 const text = (value: unknown, max = 500) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const boundedInt = (value: unknown, min: number, max: number) => Math.min(max, Math.max(min, Math.trunc(Number(value) || min)));
 
-serve(async (req) => {
+serve(observe('create-brand-review',async (req) => {
   const origin = req.headers.get('origin');
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers(origin),...(status===429?{'Retry-After':'600'}:{})} });
   if (req.method === 'OPTIONS') return new Response('ok', { headers: headers(origin) });
@@ -96,7 +98,7 @@ serve(async (req) => {
       catch (error) {
         if (error instanceof ReviewAccessError && error.status === 403) {
           const { error: cleanupError } = await supabase.storage.from('tmh-screenshots').remove([screenshotPath]);
-          if (cleanupError) console.error('Deleted review screenshot needs storage cleanup');
+          if (cleanupError) logEvent('error','create-brand-review.diagnostic_1');
         }
         throw error;
       }
@@ -104,7 +106,7 @@ serve(async (req) => {
     return json({ ok: true, reviewId: id, sessionId });
   } catch (error) {
     if (error instanceof ReviewAccessError || error instanceof HavenRequestError || error instanceof ScreenshotValidationError) return json({ ok: false, error: error.message }, error.status);
-    console.error('create-brand-review failed');
+    logEvent('error','create-brand-review.diagnostic_2');
     return json({ ok: false, error: 'Unable to save your review. Please try again.' }, 500);
   }
-});
+}));

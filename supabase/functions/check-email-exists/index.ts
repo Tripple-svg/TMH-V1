@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
@@ -40,7 +42,7 @@ function escapeIlikePattern(value: string) {
   return value.replace(/[\\%_]/g, '\\$&');
 }
 
-serve(async (req) => {
+serve(observe('check-email-exists',async (req) => {
   const origin = req.headers.get('origin');
 
   if (req.method === 'OPTIONS') {
@@ -79,7 +81,7 @@ serve(async (req) => {
       .limit(1);
 
     if (error) {
-      console.error('check-email-exists: lookup_failed');
+      logEvent('error','check-email-exists.diagnostic_1');
       return response(false, origin, undefined, includeFlag ? 503 : 200);
     }
 
@@ -90,7 +92,7 @@ serve(async (req) => {
     return response(Boolean(reviews?.length), origin, flagStatus);
   } catch (error) {
     if(error instanceof HavenRequestError)return new Response(JSON.stringify({exists:false,error:error.message}),{status:error.status,headers:{...corsHeaders(origin),'Content-Type':'application/json','Cache-Control':'no-store',...(error.status===429?{'Retry-After':'600'}:{})}});
-    console.error('check-email-exists: request_failed');
+    logEvent('error','check-email-exists.diagnostic_2');
     return response(false, origin, undefined, includeFlag ? 503 : 200);
   }
-});
+}));

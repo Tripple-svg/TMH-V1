@@ -1,0 +1,287 @@
+TAP version 13
+# Subtest: MFA is required for an enrolled AAL1 account; non-enrolled staff keep their existing access
+ok 1 - MFA is required for an enrolled AAL1 account; non-enrolled staff keep their existing access
+  ---
+  duration_ms: 6.6275
+  type: 'test'
+  ...
+# Subtest: fresh factor metadata prevents stale AAL1 next-level information bypassing a verified factor
+ok 2 - fresh factor metadata prevents stale AAL1 next-level information bypassing a verified factor
+  ---
+  duration_ms: 0.9752
+  type: 'test'
+  ...
+# Subtest: MFA verification performs challenge/verify then returns only a refreshed AAL2 session
+ok 3 - MFA verification performs challenge/verify then returns only a refreshed AAL2 session
+  ---
+  duration_ms: 6.9882
+  type: 'test'
+  ...
+# Subtest: factor removal requires a fresh code, never a remembered AAL2 status alone
+ok 4 - factor removal requires a fresh code, never a remembered AAL2 status alone
+  ---
+  duration_ms: 2.4208
+  type: 'test'
+  ...
+# Subtest: non-admin accounts cannot enroll or remove factors using the admin controls
+ok 5 - non-admin accounts cannot enroll or remove factors using the admin controls
+  ---
+  duration_ms: 1.3913
+  type: 'test'
+  ...
+# Subtest: enrollment QR is an image data URI and rejects remote/script sources; secrets remain ephemeral return values
+ok 6 - enrollment QR is an image data URI and rejects remote/script sources; secrets remain ephemeral return values
+  ---
+  duration_ms: 10.0797
+  type: 'test'
+  ...
+# Subtest: resumed AAL1 session cannot open the workspace; verification event supplies the AAL2 session
+ok 7 - resumed AAL1 session cannot open the workspace; verification event supplies the AAL2 session
+  ---
+  duration_ms: 39.0468
+  type: 'test'
+  ...
+# Subtest: a slow MFA status check cannot resurrect an admin session after logout
+ok 8 - a slow MFA status check cannot resurrect an admin session after logout
+  ---
+  duration_ms: 2.7158
+  type: 'test'
+  ...
+# Subtest: password recovery does not bypass MFA, and an authenticated MFA change preserves AAL2
+ok 9 - password recovery does not bypass MFA, and an authenticated MFA change preserves AAL2
+  ---
+  duration_ms: 2.5642
+  type: 'test'
+  ...
+# Subtest: sign-in cannot call onAuth for an enrolled password-only session
+ok 10 - sign-in cannot call onAuth for an enrolled password-only session
+  ---
+  duration_ms: 338.5897
+  type: 'test'
+  ...
+# Subtest: Edge admin authorization checks AAL only after Auth verifies the bearer and requires it only for verified factors
+ok 11 - Edge admin authorization checks AAL only after Auth verifies the bearer and requires it only for verified factors
+  ---
+  duration_ms: 327.9752
+  type: 'test'
+  ...
+# Subtest: PostgreSQL MFA policy blocks an old AAL1 token immediately after enrollment and keeps fresh role/ban checks
+ok 12 - PostgreSQL MFA policy blocks an old AAL1 token immediately after enrollment and keeps fresh role/ban checks
+  ---
+  duration_ms: 10576.165
+  type: 'test'
+  ...
+# Subtest: AAL2 retains fresh verified factors for sensitive-change challenges
+ok 13 - AAL2 retains fresh verified factors for sensitive-change challenges
+  ---
+  duration_ms: 0.9234
+  type: 'test'
+  ...
+# Subtest: fresh factor lookup catches an enrollment absent from both cached user and next-level state
+ok 14 - fresh factor lookup catches an enrollment absent from both cached user and next-level state
+  ---
+  duration_ms: 1.1127
+  type: 'test'
+  ...
+# Subtest: factor or assurance lookup failure cannot open a resumed admin session
+ok 15 - factor or assurance lookup failure cannot open a resumed admin session
+  ---
+  duration_ms: 11.3918
+  type: 'test'
+  ...
+# Subtest: unsupported verified factors block AAL1 without inventing a usable TOTP factor
+ok 16 - unsupported verified factors block AAL1 without inventing a usable TOTP factor
+  ---
+  duration_ms: 0.9101
+  type: 'test'
+  ...
+# Subtest: unverified setup stays optional and malformed codes never reach Auth
+ok 17 - unverified setup stays optional and malformed codes never reach Auth
+  ---
+  duration_ms: 2.8197
+  type: 'test'
+  ...
+# Subtest: banned and deleted accounts cannot resume Admin or change their password
+ok 18 - banned and deleted accounts cannot resume Admin or change their password
+  ---
+  duration_ms: 6.8392
+  type: 'test'
+  ...
+# Subtest: authenticator setup is explicit, uses an encoded image and accepts only the manually entered code
+ok 19 - authenticator setup is explicit, uses an encoded image and accepts only the manually entered code
+  ---
+  duration_ms: 23.5028
+  type: 'test'
+  ...
+# Subtest: authenticator challenge clears rejected codes and never exposes provider details
+ok 20 - authenticator challenge clears rejected codes and never exposes provider details
+  ---
+  duration_ms: 12.7021
+  type: 'test'
+  ...
+# Subtest: a removed last factor restores optional access despite stale cached assurance
+ok 21 - a removed last factor restores optional access despite stale cached assurance
+  ---
+  duration_ms: 0.6818
+  type: 'test'
+  ...
+# Subtest: admin tabs: ten sections switch panels, with counts only for loaded data
+ok 22 - admin tabs: ten sections switch panels, with counts only for loaded data
+  ---
+  duration_ms: 130.2741
+  type: 'test'
+  ...
+# Subtest: lead conversations: scope switcher keeps all linked scopes under one lead
+ok 23 - lead conversations: scope switcher keeps all linked scopes under one lead
+  ---
+  duration_ms: 5.4474
+  type: 'test'
+  ...
+# Subtest: guest chat: transcript mounts only after expansion and visitor moderation keeps saved502 status
+ok 24 - guest chat: transcript mounts only after expansion and visitor moderation keeps saved502 status
+  ---
+  duration_ms: 10.5857
+  type: 'test'
+  ...
+# Subtest: transcript: authenticated lazy request is cached and never fetches while the closed row is rendered
+ok 25 - transcript: authenticated lazy request is cached and never fetches while the closed row is rendered
+  ---
+  duration_ms: 6.4908
+  type: 'test'
+  ...
+# Subtest: transcript: failed lazy request provides an explicit retry and then renders saved content
+ok 26 - transcript: failed lazy request provides an explicit retry and then renders saved content
+  ---
+  duration_ms: 6.2829
+  type: 'test'
+  ...
+# Subtest: transcript: refresh replaces an earlier empty snapshot with newly saved messages
+ok 27 - transcript: refresh replaces an earlier empty snapshot with newly saved messages
+  ---
+  duration_ms: 8.8864
+  type: 'test'
+  ...
+# Subtest: bookings: upcoming and cancellation filters separate provider and legacy statuses
+ok 28 - bookings: upcoming and cancellation filters separate provider and legacy statuses
+  ---
+  duration_ms: 16.2764
+  type: 'test'
+  ...
+# Subtest: standalone sessions and purchases: search has an explicit empty state
+ok 29 - standalone sessions and purchases: search has an explicit empty state
+  ---
+  duration_ms: 31.6011
+  type: 'test'
+  ...
+# Subtest: purchase email: pending retry sends only the saved reference and patches the returned delivery status
+ok 30 - purchase email: pending retry sends only the saved reference and patches the returned delivery status
+  ---
+  duration_ms: 8.9445
+  type: 'test'
+  ...
+# Subtest: purchase email: failed retry retains saved diagnostics and exposes a retryable error
+ok 31 - purchase email: failed retry retains saved diagnostics and exposes a retryable error
+  ---
+  duration_ms: 6.8769
+  type: 'test'
+  ...
+# Subtest: support intake cannot use a known visitor ID, email or claimed review to bypass private proof
+ok 32 - support intake cannot use a known visitor ID, email or claimed review to bypass private proof
+  ---
+  duration_ms: 304.1766
+  type: 'test'
+  ...
+# Subtest: support intake attaches only the browser whose token digest matched and uses a separate support budget
+ok 33 - support intake attaches only the browser whose token digest matched and uses a separate support budget
+  ---
+  duration_ms: 69.7905
+  type: 'test'
+  ...
+# Subtest: support intake rejects missing consent, failed CAPTCHA and exhausted budget before saving
+ok 34 - support intake rejects missing consent, failed CAPTCHA and exhausted budget before saving
+  ---
+  duration_ms: 41.122
+  type: 'test'
+  ...
+# Subtest: admin support rejects anonymous, service-key and editable-role callers before private reads
+ok 35 - admin support rejects anonymous, service-key and editable-role callers before private reads
+  ---
+  duration_ms: 25.6687
+  type: 'test'
+  ...
+# Subtest: admin support list excludes network secrets, uses the verified actor and reports revision conflicts
+ok 36 - admin support list excludes network secrets, uses the verified actor and reports revision conflicts
+  ---
+  duration_ms: 58.1254
+  type: 'test'
+  ...
+# Subtest: support worker rejects public callers and sends all three inboxes only a safely escaped summary
+ok 37 - support worker rejects public callers and sends all three inboxes only a safely escaped summary
+  ---
+  duration_ms: 31.6196
+  type: 'test'
+  ...
+# Subtest: support worker provider failure stays pending, and a saved provider receipt prevents re-sending
+ok 38 - support worker provider failure stays pending, and a saved provider receipt prevents re-sending
+  ---
+  duration_ms: 25.7883
+  type: 'test'
+  ...
+# Subtest: support conflict retains the draft after refresh and requires explicit saved-version loading before another write
+ok 39 - support conflict retains the draft after refresh and requires explicit saved-version loading before another write
+  ---
+  duration_ms: 146.8549
+  type: 'test'
+  ...
+# Subtest: PostgreSQL support operations: full migration chain, private access, scoped resets, audit and notification leasing
+    # Subtest: anonymous and authenticated users, including admin claims, cannot read support rows or execute resolution RPCs directly
+    ok 1 - anonymous and authenticated users, including admin claims, cannot read support rows or execute resolution RPCs directly
+      ---
+      duration_ms: 52.2319
+      type: 'test'
+      ...
+    # Subtest: review reset clears only its two network budgets, preserves OTP/admin/support budgets and writes an actor/reason audit
+    ok 2 - review reset clears only its two network budgets, preserves OTP/admin/support budgets and writes an actor/reason audit
+      ---
+      duration_ms: 91.7316
+      type: 'test'
+      ...
+    # Subtest: optimistic revision rejects a stale overwrite; missing actor and short reason cannot write
+    ok 3 - optimistic revision rejects a stale overwrite; missing actor and short reason cannot write
+      ---
+      duration_ms: 37.4753
+      type: 'test'
+      ...
+    # Subtest: device reset does not clear another visitor or a network lock and cannot operate on an unproven email-only request
+    ok 4 - device reset does not clear another visitor or a network lock and cannot operate on an unproven email-only request
+      ---
+      duration_ms: 43.506
+      type: 'test'
+      ...
+    # Subtest: notification workers serialize claims, measure the 23-hour retry window from first attempt, and accept old new requests
+    ok 5 - notification workers serialize claims, measure the 23-hour retry window from first attempt, and accept old new requests
+      ---
+      duration_ms: 58.7059
+      type: 'test'
+      ...
+    # Subtest: resolved retention removes only old resolved requests and their private audit history
+    ok 6 - resolved retention removes only old resolved requests and their private audit history
+      ---
+      duration_ms: 25.0389
+      type: 'test'
+      ...
+    1..6
+ok 40 - PostgreSQL support operations: full migration chain, private access, scoped resets, audit and notification leasing
+  ---
+  duration_ms: 11814.6704
+  type: 'test'
+  ...
+1..40
+# tests 46
+# suites 0
+# pass 46
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 14250.1554

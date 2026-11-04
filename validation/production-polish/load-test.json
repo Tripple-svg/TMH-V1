@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "mode": "isolated real Edge handler and PostgreSQL; model stubbed",
+  "connections": 10,
+  "requests": 10,
+  "errors": 0,
+  "timeouts": 0,
+  "non2xx": 0,
+  "providerCalls": 10,
+  "peakConcurrentProviderRequests": 10,
+  "latencyMs": {
+    "average": 533.5,
+    "p99": 561
+  },
+  "failures": [],
+  "connectionErrors": [],
+  "liveProviderCapacityVerified": false
+}

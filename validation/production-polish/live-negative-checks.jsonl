@@ -1,0 +1,8 @@
+{"check":"Admin data rejects a public key as a staff JWT","status":401,"expected":[401,403],"passed":true}
+{"check":"JSON admin claims cannot authorize a mutation","status":401,"expected":[401,403],"passed":true}
+{"check":"Haven rejects an attacker Origin","status":403,"expected":[403],"passed":true}
+{"check":"Haven rejects a client system instruction","status":400,"expected":[400],"passed":true}
+{"check":"Paystack rejects a forged HMAC","status":401,"expected":[401],"passed":true}
+{"check":"Private team brief rejects an invalid capability","status":403,"expected":[400,403],"passed":true}
+{"check":"Deletion cannot execute via GET","status":405,"expected":[405],"passed":true}
+{"checks":7,"passed":7,"failed":0}

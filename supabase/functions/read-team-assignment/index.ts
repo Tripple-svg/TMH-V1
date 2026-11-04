@@ -1,9 +1,10 @@
+import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { assignmentBrief, verifyAssignmentToken } from '../_shared/team-assignment.js';
 
 const ORIGINS=['https://themarketinghaven.xyz','https://www.themarketinghaven.xyz','http://localhost:5173','http://localhost:5175','http://127.0.0.1:5173'];
-serve(async(req)=>{
+serve(observe('read-team-assignment',async(req)=>{
   const origin=req.headers.get('origin');
   const headers={'Access-Control-Allow-Origin':origin&&ORIGINS.includes(origin)?origin:ORIGINS[0],
     'Access-Control-Allow-Headers':'authorization,x-client-info,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS',
@@ -38,4 +39,4 @@ serve(async(req)=>{
   }catch{
     return json({ok:false,error:'The preparation brief could not load. Try again or contact the team.'},503);
   }
-});
+}));

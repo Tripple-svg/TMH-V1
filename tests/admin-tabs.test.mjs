@@ -70,12 +70,12 @@ function harness({ dashboard = false, send = async () => ({ status: 200, ...sess
   };
 }
 
-test('admin tabs: eight sections switch panels, with counts only for loaded data', () => {
+test('admin tabs: ten sections switch panels, with counts only for loaded data', () => {
   const ui = harness({ dashboard: true });
   let tree = ui.render('AdminDashboard');
   const tabs = tree.filter((node) => node.props.role === 'tab');
-  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Leads', 'Playbook Purchases', 'Bookings', 'Team Inquiries', 'Support Chats', 'Support Requests', 'Service Chats','Security & AI']);
-  assert.ok(tabs.filter(node=>!['tab-requests','tab-security'].includes(node.props.id)).every((node) => node.props.children[1].props.children[0] === (['tab-bookings','tab-team'].includes(node.props.id) ? 0 : 1)));
+  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Leads', 'Playbook Purchases', 'Bookings', 'Team Inquiries', 'Support Chats', 'Support Requests', 'Service Chats','Security & AI','Insights','Activity']);
+  assert.ok(tabs.filter(node=>!['tab-requests','tab-security','tab-insights','tab-activity'].includes(node.props.id)).every((node) => node.props.children[1].props.children[0] === (['tab-bookings','tab-team'].includes(node.props.id) ? 0 : 1)));
   assert.equal(tabs.find(node=>node.props.id==='tab-requests').props.children[1],false);
   assert.ok(tree.some((node) => node.type === 'table'));
   tabs[4].props.onClick();
@@ -169,6 +169,7 @@ test('bookings: upcoming and cancellation filters separate provider and legacy s
   ];
   const props = { bookings, now: Date.parse('2026-10-25T12:00:00Z') };
   let tree = ui.render('BookingsPanel', props);
+  tree.find(node=>node.type==='button'&&node.props.children[0]==='Booking cards').props.onClick();tree=ui.render('BookingsPanel',props);
   assert.equal(tree.filter((node) => node.type === 'article').length, 3);
   tree.find((node) => node.type === 'select').props.onChange({ target: { value: 'upcoming' } });
   tree = ui.render('BookingsPanel', props);

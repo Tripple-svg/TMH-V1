@@ -27,6 +27,7 @@ test('PostgreSQL: migrate the actual schema, verify TEXT inquiry / BIGINT bookin
       create function auth.jwt() returns jsonb language sql as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
       create function auth.uid() returns uuid language sql as $$select (auth.jwt()->>'sub')::uuid$$;
       create table auth.users(id uuid primary key,raw_app_meta_data jsonb not null default '{}',deleted_at timestamptz,banned_until timestamptz);
+      create table auth.sessions(id uuid primary key,user_id uuid);
       create table auth.mfa_factors(id uuid primary key,user_id uuid references auth.users(id),status text);
       create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
       create table storage.objects(id uuid primary key,bucket_id text,name text);alter table storage.objects enable row level security;
@@ -42,7 +43,7 @@ test('PostgreSQL: migrate the actual schema, verify TEXT inquiry / BIGINT bookin
       await db.exec(`insert into brand_reviews(id,full_name,brand_name,email,whatsapp,platform_type) values('review-a','Ada','Ada Studio','ada@example.com','123','none');
         set role authenticated;select set_config('request.jwt.claim.role','authenticated',false);select set_config('request.jwt.claims','{"user_metadata":{"role":"admin"}}',false);`);
       assert.equal(await scalar('select count(*)::int from brand_reviews'),0);
-      await db.exec(`reset role;insert into auth.users(id,raw_app_meta_data) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','{"role":"admin"}');set role authenticated;select set_config('request.jwt.claims','{"sub":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","app_metadata":{"role":"admin"}}',false);`);
+      await db.exec(`reset role;insert into auth.users(id,raw_app_meta_data) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','{"role":"admin"}');insert into auth.sessions values('11111111-1111-4111-8111-111111111111','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');set role authenticated;select set_config('request.jwt.claims','{"sub":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","session_id":"11111111-1111-4111-8111-111111111111","app_metadata":{"role":"admin"}}',false);`);
       assert.equal(await scalar('select count(*)::int from brand_reviews'),1);
       await db.exec(`reset role;update auth.users set raw_app_meta_data='{"role":"customer"}';set role authenticated;`);
       assert.equal(await scalar('select count(*)::int from brand_reviews'),0,'old admin JWT fails immediately after demotion');
@@ -55,7 +56,7 @@ test('PostgreSQL: migrate the actual schema, verify TEXT inquiry / BIGINT bookin
       await db.exec("reset role;update auth.users set raw_app_meta_data='{\"role\":\"admin\"}';insert into auth.mfa_factors(id,user_id,status) values('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','unverified');");
       const access=async aal=>{
         await db.exec("set role authenticated;select set_config('request.jwt.claim.role','authenticated',false)");
-        await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:actor,aal})]);
+        await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:actor,aal,session_id:"11111111-1111-4111-8111-111111111111"})]);
         return scalar('select count(*)::int from brand_reviews');
       };
       assert.equal(await access('aal1'),1,'unverified setup does not change existing access');

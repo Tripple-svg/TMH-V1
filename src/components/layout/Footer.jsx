@@ -168,6 +168,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
                     Data Deletion
                   </button>
                 </li>
+                <li><Link to="/data-access" className="text-sm text-zinc-600 transition-colors hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white">Download my data</Link></li>
               </ul>
             </div>
           </div>

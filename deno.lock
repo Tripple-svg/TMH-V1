@@ -6,7 +6,9 @@
   "remote": {
     "https://deno.land/std@0.224.0/async/delay.ts": "f90dd685b97c2f142b8069082993e437b1602b8e2561134827eeb7c12b95c499",
     "https://deno.land/std@0.224.0/http/server.ts": "f9313804bf6467a1704f45f76cb6cd0a3396a3b31c316035e6a4c2035d1ea514",
-    "https://esm.sh/@supabase/supabase-js@2.118.0": "56fce2ec273698af8a739c03a005c4b2160e163e5d2c0ede05de7e9bd47e28b8"
+    "https://esm.sh/@sentry/deno@10.22.0?target=deno": "34faf039e2cd92c4eaea11c92c6de91bc6358db937f9a3ec71246e0e64f917ff",
+    "https://esm.sh/@supabase/supabase-js@2.118.0": "56fce2ec273698af8a739c03a005c4b2160e163e5d2c0ede05de7e9bd47e28b8",
+    "https://esm.sh/fflate@0.8.3": "3114cfbcb0319e84011fff5ff5e6364bc7d2e8d31de1f9c0a45c0f6607554670"
   },
   "workspace": {
     "packageJson": {
@@ -15,16 +17,19 @@
         "npm:@eslint/js@^10.0.1",
         "npm:@google/genai@2.18.0",
         "npm:@hcaptcha/react-hcaptcha@^2.2.0",
+        "npm:@sentry/react@11.10.0",
         "npm:@supabase/supabase-js@2.115.0",
         "npm:@tailwindcss/vite@^4.3.3",
         "npm:@types/react-dom@^19.2.3",
         "npm:@types/react@^19.2.17",
         "npm:@vitejs/plugin-react@6.1.2",
+        "npm:autocannon@8.0.0",
         "npm:autoprefixer@^10.5.4",
         "npm:esbuild@0.28.2",
         "npm:eslint-plugin-react-hooks@^7.1.1",
         "npm:eslint-plugin-react-refresh@~0.5.3",
         "npm:eslint@^10.8.0",
+        "npm:fflate@0.8.3",
         "npm:framer-motion@^13.1.1",
         "npm:globals@^17.7.0",
         "npm:groq-sdk@1.5.0",
@@ -38,6 +43,9 @@
         "npm:vite@8.3.5"
       ],
       "overrides": {
+        "hyperid": {
+          "uuid": "11.1.1"
+        },
         "eslint": {
           "minimatch": "11.0.1"
         },

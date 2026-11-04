@@ -1,10 +1,12 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { verifyReviewAccess, ReviewAccessError, hashReviewToken } from '../_shared/review-access.ts';
 import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson, screenshotPart } from '../_shared/haven-request.ts';
 import { normalizeWebsiteUrl } from '../_shared/haven-scoring.ts';
 import { limitRecovery, requestBucket } from '../_shared/playbook-recovery.ts';
 
-Deno.serve(async request => {
+Deno.serve(observe('update-review-source',async request => {
   const headers = responseHeaders(request);
   const json = (body: unknown, status=200) => Response.json(body,{status,headers});
   if(request.method==='OPTIONS') return new Response(null,{status:204,headers});
@@ -47,8 +49,8 @@ Deno.serve(async request => {
       &&!data.oldScreenshotPath.split('/').includes('..')&&data.oldScreenshotPath!==uploaded) {
       try {
         const {error:cleanupError}=await db.storage.from('tmh-screenshots').remove([data.oldScreenshotPath]);
-        if(cleanupError) console.warn('Review source cleanup pending');
-      } catch { console.warn('Review source cleanup pending'); }
+        if(cleanupError) logEvent('warn','update-review-source.diagnostic_1');
+      } catch { logEvent('warn','update-review-source.diagnostic_2'); }
     }
     return json({ok:true,revision:data.revision,review:data.review});
   } catch(error) {
@@ -57,4 +59,4 @@ Deno.serve(async request => {
   } finally {
     if(uploaded&&!committed&&db) try { await db.storage.from('tmh-screenshots').remove([uploaded]); } catch { /* Private orphan can be removed by maintenance. */ }
   }
-});
+}));

@@ -1,3 +1,4 @@
+import * as lockout from '../src/lib/adminLockout.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -76,9 +77,9 @@ test('password recovery does not bypass MFA, and an authenticated MFA change pre
 });
 test('sign-in cannot call onAuth for an enrolled password-only session',async()=>{
   const f=fixture(),states=[];let cursor=0,opened=0;
-  const react={useState(initial){const index=cursor++;if(!(index in states))states[index]=initial;return[states[index],value=>{states[index]=typeof value==='function'?value(states[index]):value;}];},useEffect(){}};
+  const react={useState(initial){const index=cursor++;if(!(index in states))states[index]=initial;return[states[index],value=>{states[index]=typeof value==='function'?value(states[index]):value;}];},useRef:value=>({current:value}),useEffect(){}};
   const challenge=function Challenge(){};
-  const context={module:{exports:{}},require:name=>name==='react'?react:name.includes('adminMfa')?mfa:name.includes('AdminMfaChallenge')?{__esModule:true,default:challenge}:{adminSupabase:{auth:f.auth}},React:{createElement:(type,props,...children)=>({type,props:{...props,children}})}};
+  const context={module:{exports:{}},require:name=>name==='react'?react:name.includes('adminLockout')?lockout:name.includes('adminMfa')?mfa:name.includes('AdminMfaChallenge')?{__esModule:true,default:challenge}:{adminSupabase:{auth:f.auth}},React:{createElement:(type,props,...children)=>({type,props:{...props,children}})}};
   vm.runInNewContext(transformSync(readFileSync('src/components/admin/AdminSignIn.jsx','utf8'),{loader:'jsx',format:'cjs'}).code,context);
   const render=()=>{cursor=0;const nodes=[];const walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(!node||typeof node!=='object')return;nodes.push(node);walk(node.props.children);};walk(context.module.exports.default({onAuth:()=>{opened++;}}));return nodes;};
   render().find(node=>node.type==='input'&&node.props.type==='email').props.onChange({target:{value:'admin@example.com'}});

@@ -1,10 +1,12 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { verifyReviewAccess, ReviewAccessError } from '../_shared/review-access.ts';
 import { readBoundedJson, HavenRequestError } from '../_shared/haven-request.ts';
 
 const ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz'];
-serve(async (req) => {
+serve(observe('sync-haven-session',async (req) => {
   const origin = req.headers.get('origin');
   const allowed = origin && (ORIGINS.includes(origin) || /^http:\/\/localhost:\d+$/.test(origin));
   const headers = { 'Access-Control-Allow-Origin': allowed ? origin! : ORIGINS[0],
@@ -39,7 +41,7 @@ serve(async (req) => {
     return json({ ok: true });
   } catch (error) {
     if (error instanceof ReviewAccessError || error instanceof HavenRequestError) return json({ ok: false, error: error.message }, error.status);
-    console.error('sync-haven-session failed');
+    logEvent('error','sync-haven-session.diagnostic_1');
     return json({ ok: false, error: 'Unable to save your session. Please retry.' }, 500);
   }
-});
+}));

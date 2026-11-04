@@ -92,7 +92,7 @@ test('flag alert: content comes from the database snapshot and recipients are fi
   assert.equal(mail[0].method, 'POST');
   assert.equal(mail[0].headers.Authorization, 'Bearer resend-test');
   assert.equal(mail[0].headers['Idempotency-Key'], `flag-alert/${ID}`);
-  assert.deepEqual(mail[0].body.to, ['francis.teamhaven@gmail.com', 'paschal.tmh@gmail.com']);
+  assert.deepEqual(mail[0].body.to, ['francis.teamhaven@gmail.com', 'paschal.tmh@gmail.com', 'chimburuomac@gmail.com']);
   assert.equal(mail[0].body.from, 'The Marketing Haven <info@themarketinghaven.xyz>');
   assert.equal(mail[0].body.reply_to, 'info@themarketinghaven.xyz');
   assert.equal(mail[0].body.subject, 'URGENT: User Flagged - red');

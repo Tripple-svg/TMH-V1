@@ -1,9 +1,10 @@
+import {observe} from '../_shared/observability.ts';
 import {verificationAttempt} from '../_shared/verification-attempts.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson } from '../_shared/haven-request.ts';
 import { codeHash, digest, privateToken, limitRecovery, requestBucket, verifyPurchasePayment, downloadResult } from '../_shared/playbook-recovery.ts';
 
-Deno.serve(async request => {
+Deno.serve(observe('verify-playbook-recovery',async request => {
   const headers = responseHeaders(request);
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
@@ -37,4 +38,4 @@ Deno.serve(async request => {
     if(error instanceof HavenRequestError && error.status===429)Object.assign(headers,{'Retry-After':String(error.retryAfter||600)});
     return json({ ok: false, code:(error as any)?.code, error: error instanceof HavenRequestError ? error.message : 'Recovery is temporarily unavailable.' }, error instanceof HavenRequestError ? error.status : 502);
   }
-});
+}));

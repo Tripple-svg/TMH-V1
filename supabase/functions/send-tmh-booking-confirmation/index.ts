@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { isInternalRequest } from '../_shared/internal-auth.js';
@@ -11,7 +13,7 @@ const SERVICES: Record<string, string> = {
 };
 const ALLOWED_ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz', 'http://localhost:5173', 'http://localhost:5175'];
 
-serve(async (req) => {
+serve(observe('send-tmh-booking-confirmation',async (req) => {
   const origin = req.headers.get('origin');
   const headers: Record<string, string> = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -99,7 +101,7 @@ serve(async (req) => {
     return json({ ok: true });
   } catch (error) {
     const code = error instanceof MailDeliveryError ? error.code : 'booking_confirmation_failed';
-    console.error('send-tmh-booking-confirmation: '+code);
+    logEvent('error','send-tmh-booking-confirmation.diagnostic_1');
     return json({ ok: false, code, error: error instanceof MailDeliveryError ? error.message : 'Unable to send confirmation' }, error instanceof MailDeliveryError ? error.status : 500);
   }
-});
+}));

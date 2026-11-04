@@ -256,3 +256,52 @@ After deployment, `node scripts/security-smoke.mjs` performs bounded negative HT
 ## Release evidence and remaining work
 
 Record actual dates/results, release/deploy/function versions, applied migration versions, expected job status and recent executions, SMTP/provider setup, QA inbox receipts and rollback rehearsal. Local verification cannot establish current production grants, SMTP, signup behavior, paid Gemini access, Cron execution or delivered email. Treat each as pending until the corresponding private production evidence exists. Privacy operating/retention/provider-contract actions are tracked separately in [PRIVACY_OPERATIONS_20261101.md](PRIVACY_OPERATIONS_20261101.md).
+
+## Pass 2 additions
+
+Source branch: `feat/production-polish`. No merge to dev or production deployment was performed by this pass. Read [PRODUCTION_POLISH_REPORT_20261103.md](PRODUCTION_POLISH_REPORT_20261103.md), [FUNCTION_AUTH_MATRIX.md](FUNCTION_AUTH_MATRIX.md) and [ADMIN_HANDBOOK.md](ADMIN_HANDBOOK.md) first.
+
+### Database preflight and migration drift
+
+Read-only production inspection found all 32 expected pre-existing application tables with RLS enabled and 59 public RPCs, but the ledger lists only three early migrations. Treat the schema as manually advanced until verified otherwise. **Do not run a blind db push or replay the old directory.** Compare the actual definitions/grants with the historical source, document the drift, and apply only the new SQL below after a recoverable hosted backup. Do not invent historical migration acknowledgements.
+
+1. `20261103000000_production_admin.sql`: session-aware admin/RLS gate, safe Realtime arrival events, MFA backup hashes, login devices/activity, approval requests, audited limits, support reply timestamps, Insights and approved nudge queue.
+2. `20261103000001_privacy_health.sql`: export snapshots, worker success markers, fail-closed health RPC and private retention.
+3. `20261103000002_content_performance.sql`: optional analytics receipts, daily section aggregates and retention.
+
+The old single-admin deletion route intentionally stops working once the first migration is applied. The frontend uses requests and a second admin's approval instead. Deploy the new API and frontend in the same controlled release. Revoked session JWTs are denied by the new three-argument gate. Preserve the existing two-argument gate as the reviewed compatibility dependency of that function; never substitute it for the new session check in Edge code.
+
+### Functions, configuration and cron
+
+All 44 Edge handlers import the shared observability wrapper, so deploy all affected handlers and shared imports. New endpoints: `admin-operations`, `request-data-export`, `confirm-data-export`, `content-performance`, `health`, and `send-lead-followup-nudges`. Existing admin/support/deletion/chat/mail workers also changed. Keep gateway JWT configuration from `supabase/config.toml` and the application authentication matrix together.
+
+| Setting | Action |
+| --- | --- |
+| `VITE_SENTRY_DSN` | Optional public browser project DSN. Missing means no client telemetry. This is not an auth token. |
+| `SENTRY_DSN` | Optional server Sentry project DSN. Verify a sanitized event before enabling incident routing. Missing means no server telemetry. |
+| `IPINFO_TOKEN` | Optional server-only token for city estimates. Without it Activity honestly shows city unavailable. Review the provider processing arrangement before enabling. |
+| `CALENDLY_WEBHOOK_SECRET` | Absent from the inspected configured-secret names. Configure the actual matching Calendly subscription/signing secret if the webhook is enabled. Polling is separate. Never pick an unrelated value merely to satisfy presence. |
+| Existing internal poll/Vault pair | Reuse the matching existing secret. Readiness checks confirmed one Vault entry and minimum length without reading its value. |
+| Dependencies | Both npm and pnpm lockfiles are synchronized. ZIP handling pins patched `fflate` 0.8.3. The load tool's nested UUID pin is patched for both package managers. Use the checked-in lockfile for the chosen manager. |
+
+Apply `supabase/manual/20261103_schedule_production.sql` after deploying the worker. It schedules the approved lead reminders every five minutes and private/content retention daily. Verify the existing Calendly poll, support notification and AI alert jobs remain active at intervals below 15 minutes.
+
+The public endpoint is `https://dkpoygkduktusrnsbpaq.supabase.co/functions/v1/health`. Expect 503 until database/RPC, Vault, four named cron jobs and all four worker heartbeats pass. The workers are Calendly polling, support notifications, AI alerts and approved lead reminders. Daily retention jobs are checked separately. Verify real downstream HTTP success, not just a successful SQL enqueue.
+
+Team alerts now include `francis.teamhaven@gmail.com`, `paschal.tmh@gmail.com` and `chimburuomac@gmail.com`. Existing provider acceptance markers are not resent automatically to newly added recipients. Check new events in all three inboxes. Preserve frozen historical payloads and provider idempotency keys during retries.
+
+### UptimeRobot account setup
+
+Per the owner's follow-up, leave account creation and submission manual. Francis will create the account under `francis.teamhaven@gmail.com`, then add Paschal and Chimburuoma as alert contacts. No activation request was submitted by this pass.
+
+Create HTTP(S) GET monitors for `https://themarketinghaven.xyz/` and `https://dkpoygkduktusrnsbpaq.supabase.co/functions/v1/health`, with five-minute checks and the three verified alert contacts. Require a successful status, and for health also check the `ok: true` JSON result if the chosen plan supports assertions. Do not monitor a paid AI generation endpoint or attach a service credential. Confirm actual downtime and recovery mail using staging or a reversible monitor test.
+
+`npm run monitor:preview` prints the prepared URLs and recipients without sending anything. Do not run the submission flag without fresh authorization; the owner chose manual setup.
+
+### Acceptance and backup restore
+
+Run `npm test`, `npm run lint`, `npm run build`, the Deno check over all Edge entrypoints, `npm audit --audit-level=moderate`, `npm run test:security`, `npm run test:load`, and `npm run test:restore`. Captured evidence is in `validation/production-polish/`.
+
+The load harness runs ten independent visitors against real application handlers and real isolated PostgreSQL with a stubbed model. It does not establish paid Gemini/Groq capacity. The physical local backup rehearsal restores synthetic database records and Storage metadata; it does not restore hosted customer backups or private object bytes. Restore those separately into isolated staging before relying on production recovery.
+
+Staff acceptance must cover enrollment during a network loss, one-time backup recovery with revoked old sessions, a second current admin approving a disposable deletion, stale/self approvals rejected, live badges without draft loss, real ZIP receipt, SLA first-response recording, redacted export and manual reminder approval. Confirm email-provider acceptance separately from delivery to each inbox. Never use a real customer deletion to make a test green.

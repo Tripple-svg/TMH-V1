@@ -10,11 +10,17 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test --test-concurrency=2 tests/*.test.mjs",
+    "test:security": "node --test tests/ethical-hacking.test.mjs tests/admin-operations.test.mjs",
+    "test:load": "node scripts/haven-load-test.mjs",
+    "test:restore": "node scripts/backup-restore-test.mjs",
+    "monitor:preview": "node scripts/setup-uptime-monitor.mjs"
   },
   "dependencies": {
     "@google/genai": "2.18.0",
     "@hcaptcha/react-hcaptcha": "^2.2.0",
+    "@sentry/react": "11.10.0",
     "@supabase/supabase-js": "2.115.0",
     "framer-motion": "^13.1.1",
     "groq-sdk": "1.5.0",
@@ -31,17 +37,27 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "6.1.2",
+    "autocannon": "8.0.0",
     "autoprefixer": "^10.5.4",
+    "esbuild": "0.28.2",
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
-    "esbuild": "0.28.2",
+    "fflate": "0.8.3",
     "globals": "^17.7.0",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
     "vite": "8.3.5"
   },
+  "pnpm": {
+    "overrides": {
+      "hyperid>uuid": "11.1.1"
+    }
+  },
   "overrides": {
+    "hyperid": {
+      "uuid": "11.1.1"
+    },
     "eslint": {
       "minimatch": "11.0.1"
     },

@@ -749,6 +749,7 @@ export default function HavenDrawer() {
                     <div role="alert" className="relative rounded-xl border border-amber-200/15 bg-amber-200/[0.04] p-4 pr-10 text-xs leading-relaxed text-zinc-300">
                       <button type="button" onClick={dismissFailedTurn} aria-label="Dismiss saved message retry" className="absolute right-2 top-2 rounded p-1 text-zinc-400 hover:text-white"><X className="h-4 w-4" /></button>
                       <p>{currentSession.failedTurn.error}</p>
+                      <a href={`/support?issue=rate_limit&message=${encodeURIComponent('I could not continue in Haven.\n\nVisible error: '+String(currentSession.failedTurn.error||'').slice(0,800)+'\n\nWhat I was trying to do: ')}`} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block underline underline-offset-4">Contact support</a>
                       <button type="button" disabled={isRestricted || needsReviewRecovery || currentSession.failedTurn.retryAt > retryNow} className="mt-2 rounded-lg border border-white/15 px-3 py-2 text-zinc-100 disabled:opacity-50"
                         onClick={() => sendMessage(currentSession.failedTurn.content, currentSession.failedTurn.image)}>{currentSession.failedTurn.retryAt > retryNow ? `Retry in ${Math.ceil((currentSession.failedTurn.retryAt - retryNow) / 1000)}s` : 'Retry saved message'}</button>
                     </div>

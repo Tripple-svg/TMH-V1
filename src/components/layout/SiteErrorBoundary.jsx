@@ -1,9 +1,10 @@
 import { Component } from 'react';
+import {capturePageFailure} from '../../lib/errorTracking';
 
 export default class SiteErrorBoundary extends Component {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
-  componentDidCatch() { console.error('TMH: page rendering failed. Reload to recover.'); }
+  componentDidCatch(error) { capturePageFailure(error); }
   render() {
     if (!this.state.failed) return this.props.children;
     return (

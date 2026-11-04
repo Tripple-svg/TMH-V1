@@ -65,7 +65,7 @@ export default function TermsPage() {
           <article className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100/70 backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.03]">
             <div className="border-b border-zinc-200 px-6 py-10 sm:px-10 sm:py-14 dark:border-white/[0.08]">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                Effective Date: 26 October 2026 · Updated: 1 November 2026 · Chat notice version 2026-10-26
+                Effective Date: 26 October 2026 · Updated: 3 November 2026 · Chat notice version 2026-10-26
               </p>
               <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl dark:text-white">
                 Terms of Service
@@ -117,6 +117,7 @@ export default function TermsPage() {
               </section>
 
               <section id="artificial-intelligence-disclosure" className="scroll-mt-10">
+                <p className="mb-5 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">AI availability is subject to request limits, daily allowances, maintenance and provider capacity. Follow the cooldown shown on screen or use <Link to="/support" className="underline underline-offset-4">Support</Link> for help. A support reference records a saved request; it is not proof that an email arrived or a promise of a response within 24 hours. We track unanswered requests internally so the team can prioritize them. A reminder about an uncontacted lead requires staff approval and does not automatically email that customer.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">4. Artificial Intelligence Disclosure</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   <p>
@@ -220,6 +221,7 @@ export default function TermsPage() {
               </section>
 
               <section id="data-deletion" className="scroll-mt-10">
+                <p className="mb-5 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">You can also <Link to="/data-access" className="underline underline-offset-4">download your saved review and linked chats</Link> after confirming your inbox. We email a ZIP archive to that inbox; links expire after 24 hours and are not a general account login. Contact the team about other record categories. Privacy requests are handled separately from the two-admin approval used for internal destructive actions.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">14. Data Deletion</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   <p>

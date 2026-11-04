@@ -115,17 +115,17 @@ test('admin flags: network failure restores the controls and reports an error', 
   assert.equal(ui.states[0], false);
 });
 
-test('admin dashboard: total uses loaded leads and Clear Data clears both browser stores before reload', () => {
+test('admin dashboard: total uses loaded leads and Reset view preserves browser credentials and reloads records', () => {
   const ui = harness({ dashboard: true });
   const nodes = ui.renderDashboard();
   assert.ok(nodes.some((node) => node.type === 'p' && node.props.children[0] === 'Total Reviews: '
     && node.props.children[1] === 2));
-  const button = nodes.find((node) => node.type === 'button' && node.props.children.includes('Clear Data'));
+  const button = nodes.find((node) => node.type === 'button' && node.props.children.includes('Reset view'));
   assert.ok(button);
   button.props.onClick();
-  assert.deepEqual(ui.cleared, ['local', 'session']);
-  assert.equal(ui.reloads, 1);
-  assert.equal(ui.requests.length, 0);
+  assert.deepEqual(ui.cleared, []);
+  assert.equal(ui.reloads, 0);
+  assert.equal(ui.requests.length, 1);
 });
 
 

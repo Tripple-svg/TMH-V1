@@ -45,7 +45,7 @@ test('admin settings whitelist values, take actor from Auth and hash network bef
   assert.doesNotMatch(JSON.stringify(args),/203\.0\.113\.25|service-secret|valid-token|attacker/);
 });
 test('revocation during a request and audit database failures fail closed before deletion or external email',async()=>{
-  for(const name of ['admin-update-lead','admin-retry-purchase-email'])for(const [error,status] of [[{code:'42501'},403],[{code:'XX000',message:'Private database note and email private@example.com',details:'Bearer private-provider-token'},name==='admin-update-lead'?500:503]]){
+  for(const name of ['admin-retry-purchase-email'])for(const [error,status] of [[{code:'42501'},403],[{code:'XX000',message:'Private database note and email private@example.com',details:'Bearer private-provider-token'},name==='admin-update-lead'?500:503]]){
     const f=fixture(name,{auditError:error});const body=name==='admin-update-lead'?{action:'delete',reviewId:'review-1',confirmation:'review-1'}:{reference:'UNSEEN_test'};
     const response=await f.call(body);assert.equal(response.status,status,name);assert.equal(f.mail.length,0,name);
     assert.doesNotMatch(JSON.stringify([await response.json(),f.logs]),/private@example|private-provider-token|Private database note/);

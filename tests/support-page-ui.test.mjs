@@ -1,3 +1,4 @@
+import {supportPrefill} from '../src/lib/supportPrefill.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -16,7 +17,8 @@ function supportPage({ issue = '', invoke = async () => ({ data: { ok: true, ref
     module: { exports: {} }, React: react, window: { location: { search: issue ? `?issue=${encodeURIComponent(issue)}` : '' } }, URLSearchParams, Response,
     require(name) {
       if (name === 'react') return react;
-      if (name === 'react-router-dom') return { Link: 'Link' };
+      if (name === 'react-router-dom') return { Link: 'Link',useLocation:()=>({search:issue?'?issue='+encodeURIComponent(issue):''}) };
+      if(name.includes('supportPrefill'))return {supportPrefill};
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => key });
       if (name.includes('react-hcaptcha')) return { __esModule: true, default: 'HCaptcha' };
       if (name.includes('havenIdentity')) return { getHavenIdentity: () => ({ visitorId: 'visitor', visitorToken: 'private-proof' }) };

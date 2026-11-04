@@ -17,6 +17,7 @@ export function withSecurityRpc(client) {
     if(key==='auth')return target.auth || {getUser:async token=>token==='test-admin-jwt'?{data:{user:{id:'test-admin',app_metadata:{role:'admin'}}},error:null}:{data:{user:null},error:{message:'Invalid session'}}};
     if(key!=='rpc')return target[key];
     return (name,args)=>{
+      if(name==='record_worker_success')return Promise.resolve({data:true,error:null});
       if(name==='admin_access_allowed')return Promise.resolve({data:true,error:null});
       if(name==='consume_playbook_limit')return Promise.resolve({data:true,error:null});
       if(name==='begin_admin_auth')return Promise.resolve({data:{allowed:true,started_at:'2026-10-28T00:00:00Z'},error:null});

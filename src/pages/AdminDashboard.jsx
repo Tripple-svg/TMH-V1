@@ -2,6 +2,10 @@ import VerificationAttemptsPanel from '../components/admin/VerificationAttemptsP
 import SupportRequestsPanel from '../components/admin/SupportRequestsPanel';
 import AdminSecurityPanel from '../components/admin/AdminSecurityPanel';
 import AdminMfaPanel from '../components/admin/AdminMfaPanel';
+import BookingCalendar from '../components/admin/BookingCalendar';
+import {InsightsPanel,ActivityPanel,RateLimitsPanel} from '../components/admin/AdminOperationsPanels';
+import {redactContact} from '../lib/adminProduction';
+import {subscribeAdminNotifications} from '../lib/adminRealtime';
 import VisitorActivityPanel from '../components/admin/VisitorActivityPanel';
 import APIUsagePanel from '../components/admin/APIUsagePanel';
 import {observeAdminSession} from '../lib/adminSession';
@@ -27,6 +31,7 @@ const RETRY_PURCHASE_URL = `${SUPABASE_URL}/functions/v1/admin-retry-purchase-em
 const ASSIGNMENT_URL = `${SUPABASE_URL}/functions/v1/admin-team-assignment`;
 const SUPPORT_URL = `${SUPABASE_URL}/functions/v1/admin-support`;
 const SECURITY_URL = `${SUPABASE_URL}/functions/v1/admin-security`;
+const OPERATIONS_URL = `${SUPABASE_URL}/functions/v1/admin-operations`;
 
 const PAGE_SIZE = 25;
 const transcriptCache = new Map();
@@ -40,6 +45,8 @@ const ADMIN_TABS = [
   { id: 'requests', label: 'Support Requests' },
   { id: 'service', label: 'Service Chats' },
   { id: 'security', label: 'Security & AI' },
+  { id: 'insights', label: 'Insights' },
+  { id: 'activity', label: 'Activity' },
 ];
 
 const TEMPERATURES = ['All', 'Hot', 'Warm', 'Cold'];
@@ -196,11 +203,11 @@ function categoryScoreClass(score, max) {
 }
 
 function formatDate(value) {
-  if (!value) return '—';
+  if (!value) return 'Not recorded';
   try {
     return new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
   } catch {
-    return '—';
+    return 'Not recorded';
   }
 }
 
@@ -412,14 +419,14 @@ function ScoreBreakdown({ lead }) {
             <div key={cat.key} className="flex items-center justify-between gap-2">
               <span className="text-zinc-400">{cat.label}</span>
               <span className={`font-mono font-medium ${categoryScoreClass(score, cat.max)}`}>
-                {score ?? '—'} / {cat.max}
+                {score ?? 'Not recorded'} / {cat.max}
               </span>
             </div>
           );
         })}
         <div className="flex items-center justify-between gap-2 border-t border-zinc-700/50 pt-1.5 col-span-2">
           <span className="text-zinc-300 font-medium">Total</span>
-          <span className={`font-mono font-bold ${scoreClass(total)}`}>{total ?? '—'} / 100</span>
+          <span className={`font-mono font-bold ${scoreClass(total)}`}>{total ?? 'Not recorded'} / 100</span>
         </div>
       </div>
     </div>
@@ -441,10 +448,10 @@ function LeadDetails({ lead, onDelete, saving, accessToken, onAuthLost }) {
         <ScoreBreakdown lead={lead} />
       </div>
       <div className="min-w-0 space-y-2 text-xs text-zinc-300 [overflow-wrap:anywhere]">
-        <p><span className="text-zinc-500">WhatsApp:</span> {lead.whatsapp || '—'}</p>
-        <p><span className="text-zinc-500">Main goal:</span> {lead.main_goal || '—'}</p>
-        <p><span className="text-zinc-500">Website:</span> {lead.website_url || '—'}</p>
-        <p><span className="text-zinc-500">Social:</span> {lead.social_link || '—'}</p>
+        <p><span className="text-zinc-500">WhatsApp:</span> {lead.whatsapp || 'Not recorded'}</p>
+        <p><span className="text-zinc-500">Main goal:</span> {lead.main_goal || 'Not recorded'}</p>
+        <p><span className="text-zinc-500">Website:</span> {lead.website_url || 'Not recorded'}</p>
+        <p><span className="text-zinc-500">Social:</span> {lead.social_link || 'Not recorded'}</p>
         <p><span className="text-zinc-500">Booking / Playbook:</span> {lead.clicked_booking_link ? 'Yes' : 'No'} / {lead.clicked_playbook_link ? 'Yes' : 'No'}</p>
         <p><span className="text-zinc-500">Deal value:</span> {currency(lead.deal_value)}</p>
         <p><span className="text-zinc-500">Review email:</span> {lead.welcome_email_sent ? 'Accepted by email provider' : lead.welcome_email_id ? 'Provider accepted; saved status needs repair' : lead.welcome_email_attempted_at ? 'Pending' : 'Not attempted / not recorded'}</p>
@@ -453,7 +460,7 @@ function LeadDetails({ lead, onDelete, saving, accessToken, onAuthLost }) {
         {lead.session && (
           <p>
             <span className="text-zinc-500">Session:</span>{' '}
-            {lead.session.total_exchanges} exchanges · {lead.session.current_step || '—'} ·{' '}
+            {lead.session.total_exchanges} exchanges · {lead.session.current_step || 'Not recorded'} ·{' '}
             last update {formatDate(lead.session.updated_at || lead.session.last_session_update)}
           </p>
         )}
@@ -472,7 +479,7 @@ function LeadDetails({ lead, onDelete, saving, accessToken, onAuthLost }) {
       <p className="text-xs text-zinc-500">Deleting this lead also removes its chat sessions. Purchases and booking history are retained. Manage meeting cancellations in Calendly.</p>
       <button type="button" onClick={onDelete} disabled={saving}
         className="rounded-lg border border-red-500/30 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50">
-        {saving ? 'Saving…' : 'Delete Lead'}
+        {saving ? 'Saving…' : 'Request deletion'}
       </button>
     </div>
     </div>
@@ -593,7 +600,7 @@ function BookedBadge() {
 
 // ─── Actions hook (shared between desktop and mobile) ───────────
 
-function useLeadActions({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, showToast }) {
+function useLeadActions({ lead, accessToken, onLeadChange, onAuthLost, showToast }) {
   const [saving, setSaving] = useState(false);
   const [notes, setNotes] = useState(lead.followup_notes || '');
   const [retryingWelcome, setRetryingWelcome] = useState(false);
@@ -628,13 +635,14 @@ function useLeadActions({ lead, accessToken, onLeadChange, onLeadDelete, onAuthL
 
   const onStatusChange = (e) => save({ followupStatus: e.target.value });
   const onDeleteLead = async () => {
-    if (saving || !window.confirm(`Delete the lead for ${lead.brand_name || lead.full_name || 'this brand'} (${lead.email || lead.id})?\n\nThis permanently removes the review and its chat sessions. Purchases and booking history will be kept. Manage meeting cancellations in Calendly. This cannot be undone.`)) return;
+    if(saving)return;
+    const reason=window.prompt(`Request deletion for ${lead.brand_name||'this review'}? A different admin must approve in Activity. Add a reason of at least 10 characters.`);
+    if(!reason||reason.trim().length<10)return;
     setSaving(true);
     try {
-      const result = await apiUpdateLead(accessToken, { action: 'delete', reviewId: lead.id, confirmation: lead.id });
-      if (result.ok && result.deletedId === lead.id) {
-        onLeadDelete?.(lead.id);
-        showToast(result.warning ? 'error' : 'success', result.warning || 'Lead deleted.');
+      const result = await apiRequest(OPERATIONS_URL,accessToken,{action:'requestDeletion',kind:'review',id:lead.id,reason});
+      if (result.ok && result.pendingApproval) {
+        showToast('success','Deletion requested. A different admin must approve it in Activity.');
       } else if (result.code === 'unauthorised') onAuthLost();
       else showToast('error', result.error || 'Could not delete the lead.');
     } finally {
@@ -725,12 +733,12 @@ function LeadRow({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, sh
         </td>
         <td className="p-4 align-top">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-white">{lead.full_name || '—'}</span>
+            <span className="font-medium text-white">{lead.full_name || 'Not recorded'}</span>
             {isBooked && <BookedBadge />}
           </div>
-          <div className="text-xs text-zinc-400">{lead.brand_name || '—'}</div>
+          <div className="text-xs text-zinc-400">{lead.brand_name || 'Not recorded'}</div>
           <div className="mt-0.5 flex items-center gap-2 text-xs text-zinc-500 group">
-            <span className="truncate max-w-[200px]">{lead.email || '—'}</span>
+            <span className="truncate max-w-[200px]">{lead.email || 'Not recorded'}</span>
             {lead.email && (
               <button
                 type="button" onClick={() => handleCopy(lead.email, 'Email')}
@@ -754,11 +762,11 @@ function LeadRow({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, sh
           <WelcomeEmailStatus lead={lead} retrying={retryingWelcome} onRetry={onRetryWelcome} />
         </td>
         <td className="p-4 align-top text-xs text-zinc-300">
-          {lead.platform_type || '—'}
+          {lead.platform_type || 'Not recorded'}
           {lead.social_platform ? <div className="text-zinc-500">{lead.social_platform}</div> : null}
         </td>
         <td className={`p-4 align-top text-sm font-bold ${scoreClass(lead.haven_score)}`}>
-          {lead.haven_score ?? '—'}
+          {lead.haven_score ?? 'Not recorded'}
         </td>
         <td className="p-4 align-top">
           <span className={`inline-block whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-medium ${temperatureClass(lead.lead_temperature)}`}>
@@ -769,11 +777,11 @@ function LeadRow({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, sh
           <FlagSelect lead={lead} onChange={onFlagChange} disabled={saving} />
         </td>
         <td className="p-4 align-top text-xs text-zinc-300 min-w-[280px] max-w-[360px] leading-relaxed">
-          {lead.biggest_leak || '—'}
+          {lead.biggest_leak || 'Not recorded'}
         </td>
         <td className="p-4 align-top text-xs text-zinc-400">{lead.utm_source || 'direct'}</td>
         <td className="p-4 align-top text-xs text-zinc-400" title={lead.pre_call_briefing ? 'Pre-call briefing ready' : 'No briefing'}>
-          {lead.pre_call_briefing ? '✓' : '—'}
+          {lead.pre_call_briefing ? '✓' : 'Not recorded'}
         </td>
         <td className="p-4 align-top text-xs text-zinc-400 whitespace-nowrap">
           <div>{formatDate(lead.created_at)}</div>
@@ -816,11 +824,11 @@ function LeadCard({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, s
           className="flex-1 text-left"
         >
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-white">{lead.full_name || '—'}</span>
+            <span className="font-semibold text-white">{lead.full_name || 'Not recorded'}</span>
             {isBooked && <BookedBadge />}
           </div>
-          <div className="text-xs text-zinc-400 mt-0.5">{lead.brand_name || '—'}</div>
-          <div className="text-xs text-zinc-500 mt-0.5 break-all">{lead.email || '—'}</div>
+          <div className="text-xs text-zinc-400 mt-0.5">{lead.brand_name || 'Not recorded'}</div>
+          <div className="text-xs text-zinc-500 mt-0.5 break-all">{lead.email || 'Not recorded'}</div>
         </button>
         <button
           type="button" onClick={toggleExpanded}
@@ -837,10 +845,10 @@ function LeadCard({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, s
         </span>
         <FlagSelect lead={lead} onChange={onFlagChange} disabled={saving} />
         <span className={`rounded-full border border-zinc-700 bg-zinc-950 px-2 py-0.5 font-mono ${scoreClass(lead.haven_score)}`}>
-          Score {lead.haven_score ?? '—'}
+          Score {lead.haven_score ?? 'Not recorded'}
         </span>
         <span className="rounded-full border border-zinc-700 bg-zinc-950 px-2 py-0.5 text-zinc-400">
-          {lead.platform_type || '—'}
+          {lead.platform_type || 'Not recorded'}
         </span>
         <span className="ml-auto text-[10px] text-zinc-500">
           {relativeTime(lead.created_at)}
@@ -916,6 +924,7 @@ function PurchasesPanel({ purchases, error, accessToken, onAuthLost, onPurchaseC
     } finally { setCheckingSetup(false); }
   };
   const retryLocks = useRef(new Set());
+  const requestPurchaseDeletion=async purchase=>{const reason=window.prompt("Why should this purchase be deleted? Another admin must approve it in Activity.");if(!reason||reason.trim().length<10)return;const result=await apiRequest(OPERATIONS_URL,accessToken,{action:"requestDeletion",kind:"purchase",id:String(purchase.id),reason});if(result.code==="unauthorised")onAuthLost?.();showToast?.(result.ok?"success":"error",result.ok?"Deletion requested. A different admin must approve it in Activity.":result.error||"Request could not be confirmed.");};
   const filtered = purchases.filter((purchase) => `${purchase.email || ''} ${purchase.reference || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pages);
@@ -945,10 +954,11 @@ function PurchasesPanel({ purchases, error, accessToken, onAuthLost, onPurchaseC
       </div>
       {emailSetup && <p role="status" className="border-b border-white/[0.06] px-4 py-3 text-xs leading-relaxed text-zinc-300">{emailSetup.from && <span className="mr-2">Sender: {emailSetup.from}.</span>}{emailSetup.message || emailSetup.error}</p>}
       <div className="p-4"><input aria-label="Search purchases" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search buyer email or payment reference" className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm outline-none focus:border-white/30" /></div>
+      {!error&&<div className="space-y-3 p-4 md:hidden">{rows.map(purchase=><article key={purchase.id||purchase.reference} className="rounded-2xl border border-white/10 bg-white/[0.025] p-4"><p className="break-all text-sm">{purchase.email}</p><p className="mt-2 break-all font-mono text-[11px] text-zinc-500">{purchase.reference}</p><p className="mt-3 text-sm">{purchase.amount==null?"Amount unavailable":currency(Number(purchase.amount)/100)}</p><p className="mt-2 text-xs text-zinc-500">{formatDate(purchase.created_at)}</p><p className="mt-3 text-xs text-zinc-400">{purchase.thankyou_sent?"Email provider accepted":"Email pending"}</p>{!purchase.thankyou_sent&&<button disabled={retrying[purchase.reference]} onClick={()=>retryEmail(purchase)} className="mt-3 min-h-11 rounded-lg border border-white/20 px-4 text-xs">Retry email</button>}{retryErrors[purchase.reference]&&<p role="alert" className="mt-2 text-xs text-red-300">{retryErrors[purchase.reference]}</p>}<button onClick={()=>requestPurchaseDeletion(purchase)} className="mt-3 block min-h-11 text-xs text-red-200 underline">Request deletion</button></article>)}</div>}
       {error ? <p role="alert" className="p-4 text-sm text-red-300">{error}</p> : rows.length === 0 ? (
         <p className="p-4 text-sm text-zinc-500">{query ? 'No purchases match this search.' : 'No purchases recorded yet.'}</p>
       ) : (
-        <div className="max-w-full overflow-x-auto overscroll-x-contain">
+        <div className="hidden max-w-full overflow-x-auto overscroll-x-contain md:block">
           <table className="w-full min-w-[640px] text-left text-sm [&_td]:p-4 [&_td]:align-top [&_th]:p-4">
             <thead className="text-xs uppercase tracking-wide text-zinc-500">
               <tr><th className="p-3">Buyer email</th><th className="p-3">Reference</th><th className="p-3">Amount</th><th className="p-3">Purchased</th><th className="p-3">Thank-you email</th></tr>
@@ -957,10 +967,11 @@ function PurchasesPanel({ purchases, error, accessToken, onAuthLost, onPurchaseC
               <tr key={purchase.id || purchase.reference} className="border-t border-zinc-800">
                 <td className="p-3 break-all text-zinc-200">{purchase.email}</td>
                 <td className="p-3 break-all font-mono text-xs text-zinc-400">{purchase.reference}</td>
-                <td className="p-3 whitespace-nowrap">{purchase.amount == null ? '—' : currency(Number(purchase.amount) / 100)}</td>
+                <td className="p-3 whitespace-nowrap">{purchase.amount == null ? 'Not recorded' : currency(Number(purchase.amount) / 100)}</td>
                 <td className="p-3 whitespace-nowrap text-xs text-zinc-400">{formatDate(purchase.created_at)}</td>
                 <td className="p-3 text-xs text-zinc-400">
                   <span title={purchase.thankyou_sent || purchase.thankyou_email_id ? 'Accepted by the email provider. Inbox delivery is not confirmed here.' : 'Waiting for provider acceptance.'} className={purchase.thankyou_sent ? 'text-zinc-200' : 'text-amber-300'}>{purchase.thankyou_sent ? 'Sent' : purchase.thankyou_email_id ? 'Accepted · tracking pending' : 'Pending'}</span>
+                  <button onClick={()=>requestPurchaseDeletion(purchase)} className="mt-3 block min-h-11 text-xs text-red-200 underline">Request deletion</button>
                   {purchase.thankyou_sent_at && <p className="mt-1 text-[10px] text-zinc-500">{formatDate(purchase.thankyou_sent_at)}</p>}
                   {!purchase.thankyou_sent && <button type="button" disabled={retrying[purchase.reference]} onClick={() => retryEmail(purchase)} className="mt-2 block rounded-lg border border-white/15 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/[0.06] disabled:opacity-50">{retrying[purchase.reference] ? 'Retrying…' : purchase.thankyou_email_id ? 'Repair status' : 'Retry email'}</button>}
                   {purchase.thankyou_attempted_at && !purchase.thankyou_sent && <p className="mt-2 text-[10px] text-zinc-500">Last attempt {formatDate(purchase.thankyou_attempted_at)}</p>}
@@ -981,6 +992,7 @@ function PurchasesPanel({ purchases, error, accessToken, onAuthLost, onPurchaseC
 }
 
 function BookingsPanel({ bookings, error, now = 0, accessToken, onAuthLost }) {
+  const [view,setView]=useState('calendar');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [page, setPage] = useState(1);
@@ -990,12 +1002,14 @@ function BookingsPanel({ bookings, error, now = 0, accessToken, onAuthLost }) {
     `${booking.full_name || ''} ${booking.email || ''} ${SERVICE_NAMES[booking.service_id] || ''} ${booking.service_id || ''} ${booking.source || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)), current = Math.min(page, pages);
   return <section aria-label="Strategy call bookings" className="space-y-4">
+    <div className="flex gap-3">{['calendar','list'].map(value=><button key={value} type="button" aria-pressed={view===value} onClick={()=>setView(value)} className={`min-h-11 rounded-xl border px-4 py-2 text-sm ${view===value?'border-white/30 bg-white/10':'border-white/10 text-zinc-400'}`}>{value==='calendar'?'Monthly calendar':'Booking cards'}</button>)}</div>
+    {view==='calendar'&&!error&&<BookingCalendar bookings={bookings} now={now}/>}
     <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-semibold">Bookings</h2><p className="mt-2 text-xs leading-relaxed text-zinc-400">Synced Calendly records and historical onsite bookings, including cancellations. Opening a booking link alone does not create a booking.</p></div><p className="text-xs text-zinc-400">{upcoming.length} upcoming · {bookings.length} loaded / 500 maximum</p></div>
       <div className="mt-5 flex flex-col gap-3 sm:flex-row"><input aria-label="Search bookings" placeholder="Search name, email or service" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm outline-none focus:border-white/30" /><select aria-label="Filter bookings" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="rounded-xl border border-white/10 bg-zinc-950 p-3 text-xs"><option value="all">All bookings</option><option value="upcoming">Upcoming</option><option value="active">Active (including past)</option><option value="canceled">Canceled</option></select></div>
     </div>
     <label className="block text-xs text-zinc-400">Service<select aria-label="Filter booking service" value={serviceFilter} onChange={event=>{setServiceFilter(event.target.value);setPage(1);}} className="mt-2 block w-full rounded-xl border border-white/10 bg-zinc-950 p-3 sm:max-w-sm"><option value="all">All services</option>{Object.entries(SERVICE_NAMES).map(([id,name])=><option key={id} value={id}>{name}</option>)}<option value="unspecified">Not specified / direct booking</option></select></label>
-    {error ? <p role="alert" className="rounded-xl border border-red-500/20 p-5 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">{query || status !== 'all' || serviceFilter!=='all' ? 'No bookings match these filters.' : 'No bookings have synced yet. Calendly polling imports meetings from the last 3 hours through the next 60 days; older meetings are not backfilled.'}</p> : <div className="grid gap-4 lg:grid-cols-2">{filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map((booking) => <article key={booking.id} className="min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5">
+    {view==="list"&&(error ? <p role="alert" className="rounded-xl border border-red-500/20 p-5 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">{query || status !== 'all' || serviceFilter!=='all' ? 'No bookings match these filters.' : 'No bookings have synced yet. Calendly polling imports meetings from the last 3 hours through the next 60 days; older meetings are not backfilled.'}</p> : <div className="grid gap-4 lg:grid-cols-2">{filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map((booking) => <article key={booking.id} className="min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5">
       <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="font-medium text-zinc-100">{booking.full_name || 'Name not provided'}</h3><a href={`mailto:${booking.email}`} className="mt-1 block break-all text-sm text-zinc-400 underline-offset-4 hover:underline">{booking.email}</a></div><span className={`rounded border px-2 py-1 text-[10px] uppercase tracking-wider ${['canceled','cancelled'].includes(booking.status) ? 'border-red-400/25 text-red-300' : 'border-white/15 text-zinc-300'}`}>{booking.status}</span></div>
       <p className="mt-5 text-lg font-medium tracking-tight">{booking.start_time ? formatDate(booking.start_time) : 'Time not recorded'}</p><p className="mt-1 text-xs text-zinc-400">Displayed in your device timezone · Invitee timezone: {booking.timezone || 'Not recorded'}</p>
       <dl className="mt-5 space-y-2 text-xs text-zinc-400"><div><dt className="inline text-zinc-400">Meeting: </dt><dd className="inline">{booking.event_name || 'Strategy call'}</dd></div><div><dt className="inline text-zinc-400">Source: </dt><dd className="inline">{booking.source === 'lead' ? 'Brand review' : booking.source === 'team' ? 'Team inquiry' : booking.source === 'service' ? `Services${booking.service_id ? ` / ${booking.service_id}` : ''}` : booking.source === 'legacy' ? 'Legacy onsite booking' : 'Direct Calendly'}</dd></div><div><dt className="inline text-zinc-400">Last synced: </dt><dd className="inline">{formatDate(booking.last_synced_at)}</dd></div></dl>
@@ -1004,8 +1018,8 @@ function BookingsPanel({ bookings, error, now = 0, accessToken, onAuthLost }) {
       <p className="mt-2 text-xs text-zinc-400">TMH confirmation: {booking.confirmation_email_sent ? 'Accepted by email provider' : booking.source==='calendly'?'No matching onsite review or intent':'Not recorded as accepted'} · Calendly sends the joining invitation separately.</p>
       {booking.start_time && <p className="mt-2 text-xs text-zinc-400">Lagos: {new Intl.DateTimeFormat('en-NG',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Lagos'}).format(new Date(booking.start_time))} WAT{booking.end_time ? ` · Ends ${new Intl.DateTimeFormat('en-NG',{timeStyle:'short',timeZone:'Africa/Lagos'}).format(new Date(booking.end_time))}` : ''}</p>}
       <TeamAssignment kind="booking" targetId={String(booking.id)} onAuthLost={onAuthLost} onRequest={payload=>apiRequest(ASSIGNMENT_URL,accessToken,payload)} />
-    </article>)}</div>}
-    {pages > 1 && <nav aria-label="Booking pages" className="flex items-center justify-end gap-3 text-xs"><button disabled={current <= 1} onClick={() => setPage(current - 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Prev</button><span>{current} / {pages}</span><button disabled={current >= pages} onClick={() => setPage(current + 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Next</button></nav>}
+    </article>)}</div>)}
+    {view==="list"&&pages > 1 && <nav aria-label="Booking pages" className="flex items-center justify-end gap-3 text-xs"><button disabled={current <= 1} onClick={() => setPage(current - 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Prev</button><span>{current} / {pages}</span><button disabled={current >= pages} onClick={() => setPage(current + 1)} className="rounded border border-white/10 px-3 py-2 disabled:opacity-40">Next</button></nav>}
   </section>;
 }
 
@@ -1032,7 +1046,7 @@ function StandaloneSessionRow({ session, accessToken, onAuthLost, onVisitorChang
         <span className="min-w-0 space-y-2">
           <span className="block text-sm font-medium text-zinc-200">{session.service_id === 'team-inquiry' ? 'Team inquiry' : session.service_id ? `${session.service_id} · service conversation` : session.scope === 'service' ? 'Service conversation' : 'Support conversation'}</span>
           <span className="block text-xs text-zinc-400">{session.review_id ? (session.linked_name || session.linked_brand || "Linked brand review") : "Guest conversation"}</span><span className="block break-all font-mono text-[11px] text-zinc-500">{session.id}</span>
-          <span className="block text-xs text-zinc-500">{formatDate(session.updated_at || session.created_at)} · {session.message_count ?? '—'} stored messages · {session.total_exchanges || 0} exchanges</span>
+          <span className="block text-xs text-zinc-500">{formatDate(session.updated_at || session.created_at)} · {session.message_count ?? 'Not recorded'} stored messages · {session.total_exchanges || 0} exchanges</span>
         </span>
       </button>
       <div className="space-y-2 text-right"><FlagSelect lead={session} onChange={changeFlag} disabled={saving || Boolean(session.flag_error)} />{session.flag_error && <p className="max-w-xs text-xs text-amber-300">{session.flag_error}</p>}</div>
@@ -1110,6 +1124,10 @@ export default function AdminDashboard() {
   const [bookings, setBookings] = useState([]);
   const [bookingsError, setBookingsError] = useState('');
   const [authReady,setAuthReady]=useState(false);
+  const [redactExport,setRedactExport]=useState(true);
+  const [arrivals,setArrivals]=useState({support:0,booking:0});
+  const [liveStatus,setLiveStatus]=useState('Connecting live updates…');
+  const loginRecorded=useRef('');
 
   const showToast = useCallback((kind, text) => {
     setToast({ kind, text, id: Date.now() });
@@ -1187,6 +1205,17 @@ export default function AdminDashboard() {
     });
   },[handleAuthLost]);
   useEffect(()=>{if(accessToken&&authorised){const task=setTimeout(()=>void load(accessToken),0);return()=>clearTimeout(task);}},[accessToken,authorised,load]);
+  useEffect(()=>{
+    if(!authorised||!accessToken)return;
+    return subscribeAdminNotifications(supabase,accessToken,{onArrival:kind=>setArrivals(previous=>({...previous,[kind]:previous[kind]+1})),onStatus:setLiveStatus});
+  },[accessToken,authorised]);
+  useEffect(()=>{
+    if(!authorised||!accessToken)return;
+    let sessionId='';try{sessionId=JSON.parse(atob(accessToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).session_id;}catch{/* The server still verifies tokens. */}
+    if(!sessionId||loginRecorded.current===sessionId)return;
+    loginRecorded.current=sessionId;
+    void apiRequest(OPERATIONS_URL,accessToken,{action:'login'}).then(result=>{if(!result.ok){loginRecorded.current='';showToast('error','Sign-in alert could not be confirmed. Open Activity and retry by refreshing the page.');}});
+  },[accessToken,authorised,showToast]);
 
   useEffect(() => {
     if (!authorised) return;
@@ -1202,6 +1231,7 @@ export default function AdminDashboard() {
   const securityUpdate=useCallback(payload=>apiRequest(UPDATE_URL,accessToken,payload),[accessToken]);
   const supportRequest=useCallback(payload=>apiRequest(SUPPORT_URL,accessToken,payload),[accessToken]);
   const securityRequest=useCallback(payload=>apiRequest(SECURITY_URL,accessToken,payload),[accessToken]);
+  const operationsRequest=useCallback(payload=>apiRequest(OPERATIONS_URL,accessToken,payload),[accessToken]);
   const usageRequest=useCallback(payload=>apiRequest(FETCH_URL,accessToken,payload),[accessToken]);
 
   const onAuth = (pw) => {
@@ -1283,7 +1313,7 @@ export default function AdminDashboard() {
     const quote = csvCell;
     const content = [
       columns.join(','),
-      ...processed.map((lead) => columns.map((c) => quote(lead[c])).join(',')),
+      ...processed.map((lead) => columns.map((c) => quote(redactExport?['email','whatsapp'].includes(c)?'[redacted]':redactContact(lead[c]):lead[c])).join(',')),
     ].join('\n');
     const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -1295,16 +1325,16 @@ export default function AdminDashboard() {
   };
 
   const clearData = () => {
-    localStorage.clear();
-    sessionStorage.clear();
-    window.location.reload();
+    transcriptCache.clear();transcriptRequests.clear();
+    setFiltersState({temperature:'All',followup:'All',dateRange:'all',search:''});
+    setSortIdState('newest');setPage(1);setActiveTab('leads');void load();
   };
 
   if (!authorised && !authReady) return <main role="status" className="grid min-h-screen place-items-center bg-zinc-950 text-zinc-300">Checking team access…</main>;
   if (!authorised) return <LoginScreen onAuth={onAuth} />;
 
   return (
-    <main className="min-h-screen w-full min-w-0 max-w-full bg-[#09090b] p-3 text-zinc-100 sm:p-6 lg:p-8">
+    <main className="admin-workspace min-h-screen w-full min-w-0 max-w-full bg-[#09090b] p-4 text-zinc-100 sm:p-6 lg:p-8">
       <div className="mx-auto w-full min-w-0 max-w-[1400px]">
         <header className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-6">
           <div>
@@ -1324,6 +1354,7 @@ export default function AdminDashboard() {
             >
               {loading ? 'Refreshing…' : 'Refresh'}
             </button>
+            {activeTab==='leads'&&<label className="flex min-h-11 items-center gap-2 text-xs text-zinc-400"><input type="checkbox" checked={redactExport} onChange={e=>setRedactExport(e.target.checked)}/>Redact emails and phones</label>}
             {activeTab === 'leads' && <button
               onClick={exportCsv}
               className="rounded-lg border border-zinc-700 px-3 py-2 text-xs sm:text-sm hover:bg-zinc-800"
@@ -1332,10 +1363,10 @@ export default function AdminDashboard() {
             </button>}
             <button
               onClick={clearData}
-              title="Clear this browser's local cache and reload"
+              title="Reset filters and reload saved records"
               className="rounded-lg border border-zinc-700 px-3 py-2 text-xs sm:text-sm hover:bg-zinc-800"
             >
-              Clear Data
+              Reset view
             </button>
             <button
               onClick={async()=>{try{await supabase.auth.signOut({scope:'local'});}finally{handleAuthLost();}}}
@@ -1346,9 +1377,10 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        <div role="tablist" aria-label="Admin sections" className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-white/[0.07] bg-white/[0.02] p-1.5">
+        <p role="status" className="mb-3 text-xs text-zinc-500">{liveStatus}{arrivals.support+arrivals.booking>0&&<button className="ml-3 min-h-11 rounded-lg border border-emerald-200/20 px-3 text-emerald-200" onClick={()=>{setArrivals({support:0,booking:0});void load();}}>{arrivals.support} new support · {arrivals.booking} new bookings · Refresh saved records</button>}</p>
+        <div role="tablist" aria-label="Admin sections" className="mb-6 grid grid-cols-2 gap-2 rounded-xl border border-white/[0.07] bg-white/[0.02] p-2 sm:flex sm:gap-1 sm:overflow-x-auto">
           {ADMIN_TABS.map((tab, index) => {
-            const count = ['requests','security'].includes(tab.id) ? null : tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'bookings' ? bookings.length : tab.id === 'team' ? teamInquiries.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
+            const count = ['requests','security','insights','activity'].includes(tab.id) ? null : tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'bookings' ? bookings.length : tab.id === 'team' ? teamInquiries.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
             return <button key={tab.id} id={`tab-${tab.id}`} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1}
               onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
                 const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -1369,10 +1401,10 @@ export default function AdminDashboard() {
           <QueueCard title="Calls in the next 7 days" value={bookingsError?'Unavailable':metrics.upcomingBookings} detail="Active bookings · Africa/Lagos" onClick={()=>setActiveTab('bookings')} />
         </section>
         {operations && <section aria-label="Haven operational health" className="mb-4 rounded-xl border border-white/[0.06] px-4 py-3 text-xs text-zinc-400"><p className="mb-3 text-zinc-500">Past 24 hours</p><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><span>Gemini replies <strong className="ml-1 font-medium text-zinc-200">{operations.gemini_replies}</strong></span><span>Groq replies <strong className="ml-1 font-medium text-zinc-200">{operations.groq_replies}</strong></span><span>Failed turns <strong className={`ml-1 ${operations.failed_turns?'text-amber-200':'text-zinc-200'}`}>{operations.failed_turns}</strong></span><span>Stalled turns <strong className={`ml-1 ${operations.stale_turns?'text-amber-200':'text-zinc-200'}`}>{operations.stale_turns}</strong></span></div><button type="button" disabled={retryingFlagEmails} onClick={retryFlagEmails} className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-zinc-300 disabled:opacity-40">{retryingFlagEmails?'Retrying flag notices…':`${operations.pending_flag_events} flag events awaiting acceptance · Retry`}</button></section>}
-        <VerificationAttemptsPanel onRead={usageRequest} onUpdate={securityUpdate} onAuthLost={handleAuthLost} />
-        <VisitorActivityPanel onRequest={usageRequest} onAuthLost={handleAuthLost} />
-        <APIUsagePanel onRequest={usageRequest} onAuthLost={handleAuthLost} />
-        <AISetupPanel accessToken={accessToken} onAuthLost={handleAuthLost} />
+        {activeTab==='security'&&<VerificationAttemptsPanel onRead={usageRequest} onUpdate={securityUpdate} onAuthLost={handleAuthLost} />}
+        {activeTab==='security'&&<VisitorActivityPanel onRequest={usageRequest} onAuthLost={handleAuthLost} />}
+        {activeTab==='security'&&<APIUsagePanel onRequest={usageRequest} onAuthLost={handleAuthLost} />}
+        {activeTab==='security'&&<AISetupPanel accessToken={accessToken} onAuthLost={handleAuthLost} />}
         {operationsError && <p role="alert" className="mb-4 text-xs text-amber-200">{operationsError}</p>}
         {activeTab === 'purchases' && <section aria-label="Playbook follow-up queue" className="mb-5 rounded-xl border border-white/10 p-4 text-xs text-zinc-400">
           <h2 className="font-medium text-zinc-200">One-time Playbook check-in</h2>
@@ -1384,11 +1416,14 @@ export default function AdminDashboard() {
         <p className="mb-5 text-[11px] leading-relaxed text-zinc-500">Work queue counts cover loaded records, not lifetime totals. Provider counts are completed replies, not token usage or billing. Flag events cover the saved delivery queue. Inquiry status is maintained by the team; confirmed bookings appear in Bookings.</p>
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-200">{error}</p>}
         <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
-        {activeTab === 'requests' && <SupportRequestsPanel onRequest={supportRequest} onAuthLost={handleAuthLost} />}
+        {activeTab === 'requests' && <SupportRequestsPanel onRequest={supportRequest} onAuthLost={handleAuthLost} refreshKey={lastRefreshed} />}
+        {activeTab==='insights'&&<InsightsPanel onRequest={operationsRequest} onAuthLost={handleAuthLost}/>}
+        {activeTab==='activity'&&<ActivityPanel onRequest={operationsRequest} onAuthLost={handleAuthLost}/>}
         {activeTab === 'security' && (
           <div className="space-y-6">
             <AdminMfaPanel />
             <AdminSecurityPanel onRequest={securityRequest} onAuthLost={handleAuthLost} />
+            <RateLimitsPanel onRequest={operationsRequest} onAuthLost={handleAuthLost}/>
           </div>
         )}
         {activeTab === 'bookings' && <BookingsPanel bookings={bookings} error={bookingsError} now={lastRefreshed || 0} accessToken={accessToken} onAuthLost={handleAuthLost} />}

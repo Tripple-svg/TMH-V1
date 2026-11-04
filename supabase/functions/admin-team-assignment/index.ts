@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { ASSIGNMENT_FIELDS, TEAM_NAMES, assignmentBrief, assignmentEmail, assignmentToken } from '../_shared/team-assignment.js';
@@ -7,7 +9,7 @@ import { runAdminMutation } from '../_shared/admin-audit.ts';
 import { PUBLIC_ORIGINS as ORIGINS } from '../_shared/cors.ts';
 
 const uuid=(value:unknown)=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
-serve(async(req)=>{
+serve(observe('admin-team-assignment',async(req)=>{
   const origin=req.headers.get('origin');
   const headers={...(origin&&ORIGINS.includes(origin)?{'Access-Control-Allow-Origin':origin}:{}),
     'Access-Control-Allow-Headers':'authorization,x-client-info,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS',
@@ -76,7 +78,7 @@ serve(async(req)=>{
   }catch(error){
     if(error instanceof AdminAuthError)return json({ok:false,error:error.message},error.status);
     const code=error instanceof MailDeliveryError?error.code:'assignment_unavailable';
-    console.error('admin-team-assignment: '+code);
+    logEvent('error','admin-team-assignment.diagnostic_1');
     return json({ok:false,code,error:error instanceof MailDeliveryError?error.message:'Could not complete the assignment. Check the migration and retry.'},error instanceof MailDeliveryError?error.status:503);
   }
-});
+}));

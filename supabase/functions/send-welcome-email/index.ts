@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 // supabase/functions/send-welcome-email/index.ts
 // Triggered by a Supabase Database Webhook on INSERT into brand_reviews.
 // Sends one welcome email via Resend. Idempotent.
@@ -79,7 +81,7 @@ function buildBodies(firstName: string, brandName: string, platformType: string,
       button: { label: 'Continue your review', href: SITE_URL + '/?review=continue' } }) };
 }
 
-serve(async (req) => {
+serve(observe('send-welcome-email',async (req) => {
   const origin = req.headers.get('origin');
 
   if (req.method === 'OPTIONS') {
@@ -91,7 +93,7 @@ serve(async (req) => {
 
   try {
     if (!RESEND_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      console.error('Missing required secrets');
+      logEvent('error','send-welcome-email.diagnostic_1');
       return json({ ok: false, error: 'Server misconfigured' }, origin, 500);
     }
 
@@ -113,7 +115,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (lookupError) {
-      console.error('Lookup failed:', lookupError);
+      logEvent('error','send-welcome-email.diagnostic_2');
       return json({ ok: false, error: 'Lookup failed' }, origin, 500);
     }
     if (!existing) {
@@ -147,7 +149,7 @@ serve(async (req) => {
 
     return json({ ok: true }, origin);
   } catch {
-    console.error('send-welcome-email: request failed');
+    logEvent('error','send-welcome-email.diagnostic_3');
     return json({ ok: false, error: 'Unable to send the welcome email.' }, origin, 500);
   }
-});
+}));

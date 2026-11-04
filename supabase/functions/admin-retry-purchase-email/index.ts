@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { internalHeaders } from '../_shared/internal-auth.js';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
@@ -9,7 +11,7 @@ import { PUBLIC_ORIGINS as ORIGINS } from '../_shared/cors.ts';
 
 const PURCHASE_FIELDS = 'id,email,reference,amount,created_at,thankyou_sent,thankyou_sent_at,thankyou_attempted_at,thankyou_last_error,thankyou_email_id';
 
-serve(async (req) => {
+serve(observe('admin-retry-purchase-email',async (req) => {
   const origin = req.headers.get('origin');
   const allowed = origin && ORIGINS.includes(origin);
   const headers = {
@@ -64,7 +66,7 @@ serve(async (req) => {
     return json({ ok: true, purchase: updated });
   } catch (error) {
     if(error instanceof AdminAuthError)return json({ok:false,error:error.message},error.status);
-    console.error('admin-retry-purchase-email: processing_failed');
+    logEvent('error','admin-retry-purchase-email.diagnostic_1');
     return json({ ok: false, error: 'Unable to retry the purchase email' }, 500);
   }
-});
+}));

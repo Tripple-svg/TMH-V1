@@ -1,3 +1,4 @@
+import {observe} from '../_shared/observability.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson } from '../_shared/haven-request.ts';
 import { purchaseDetails, hasDownloadGrant, verifyPurchasePayment, downloadResult, limitRecovery, requestBucket, privateToken, digest, PLAYBOOK_AMOUNT_KOBO } from '../_shared/playbook-recovery.ts';
@@ -5,7 +6,7 @@ import { purchaseDetails, hasDownloadGrant, verifyPurchasePayment, downloadResul
 // Receipt details are identifiers, not authentication. A private proof belongs
 // either to a newly generated checkout or to an inbox-verified recovery.
 // Every download still requires a fresh successful Paystack payment check.
-Deno.serve(async request => {
+Deno.serve(observe('verify-paystack',async request => {
   const headers = responseHeaders(request);
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
@@ -45,4 +46,4 @@ Deno.serve(async request => {
     if(error instanceof HavenRequestError && error.status===429)Object.assign(headers,{'Retry-After':String(error.retryAfter||600)});
     return json({ ok: false, error: error instanceof HavenRequestError ? error.message : 'Purchase verification is temporarily unavailable.' }, error instanceof HavenRequestError ? error.status : 502);
   }
-});
+}));

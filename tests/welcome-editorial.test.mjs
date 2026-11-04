@@ -59,6 +59,6 @@ test('retired onsite sender cannot be used to mail an arbitrary recipient', asyn
   let handler;
   const code = buildSync({ entryPoints: [new URL('../supabase/functions/send-booking-confirmation/index.ts', import.meta.url).pathname.replace(/^\/(\w:)/, '$1')], bundle: true, write: false, platform: 'node', format: 'cjs' }).outputFiles[0].text;
   vm.runInNewContext(code, { Deno: { serve: (fn) => { handler = fn; } }, Response, fetch() { throw new Error('Unexpected email'); } });
-  assert.equal(handler(new Request('https://project.supabase.co/old-mailer', { method: 'POST', body: '{"email":"attacker@example.com"}' })).status, 410);
-  assert.equal(handler(new Request('https://project.supabase.co/old-mailer', { method: 'OPTIONS' })).status, 204);
+  assert.equal((await handler(new Request('https://project.supabase.co/old-mailer', { method: 'POST', body: '{"email":"attacker@example.com"}' }))).status, 410);
+  assert.equal((await handler(new Request('https://project.supabase.co/old-mailer', { method: 'OPTIONS' }))).status, 204);
 });

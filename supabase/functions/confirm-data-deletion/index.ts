@@ -1,13 +1,16 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
+import {privacyEmail} from '../_shared/email-template.js';
 import { HavenRequestError, readBoundedJson, responseHeaders, verifyOrigin } from '../_shared/haven-request.ts';
 
 const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[0-9a-f]{32}$/i;
 
 async function sendDeletionConfirmation(email: string) {
   const key = Deno.env.get('RESEND_API_KEY')?.trim();
-  if (!key) { console.error('confirm-data-deletion: completion email not configured'); return; }
+  if (!key) { logEvent('error','confirm-data-deletion.diagnostic_1'); return; }
   try {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST', signal: AbortSignal.timeout(10000),
@@ -15,16 +18,17 @@ async function sendDeletionConfirmation(email: string) {
       body: JSON.stringify({
         from: 'info@themarketinghaven.xyz', to: [email],
         subject: 'Your saved review deletion is complete',
+        html:privacyEmail({title:'Your saved review has been removed.',paragraphs:['Your confirmed request removed matching saved brand reviews, their linked chat sessions and stored screenshots.','Purchase, booking, deletion-request, security and email-delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review remaining records or exercise your privacy rights. We may need to verify ownership and explain any lawful retention reason.']}),
         text: 'Your confirmed request removed matching saved brand reviews, their linked chat sessions and stored screenshots.\n\nPurchase, booking, deletion-request, security and email-delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review remaining records or exercise your privacy rights. We may need to verify ownership and explain any lawful retention reason.\n\nYour friends over at Team Haven',
       }),
     });
     // Provider bodies may contain recipient details. Log only a safe status.
-    if (!response.ok) console.error('confirm-data-deletion: completion email rejected', response.status);
+    if (!response.ok) logEvent('error','confirm-data-deletion.email_http_'+response.status);
     await response.body?.cancel();
-  } catch { console.error('confirm-data-deletion: completion email unavailable'); }
+  } catch { logEvent('error','confirm-data-deletion.diagnostic_3'); }
 }
 
-serve(async request => {
+serve(observe('confirm-data-deletion',async request => {
   const headers: Record<string, string> = responseHeaders(request);
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
@@ -59,7 +63,7 @@ serve(async request => {
       if (error.status === 429) headers['Retry-After'] = String(error.retryAfter || 600);
       return json({ ok: false, error: error.message }, error.status);
     }
-    console.error('confirm-data-deletion: request failed');
+    logEvent('error','confirm-data-deletion.diagnostic_4');
     return json({ ok: false, error: 'Unable to complete deletion. Please try again or contact the team.' }, 503);
   }
-});
+}));

@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 // supabase/functions/admin-update-lead/index.ts
 // Admin-only endpoint for follow-up edits and confirmed lead deletion.
 // Whitelists the columns that can be updated.
@@ -32,7 +34,7 @@ function json(body: unknown, origin: string | null, status = 200) {
   });
 }
 
-serve(async (req) => {
+serve(observe('admin-update-lead',async (req) => {
   const origin = req.headers.get('origin');
 
   if (origin && !ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, origin, 403);
@@ -103,35 +105,7 @@ serve(async (req) => {
       return json({ ok: true, review: updated }, origin);
     }
 
-    if (body.action === 'delete') {
-      if (body.confirmation !== reviewId) {
-        return json({ ok: false, error: 'Deletion requires confirmation of the selected review.' }, origin, 400);
-      }
-      // One database transaction removes the review and its associated sessions.
-      // The RPC is executable only by service_role, never by browser credentials.
-      const { data: deletion, error: deletionError } = await runAdminMutation(supabase,req,SERVICE_ROLE_KEY,actor,'review_delete',reviewId);
-      if (deletionError) {
-        console.error('admin-update-lead: deletion_failed');
-        return json({ ok: false, error: 'Could not delete the lead. Check the admin deletion migration and try again.' }, origin, 500);
-      }
-      if (!deletion?.deleted) return json({ ok: false, error: 'Review not found' }, origin, 404);
-
-      let warning: string | null = null;
-      if (typeof deletion.screenshot_path === 'string' && deletion.screenshot_path) {
-        if (!deletion.screenshot_path.startsWith(`${reviewId}/`) || deletion.screenshot_path.split('/').includes('..')) {
-          warning = 'Lead deleted. Its screenshot path needs manual review in Supabase Storage.';
-        } else {
-          try {
-            const { error: storageError } = await supabase.storage.from('tmh-screenshots').remove([deletion.screenshot_path]);
-            if (storageError) throw storageError;
-          } catch (error) {
-            console.error('admin-update-lead: screenshot_cleanup_failed');
-            warning = 'Lead deleted, but its screenshot could not be removed. Retry cleanup in Supabase Storage.';
-          }
-        }
-      }
-      return json({ ok: true, deletedId: reviewId, warning }, origin);
-    }
+    if (body.action === 'delete') return json({ok:false,error:'Request deletion in Admin Activity. A different admin must approve it.'},origin,409);
     if (body.action !== undefined && body.action !== 'update') {
       return json({ ok: false, error: 'Invalid action' }, origin, 400);
     }
@@ -164,7 +138,7 @@ serve(async (req) => {
     const { data, error } = await runAdminMutation(supabase,req,SERVICE_ROLE_KEY,actor,'review_update',reviewId,update);
 
     if (error) {
-      console.error('admin-update-lead: update_failed');
+      logEvent('error','admin-update-lead.diagnostic_3');
       return json({ ok: false, error: 'Could not save the lead. Please retry.' }, origin, 500);
     }
     if (!data) {
@@ -174,7 +148,7 @@ serve(async (req) => {
     return json({ ok: true, review: data }, origin);
   } catch (err) {
     if(err instanceof AdminAuthError)return json({ok:false,error:err.message},origin,err.status);
-    console.error('admin-update-lead: operation_failed');
+    logEvent('error','admin-update-lead.diagnostic_4');
     return json({ ok: false, error: 'Could not update the lead. Please retry.' }, origin, 500);
   }
-});
+}));

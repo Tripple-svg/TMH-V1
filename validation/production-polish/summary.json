@@ -1,0 +1,66 @@
+{
+  "branch": "feat/production-polish",
+  "baseline": "cc157730aed4d248efc5946bb5a8de4a719f1cd6",
+  "fullSuite": {
+    "tests": 573,
+    "passed": 573,
+    "failed": 0,
+    "skipped": 0
+  },
+  "finalUiRegressions": {
+    "passed": 46,
+    "failed": 0
+  },
+  "edgeEntrypoints": 44,
+  "lint": "passed",
+  "build": "passed",
+  "dependencyVulnerabilities": 0,
+  "liveNegativeChecks": {
+    "passed": 7,
+    "failed": 0
+  },
+  "load": {
+    "ok": true,
+    "mode": "isolated real Edge handler and PostgreSQL; model stubbed",
+    "connections": 10,
+    "requests": 10,
+    "errors": 0,
+    "timeouts": 0,
+    "non2xx": 0,
+    "providerCalls": 10,
+    "peakConcurrentProviderRequests": 10,
+    "latencyMs": {
+      "average": 533.5,
+      "p99": 561
+    },
+    "failures": [],
+    "connectionErrors": [],
+    "liveProviderCapacityVerified": false
+  },
+  "restore": {
+    "ok": true,
+    "scope": "isolated PostgreSQL, synthetic data",
+    "backupBytes": 43134464,
+    "checks": [
+      "reviews",
+      "linked chat text",
+      "Storage metadata",
+      "admin RPC",
+      "RLS and grants"
+    ],
+    "productionBackupRestored": false,
+    "storageObjectBytesRestored": false
+  },
+  "productionDeploymentPerformed": false,
+  "productionSchemaOrCustomerDataChanged": false,
+  "uptimeRobotSubmitted": false,
+  "uptimeRobotSetup": "manual per user instruction",
+  "remaining": [
+    "Reconcile migration ledger and deploy the branch",
+    "Configure Sentry DSNs and optional IPinfo",
+    "Configure matching Calendly webhook signing secret if enabled",
+    "Production staff acceptance and real inbox receipts",
+    "Hosted backup plus actual Storage restoration in isolated staging",
+    "Manual UptimeRobot account and alert-contact setup"
+  ]
+}

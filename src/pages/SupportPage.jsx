@@ -1,5 +1,6 @@
 import {useRef,useState} from 'react';
-import {Link} from 'react-router-dom';
+import {Link,useLocation} from 'react-router-dom';
+import {supportPrefill} from '../lib/supportPrefill';
 import HCaptcha from '@hcaptcha/react-hcaptcha';
 import {supabase} from '../lib/supabase';
 import {getHavenIdentity} from '../lib/havenIdentity';
@@ -14,9 +15,10 @@ const CATEGORIES=[
   ['other','Something else','My question does not fit the choices above.',MessageSquare],
 ];
 export default function SupportPage(){
-  const initial=new URLSearchParams(window.location.search).get('issue');
-  const [category,setCategory]=useState(CATEGORIES.some(([id])=>id===initial)?initial:'other');
-  const [name,setName]=useState(''),[email,setEmail]=useState(''),[message,setMessage]=useState(''),[agreed,setAgreed]=useState(false);
+  const location=useLocation();
+  const initial=supportPrefill(location.search);
+  const [category,setCategory]=useState(initial.category);
+  const [name,setName]=useState(''),[email,setEmail]=useState(''),[message,setMessage]=useState(initial.message),[agreed,setAgreed]=useState(false);
   const [captcha,setCaptcha]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[reference,setReference]=useState('');
   const captchaRef=useRef(null),submitLock=useRef(false);
   const submit=async event=>{

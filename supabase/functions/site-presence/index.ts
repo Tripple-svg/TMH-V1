@@ -1,7 +1,8 @@
+import {observe} from '../_shared/observability.ts';
 import {createClient} from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import {HavenRequestError,readBoundedJson,responseHeaders,verifyOrigin} from '../_shared/haven-request.ts';
 
-Deno.serve(async request=>{
+Deno.serve(observe('site-presence',async request=>{
   const json=(body:unknown,status=200)=>Response.json(body,{status,headers:{...responseHeaders(request),...(status===429?{'Retry-After':'120'}:{})}});
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers:responseHeaders(request)});
   if(request.method!=='POST')return json({ok:false},405);
@@ -28,4 +29,4 @@ Deno.serve(async request=>{
     if(error instanceof HavenRequestError)return json({ok:false,error:error.message},error.status);
     return json({ok:false,error:'Activity recording is unavailable.'},503);
   }
-});
+}));

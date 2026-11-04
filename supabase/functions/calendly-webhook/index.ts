@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { saveCalendlyBooking,matchCalendlyIntent } from '../_shared/calendly-bookings.ts';
@@ -22,7 +24,7 @@ async function validSignature(raw: string, header: string, secret: string) {
   return false;
 }
 
-serve(async (req) => {
+serve(observe('calendly-webhook',async (req) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   const secret = Deno.env.get('CALENDLY_WEBHOOK_SECRET');
   const url = Deno.env.get('SUPABASE_URL');
@@ -75,7 +77,7 @@ serve(async (req) => {
     const savedBooking = await saveCalendlyBooking(supabase, { ...scheduled, uri: scheduled?.uri || (typeof payload.event === 'string' ? payload.event : null), status: canceled ? 'canceled' : 'active' }, { ...payload, status: canceled ? 'canceled' : 'active' }, review, intent);
     if (canceled) return json({ ok: true, canceled: true });
     if (!review && !intent) {
-      console.log('calendly-webhook: no matching review or booking intent');
+      logEvent('info','calendly-webhook.diagnostic_1');
       return json({ ok: true, matched: false });
     }
     // Reviews without a services intent still receive one generic confirmation.
@@ -93,7 +95,7 @@ serve(async (req) => {
     }
     return json({ ok: true, matched: true });
   } catch {
-    console.error('calendly-webhook: processing failed; request should be retried');
+    logEvent('error','calendly-webhook.diagnostic_2');
     return json({ ok: false, error: 'Unable to process booking' }, 500);
   }
-});
+}));

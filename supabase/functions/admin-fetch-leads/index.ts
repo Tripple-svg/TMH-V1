@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 // supabase/functions/admin-fetch-leads/index.ts
 // Admin-only endpoint. Verifies an Auth JWT and trusted admin role using a
 // Supabase secret, then reads brand_reviews + haven_sessions with
@@ -112,7 +114,7 @@ async function aiHealth() {
   }
 }
 
-serve(async (req) => {
+serve(observe('admin-fetch-leads',async (req) => {
   const origin = req.headers.get('origin');
 
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(origin) });
@@ -120,7 +122,7 @@ serve(async (req) => {
 
   try {
     if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-      console.error('admin-fetch-leads: missing secrets');
+      logEvent('error','admin-fetch-leads.diagnostic_1');
       return json({ ok: false, error: 'Server misconfigured' }, origin, 500);
     }
 
@@ -180,8 +182,8 @@ serve(async (req) => {
       .limit(MAX_RECORDS);
 
     if (reviewsError) {
-      console.error('admin-fetch-leads: reviews query failed', reviewsError);
-      return json({ ok: false, error: reviewsError.message }, origin, 500);
+      logEvent('error','admin-fetch-leads.diagnostic_2');
+      return json({ ok: false, error: 'Saved reviews could not be loaded.' }, origin, 500);
     }
 
     // The SDK cannot infer a computed select string; the explicit field allowlist
@@ -199,7 +201,7 @@ serve(async (req) => {
           .order('updated_at', { ascending: false }).order('id', { ascending: false })
           .range(offset, offset + MAX_RECORDS - 1);
         if (sessionsError) {
-          console.warn('admin-fetch-leads: linked sessions query failed', sessionsError);
+          logEvent('warn','admin-fetch-leads.diagnostic_3');
           linkedSessionsError = 'Could not load linked conversations. Refresh to retry.';
           break;
         }
@@ -224,7 +226,7 @@ serve(async (req) => {
         .createSignedUrls(screenshotPaths, SIGNED_URL_TTL);
 
       if (signedError) {
-        console.warn('admin-fetch-leads: signing failed', signedError);
+        logEvent('warn','admin-fetch-leads.diagnostic_4');
       } else {
         for (const item of signed || []) {
           if (item?.path && item?.signedUrl && !item.error) {
@@ -247,7 +249,7 @@ serve(async (req) => {
       if(scope==='team') query=query.eq('service_id','team-inquiry');
       else if(scope==='support') query=query.or('service_id.is.null,service_id.neq.team-inquiry');
       const {data,error}=await query.order('updated_at',{ascending:false}).limit(MAX_RECORDS);
-      if(error) console.error('admin-fetch-leads: scoped sessions query failed',scope);
+      if(error) logEvent('error','admin-fetch-leads.diagnostic_5');
       return {sessions:(data||[]).map(sessionMetadata),error:error?`Could not load ${scope==='team'?'team inquiries':scope+' chats'}. Refresh to retry.`:null};
     };
     const [support,service,team]=await Promise.all([fetchStandalone('support'),fetchStandalone('service'),fetchStandalone('team')]);
@@ -272,7 +274,7 @@ serve(async (req) => {
       .order('created_at', { ascending: false })
       .limit(MAX_RECORDS);
 
-    if (purchaseError) console.error('admin-fetch-leads: purchases query failed', purchaseError);
+    if (purchaseError) logEvent('error','admin-fetch-leads.diagnostic_6');
     const { data: bookings, error: bookingsError } = await supabase.from('strategy_call_bookings')
       .select('id,email,full_name,event_name,start_time,end_time,timezone,status,source,review_id,service_id,confirmation_email_sent,provider_created_at,last_synced_at,created_at')
       .order('start_time', { ascending: false, nullsFirst: false }).limit(MAX_RECORDS);
@@ -302,7 +304,7 @@ serve(async (req) => {
     }, origin);
   } catch (err) {
     if(err instanceof AdminAuthError)return json({ok:false,error:err.message},origin,err.status);
-    console.error('admin-fetch-leads error:', err);
-    return json({ ok: false, error: String(err) }, origin, 500);
+    logEvent('error','admin-fetch-leads.diagnostic_7');
+    return json({ ok: false, error: 'The admin workspace is temporarily unavailable.' }, origin, 500);
   }
-});
+}));

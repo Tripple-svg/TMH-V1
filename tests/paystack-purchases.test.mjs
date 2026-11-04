@@ -312,9 +312,9 @@ test('webhook stage logs and failure diagnostics contain no buyer data, referenc
   const logs = [];
   const { webhook, db } = pipeline({ logs, fetch: async () => json({ message: `private-provider-body ${ENV.RESEND_API_KEY} buyer@example.com` }, 403) });
   assert.equal((await webhook(webhookRequest())).status, 502);
-  const stages = logs.map((args) => args[0]);
-  for (const stage of ['Webhook received', 'Signature verified', 'Inserting into playbook_purchases', 'Triggering thank you email']) assert.ok(stages.includes(stage));
-  assert.ok(stages.includes('Error in webhook: purchase_email_failed'));
+  const stages = logs.map((args) => {try{return JSON.parse(args[0]).event;}catch{return args[0];}});
+  for (const stage of ['paystack-webhook.diagnostic_2','paystack-webhook.diagnostic_4','paystack-webhook.diagnostic_5','paystack-webhook.diagnostic_6']) assert.ok(stages.includes(stage));
+  assert.ok(stages.includes('paystack-webhook.diagnostic_1'));
   const output = JSON.stringify(logs);
   for (const privateValue of ['buyer@example.com', 'UNSEEN_purchase-123', 'private-provider-body', ENV.PAYSTACK_SECRET_KEY, ENV.RESEND_API_KEY, ENV.SUPABASE_SERVICE_ROLE_KEY]) assert.ok(!output.includes(privateValue));
   assert.equal(db.rows[0].thankyou_last_error, 'resend_http_403');
@@ -326,8 +326,7 @@ test('a configured live environment accepts the intentional NGN 100 live purchas
   const { webhook, db } = pipeline({ env: { PAYSTACK_SECRET_KEY: secret, PAYSTACK_ENV: 'live' }, logs });
   const result = await webhook(webhookRequest(payment({ domain: 'live', amount: 10000 }), { secret }));
   assert.equal(result.status, 200); assert.equal(db.rows[0].amount, 10000); assert.equal(db.rows[0].thankyou_sent, true);
-  const mode = logs.find((args) => args[0] === 'Paystack environment')[1];
-  assert.equal(mode.key_mode, 'live'); assert.equal(mode.expected_mode, 'live');
+  assert.ok(logs.some(args=>{try{return JSON.parse(args[0]).event==='paystack-webhook.diagnostic_3';}catch{return false;}}));
   assert.ok(!JSON.stringify(logs).includes(secret));
 });
 

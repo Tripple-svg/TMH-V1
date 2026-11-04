@@ -20,7 +20,7 @@ function database(seed = {}, { onRead = () => {}, failInsert = false } = {}) {
   const rows = structuredClone({ brand_reviews: [], booking_intents: [], haven_sessions: [], calendly_processed_events: [], ...seed });
   const calls = [], emails = [];
   const client = {
-    rpc: async (name, args) => { calls.push({ action: 'rpc', name, values: args.p_booking }); return { error: null }; },
+    rpc: async (name, args) => { if(name==="record_worker_success")return {data:true,error:null};calls.push({ action: 'rpc', name, values: args.p_booking }); return { error: null }; },
     from(table) {
       let action = 'select', values, filters = [], sort = null, cap = Infinity;
       async function run(single = false) {

@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import { recordAIUsage,usageGeminiModel } from '../_shared/ai-usage.ts';
 import { safeProviderDiagnostic, type ProviderDiagnostic } from '../_shared/provider-request.ts';
 import { aiBudgetPlan, reserveAIBudget, type AIBudgetReservation } from '../_shared/ai-budget.ts';
@@ -73,7 +75,7 @@ async function askGroq(db:any,budget:AIBudgetReservation,systemPrompt: string, m
 async function callModel(db:any,budget:AIBudgetReservation,systemPrompt: string, messages: HavenMessage[], screenshot: string | null): Promise<{text: string; model: ModelUsed; diagnostics: ProviderDiagnostic[]}> {
   const diagnostics: ProviderDiagnostic[]=[];
   try { return { text: await askGemini(db,budget,systemPrompt, messages, screenshot), model: 'gemini', diagnostics }; }
-  catch (error) { diagnostics.push(safeProviderDiagnostic(error,'gemini')); console.warn('Primary model unavailable',diagnostics[0].code); await recordAIUsage(db,'gemini',usageGeminiModel(),{},diagnostics[0].code); }
+  catch (error) { diagnostics.push(safeProviderDiagnostic(error,'gemini')); logEvent('warn','haven-chat.diagnostic_1'); await recordAIUsage(db,'gemini',usageGeminiModel(),{},diagnostics[0].code); }
   const fallbackMessages = screenshot ? messages.map((message, index) => index === messages.length - 1
     ? { ...message, content: '[The image reader is unavailable. You cannot see the image. Ask the user to describe it; never pretend to inspect it.] ' + (message.content || '') } : message) : messages;
   try { return { text: await askGroq(db,budget,systemPrompt, fallbackMessages), model: 'groq', diagnostics }; }
@@ -85,7 +87,7 @@ async function callModel(db:any,budget:AIBudgetReservation,systemPrompt: string,
   }
 }
 
-Deno.serve(async (request) => {
+Deno.serve(observe('haven-chat',async (request) => {
   const headers = responseHeaders(request);
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
   if (request.method === 'OPTIONS') return new Response('ok', { headers });
@@ -174,7 +176,7 @@ Deno.serve(async (request) => {
       };
     }
     const playbookVerified = await verifyPlaybookAccess(context.playbookAccessToken, key);
-    const systemPrompt = buildHavenSystemPrompt({ ...promptContext, playbookVerified });
+    const systemPrompt = buildHavenSystemPrompt({ ...promptContext, playbookVerified, latestMessage:latest });
     // Client history is only validated input; provider context comes from saved turns.
     const history: HavenMessage[] = [];
     let chars = 0;
@@ -240,12 +242,12 @@ Deno.serve(async (request) => {
   } catch (error) {
     if (activeTurn && supabase) {
       try { await supabase.rpc('fail_haven_turn',{p_session_id:activeTurn.sessionId,p_turn_id:activeTurn.requestId,p_attempt_id:activeTurn.attemptId,p_error_code:(error as any)?.code||'request_failed',p_diagnostics:(error as any)?.diagnostics||[],p_retry_seconds:(error as any)?.retryAfter||0}); }
-      catch { console.error('Could not release failed chat turn'); }
+      catch { logEvent('error','haven-chat.diagnostic_2'); }
     }
     const known = error instanceof HavenRequestError || error instanceof ReviewAccessError || error instanceof ModerationError;
-    console.error('haven-chat request failed', known ? error.status : 502);
+    logEvent('error','haven-chat.diagnostic_3');
     const retryAfter=Number((error as any)?.retryAfter)||0;
     if(retryAfter) (headers as Record<string,string>)['Retry-After']=String(retryAfter);
     return json({ ok: false, code:(error as any)?.code||'request_failed',retryAfter,error: known ? error.message : 'Haven is having trouble reaching the AI service. Please try again.' }, known ? error.status : 502);
   }
-});
+}));

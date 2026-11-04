@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "scope": "isolated PostgreSQL, synthetic data",
+  "backupBytes": 43134464,
+  "checks": [
+    "reviews",
+    "linked chat text",
+    "Storage metadata",
+    "admin RPC",
+    "RLS and grants"
+  ],
+  "productionBackupRestored": false,
+  "storageObjectBytesRestored": false
+}

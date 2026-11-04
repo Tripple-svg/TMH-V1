@@ -3,6 +3,15 @@ export function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 }
 
+// Email clients do not consistently support backdrop-filter. Recreate the
+// site's zinc glass palette with accessible solid fallbacks and rounded cards.
+/** @param {{title:string,paragraphs:string[],button?:{label:string,href:string}}} options */
+export function privacyEmail({title,paragraphs,button}) {
+  return editorialEmail({label:'YOUR PRIVACY',title,paragraphs,button})
+    .replaceAll('#f2f1ee','#f4f4f5').replaceAll('#dededb','#e4e4e7')
+    .replaceAll('border-radius:8px','border-radius:24px').replaceAll('border-radius:4px','border-radius:12px');
+}
+
 /** @param {{label?: string, title: string, paragraphs?: string[], details?: Array<[string, unknown]>, button?: {label: string, href: string}, version?: string}} options */
 export function editorialEmail({ label = 'A NOTE FROM TEAM HAVEN', title, paragraphs = [], details = [], button, version = 'editorial-v3' }) {
   const safe = escapeHtml;

@@ -1,3 +1,4 @@
+import * as production from '../src/lib/adminProduction.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
@@ -19,7 +20,7 @@ function endpoint(name, { visitorHash, captcha = true, limited = false, admin = 
   const savedRow = { id: REQUEST_ID, created_at: '2026-01-01T00:00:00Z', name: '<script>Buyer</script>', email: 'buyer@example.com', category: 'review_access', message: 'Sensitive full message that must stay in Admin', ...row };
   const db = {
     auth: { getUser: async token => token === 'good-admin' ? { data: { user: admin ? { id: ACTOR, app_metadata: { role: 'admin' } } : { id: ACTOR, user_metadata: { role: 'admin' } } } } : { data: { user: null }, error: { message: 'Invalid JWT' } } },
-    async rpc(rpc, args) { calls.push({ rpc, args }); return { data: rpc === 'consume_playbook_limit' ? !limited : rpc === 'admin_access_allowed' ? true : rpc === 'claim_support_notifications' ? [savedRow] : rpcResult, error: null }; },
+    async rpc(rpc, args) { calls.push({ rpc, args }); return { data: rpc === 'record_worker_success' ? true : rpc === 'consume_playbook_limit' ? !limited : rpc === 'admin_access_allowed' ? true : rpc === 'claim_support_notifications' ? [savedRow] : rpcResult, error: null }; },
     from(table) {
       const query = { table, filters: [] }; queries.push(query);
       const builder = {
@@ -100,11 +101,11 @@ test('admin support list excludes network secrets, uses the verified actor and r
   assert.equal((await reason.call({ ...update, reason: 'short' }, { authorization: 'Bearer good-admin' })).status, 400);
   assert.equal(reason.calls.some(item => item.rpc === 'run_admin_mutation'), false);
 });
-test('support worker rejects public callers and sends both inboxes only a safely escaped summary', async () => {
+test('support worker rejects public callers and sends all three inboxes only a safely escaped summary', async () => {
   const f = endpoint('send-support-notification');
   assert.equal((await f.call()).status, 401); assert.equal(f.calls.length, 0);
   assert.equal((await f.call({}, { 'x-internal-poll-key': 'cron-secret' })).status, 200);
-  assert.deepEqual(f.mail[0].body.to, ['francis.teamhaven@gmail.com', 'paschal.tmh@gmail.com']);
+  assert.deepEqual(f.mail[0].body.to, ['francis.teamhaven@gmail.com', 'paschal.tmh@gmail.com', 'chimburuomac@gmail.com']);
   assert.equal(f.mail[0].headers['Idempotency-Key'], `support/${REQUEST_ID}`);
   assert.doesNotMatch(f.mail[0].body.html, /<script>/);
   assert.doesNotMatch(JSON.stringify(f.mail[0].body), /Sensitive full message|private-service|resend-key|captcha-secret/);
@@ -125,7 +126,7 @@ test('support conflict retains the draft after refresh and requires explicit sav
   const states = [], calls = []; let cursor = 0, saved = 0;
   let row = { id: REQUEST_ID, revision: 0, status: 'new', notes: 'Initial server note', category: 'review_access', source: 'web', email: 'customer@example.com', created_at: '2026-10-31T12:00:00Z' };
   const context = {
-    module: { exports: {} }, require: () => ({ useState(initial) { const index = cursor++; if (!(index in states)) states[index] = initial; return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; } }),
+    module: { exports: {} }, require: name => name.includes('adminProduction')?production:({ useState(initial) { const index = cursor++; if (!(index in states)) states[index] = initial; return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; } }),
     React: { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) },
   };
   const source = await readFile('src/components/admin/SupportRequestsPanel.jsx', 'utf8');
@@ -162,6 +163,7 @@ test('PostgreSQL support operations: full migration chain, private access, scope
       create function auth.jwt() returns jsonb language sql as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
       create function auth.uid() returns uuid language sql as $$select (auth.jwt()->>'sub')::uuid$$;
       create table auth.users(id uuid primary key,raw_app_meta_data jsonb not null default '{}',deleted_at timestamptz,banned_until timestamptz);
+      create table auth.sessions(id uuid primary key,user_id uuid);
       create table auth.mfa_factors(id uuid primary key,user_id uuid references auth.users(id),status text);
       create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
       create table storage.objects(id uuid primary key,bucket_id text,name text);alter table storage.objects enable row level security;

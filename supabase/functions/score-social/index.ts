@@ -1,3 +1,5 @@
+import {logEvent} from '../_shared/logger.ts';
+import {observe} from '../_shared/observability.ts';
 import {recordAIUsage,usageGeminiModel} from '../_shared/ai-usage.ts';
 import { safeProviderDiagnostic } from '../_shared/provider-request.ts';
 import { aiBudgetPlan, reserveAIBudget, type AIBudgetReservation } from '../_shared/ai-budget.ts';
@@ -31,7 +33,7 @@ async function scoreWithGemini(db:any,budget:AIBudgetReservation,screenshot: str
   return { raw: geminiText(payload), status: 200 };
 }
 
-Deno.serve(async (request) => {
+Deno.serve(observe('score-social',async (request) => {
   const headers = responseHeaders(request);
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
   if (request.method === 'OPTIONS') return new Response('ok', { headers });
@@ -71,24 +73,24 @@ Deno.serve(async (request) => {
             return json({ ok: true, ...parsed, revision: review.scoring_revision || 0 });
           }
           lastErr = 'Gemini returned unparseable JSON';
-          console.warn('[social-scoring] unparseable:', '[redacted model output]');
+          logEvent('warn','score-social.diagnostic_1');
         } else if (status === 503 || status === 502 || status === 504) {
           lastErr = `Gemini ${status}`;
-          console.warn(`[social-scoring] Gemini ${status} on attempt ${attempt + 1}`);
+          logEvent('warn','score-social.diagnostic_2');
         } else {
           lastErr = `Gemini ${status}: ${'[redacted model output]'}`;
-          console.warn(`[social-scoring] Gemini ${status} — not retryable`);
+          logEvent('warn','score-social.diagnostic_3');
           break;
         }
       } catch (err) {
         await recordAIUsage(supabase,'gemini',usageGeminiModel(),{},safeProviderDiagnostic(err,'gemini').code);
         lastErr = err instanceof Error ? err.message : String(err);
-        console.warn(`[social-scoring] threw on attempt ${attempt + 1}:`, lastErr);
+        logEvent('warn','score-social.diagnostic_4');
       }
 
     }
 
-    console.warn('Social scoring unavailable', Boolean(lastErr));
+    logEvent('warn','score-social.diagnostic_5');
     throw new HavenRequestError('I ran into an unexpected error while reading your profile. Please try again or continue to chat.', 502);
   } catch (error) {
     if (error instanceof HavenRequestError && ['ai_paused','ai_daily_budget_exceeded','ai_budget_unavailable'].includes((error as any).code)) {
@@ -101,7 +103,7 @@ Deno.serve(async (request) => {
       catch { return json({ ok: false, state: 'failed', error: 'Could not save the reader status. Please try again.' }, 500); }
     }
     const known = error instanceof HavenRequestError || error instanceof ReviewAccessError;
-    console.error('score-social request failed', known ? error.status : 502);
+    logEvent('error','score-social.diagnostic_6');
     return json({ ok: false, state: 'failed', reason: 'provider_unavailable', error: known ? error.message : 'Unable to read your profile. Please try again.' }, known ? error.status : 502);
   } finally { await budget?.settle(); }
-});
+}));
