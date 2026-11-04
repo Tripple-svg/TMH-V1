@@ -22,7 +22,7 @@
     "@hcaptcha/react-hcaptcha": "^2.2.0",
     "@sentry/react": "11.10.0",
     "@supabase/supabase-js": "2.115.0",
-    "framer-motion": "^13.1.1",
+    "framer-motion": "^14.9.0",
     "groq-sdk": "1.5.0",
     "lucide-react": "^1.34.0",
     "openai": "7.5.0",
