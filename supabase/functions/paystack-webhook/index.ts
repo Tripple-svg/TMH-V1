@@ -23,21 +23,21 @@ function followupConsent(metadata: unknown) {
   return fields.playbook_followup_opt_in === true && fields.playbook_followup_consent_version === '2026-10-27';
 }
 
-serve(observe('paystack-webhook',async (req) => {
+serve(observe('paystack-webhook',async (req,requestId) => {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
   const failure = (code: string, error: string, status: number) => {
-    logEvent('error','paystack-webhook.diagnostic_1');
+    logEvent('error','paystack-webhook.diagnostic_1',requestId);
     return json({ ok: false, error }, status);
   };
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
-  logEvent('info','paystack-webhook.diagnostic_2');
+  logEvent('info','paystack-webhook.diagnostic_2',requestId);
   const secret = Deno.env.get('PAYSTACK_SECRET_KEY');
   if (!secret) return failure('missing_paystack_secret', 'Server misconfigured', 500);
   // A NGN 100 purchase can be live. Environment comes from keys/domain, never price.
   const keyMode = secret.startsWith('sk_live_') ? 'live' : secret.startsWith('sk_test_') ? 'test' : 'unknown';
   const expectedMode = Deno.env.get('PAYSTACK_ENV')?.trim().toLowerCase();
-  logEvent('info','paystack-webhook.diagnostic_3');
+  logEvent('info','paystack-webhook.diagnostic_3',requestId);
   if (expectedMode && !['live', 'test'].includes(expectedMode)) return failure('invalid_environment_configuration', 'Server misconfigured', 500);
   if (expectedMode && expectedMode !== keyMode) return failure('secret_environment_mismatch', 'Payment environment misconfigured', 500);
   const signature = req.headers.get('x-paystack-signature');
@@ -49,7 +49,7 @@ serve(observe('paystack-webhook',async (req) => {
     const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-512' }, false, ['verify']);
     const signatureBytes = Uint8Array.from(signature.match(/.{2}/g)!, (pair) => Number.parseInt(pair, 16));
     if (!await crypto.subtle.verify('HMAC', key, signatureBytes, rawBody)) return failure('signature_verification_failed', 'Unauthorised', 401);
-    logEvent('info','paystack-webhook.diagnostic_4');
+    logEvent('info','paystack-webhook.diagnostic_4',requestId);
     let body;
     try {
       body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(rawBody));
@@ -75,7 +75,7 @@ serve(observe('paystack-webhook',async (req) => {
     const optedIn = followupConsent(payment.metadata) && Number.isFinite(paidTimestamp);
     const firstName = typeof payment.customer?.first_name === 'string'
       ? payment.customer.first_name.replace(/[\u0000-\u001f\u007f]/g, '').trim().split(/\s+/)[0].slice(0, 60) || null : null;
-    logEvent('info','paystack-webhook.diagnostic_5');
+    logEvent('info','paystack-webhook.diagnostic_5',requestId);
     const { error: insertError } = await supabase.from('playbook_purchases').insert({ email, reference, amount: payment.amount,
       buyer_first_name: firstName, paid_at: Number.isFinite(paidTimestamp) ? new Date(paidTimestamp).toISOString() : null,
       followup_opt_in: optedIn, followup_consent_version: optedIn ? '2026-10-27' : null,
@@ -86,7 +86,7 @@ serve(observe('paystack-webhook',async (req) => {
       .select('id, email, reference, thankyou_sent').eq('reference', reference).maybeSingle();
     if (purchaseError || !purchase) return failure('purchase_lookup_failed', 'Unable to process purchase', 500);
     if (purchase.thankyou_sent === true) return json({ ok: true });
-    logEvent('info','paystack-webhook.diagnostic_6');
+    logEvent('info','paystack-webhook.diagnostic_6',requestId);
     const { data, error } = await supabase.functions.invoke('send-purchase-thankyou', {
       body: { email: purchase.email, reference: purchase.reference },
       headers: internalHeaders(serviceKey),

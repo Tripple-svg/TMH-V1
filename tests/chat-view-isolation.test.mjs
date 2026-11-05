@@ -37,6 +37,7 @@ function drawer() {
       if (name === 'framer-motion') return { motion: new Proxy({}, { get: (_, key) => key }), AnimatePresence: 'presence', useReducedMotion: () => false };
       if (name === 'react-router-dom') return { Link: 'Link' };
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => key });
+      if (name.includes('useDialogFocus')) return { useDialogFocus() {} };
       if (name.includes('/useHaven')) return { useHaven: () => state };
       if (name.includes('useDrawerViewport')) return { __esModule: true, default: () => ({ current: null }) };
       if (name.includes('quick-prompts')) return { quickPrompts: () => [] };

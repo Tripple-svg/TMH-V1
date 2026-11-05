@@ -1,4 +1,5 @@
-import { memo } from 'react';
+import { memo, useRef } from 'react';
+import {useDialogFocus} from '../../../lib/useDialogFocus';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -17,8 +18,11 @@ import {
 /* ─────────────────────────── Overlay ─────────────────────────── */
 
 const ModalOverlay = memo(function ModalOverlay({ onClose, children }) {
+  const dialog=useRef(null);
+  useDialogFocus(true,dialog,onClose);
   return (
     <motion.div
+      ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Haven conversation action"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -176,7 +180,7 @@ const SettingsModal = memo(function SettingsModal({ onClose, currentSession, use
     },
     {
       label: 'Audit Score',
-      value: userProfile?.auditScore != null ? `${userProfile.auditScore}/100` : '—',
+      value: userProfile?.auditScore != null ? `${userProfile.auditScore}/100` : '-',
       icon: BarChart3,
       color: userProfile?.auditScore >= 80
         ? 'text-emerald-400'
@@ -219,7 +223,7 @@ const SettingsModal = memo(function SettingsModal({ onClose, currentSession, use
                 <p className="text-xs text-slate-500">Current chat details & context</p>
               </div>
             </div>
-            <motion.button
+            <motion.button aria-label="Close chat settings"
               whileTap={{ scale: 0.9 }}
               onClick={onClose}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/[0.05] transition-colors cursor-pointer"

@@ -54,7 +54,7 @@ const booking={id:1,full_name:'Ada',email:'client@example.com',status:'active',s
 test('knowledge: every entry mode receives actual public feature guidance and both prices',()=>{
   for(const entryPoint of ['AUDIT_FLOW','CUSTOMER_SUPPORT','SERVICE_GRID','TEAM_INQUIRY']){
     const prompt=buildHavenSystemPrompt({entryPoint});assert.ok(prompt.includes(HAVEN_PUBLIC_KNOWLEDGE));
-    for(const fact of ['The Difference Between Running a Business and Building a Brand.','₦15,000','₦9,639','Chapter 5','Accept All','Decline','Play\nVideo','Calendly confirmation','video is published'])assert.ok(prompt.includes(fact),fact);
+    for(const fact of ['The Difference Between Running a Business and Building a Brand.','₦15,000','₦9,639','Chapter 5','Accept','Decline','Play\nVideo','Calendly confirmation','video is published'])assert.ok(prompt.includes(fact),fact);
     assert.match(prompt,/No end date or future increase is announced/);
     assert.match(prompt,/not all literally\n?cookies/);
   }

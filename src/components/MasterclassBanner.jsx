@@ -79,7 +79,7 @@ export default function MasterclassBanner() {
               <div className="absolute inset-0 z-0 bg-black">
                 {HAS_VIDEO ? <iframe
                   src={`https://www.youtube.com/embed/${YOUTUBE_VIDEO_ID}?autoplay=1&rel=0&modestbranding=1`}
-                  title="Free Class — The Marketing Haven"
+                  title="Free Class - The Marketing Haven"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
                   className="absolute inset-0 w-full h-full"

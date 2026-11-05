@@ -1,5 +1,7 @@
 # TMH deployment runbook — 1 November 2026
 
+> Historical report. See [the final launch-lock report](FINAL_LAUNCH_LOCK_REPORT.md) for the current branch, function inventory, migration-drift caution and latest live findings.
+
 This release is prepared locally on `codex/support-recovery-and-production-audit`, compared with repository revision `641843bb466c5bdbb677afbe66cc9708b171bc36`. It has **not** been deployed by this audit. Preserve the existing dirty worktree. The previously deployed baseline is reported by the owner; this comparison revision is not proof of its live deployment. Verify migration history and jobs rather than replaying all historical setup. Target project: `dkpoygkduktusrnsbpaq`; public origin: `https://themarketinghaven.xyz`.
 
 ## 1. Prepare a recoverable release

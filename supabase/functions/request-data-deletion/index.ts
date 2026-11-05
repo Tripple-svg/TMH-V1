@@ -1,11 +1,12 @@
 import {logEvent} from '../_shared/logger.ts';
+import {edgeClientAddress} from '../_shared/edge-client-address.ts';
 import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
 import { HavenRequestError,readBoundedJson } from '../_shared/haven-request.ts';
 import {verifyOrigin} from '../_shared/haven-request.ts';
-import {privacyEmail} from '../_shared/email-template.js';
+import {privacyEmail,emailFooterText} from '../_shared/email-template.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -54,13 +55,11 @@ function createToken() {
 }
 
 function clientIp(req: Request) {
-  return req.headers.get('cf-connecting-ip')
-    || req.headers.get('x-real-ip')
-    || req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || null;
+  const value=edgeClientAddress(req);
+  return value==='unknown'?null:value;
 }
 
-serve(observe('request-data-deletion',async (req) => {
+serve(observe('request-data-deletion',async (req,requestId) => {
   const origin = req.headers.get('origin');
 
   if (req.method === 'OPTIONS') {
@@ -82,7 +81,7 @@ serve(observe('request-data-deletion',async (req) => {
     }
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !RESEND_API_KEY) {
-      logEvent('error','request-data-deletion.diagnostic_1');
+      logEvent('error','request-data-deletion.diagnostic_1',requestId);
       return success(origin);
     }
 
@@ -97,7 +96,7 @@ serve(observe('request-data-deletion',async (req) => {
       .limit(1);
 
     if (reviewError) {
-      logEvent('error','request-data-deletion.diagnostic_2');
+      logEvent('error','request-data-deletion.diagnostic_2',requestId);
       return success(origin);
     }
 
@@ -107,7 +106,7 @@ serve(observe('request-data-deletion',async (req) => {
 
     const storedEmail = typeof reviews[0].email === 'string' ? reviews[0].email : '';
     if (!storedEmail) {
-      logEvent('error','request-data-deletion.diagnostic_3');
+      logEvent('error','request-data-deletion.diagnostic_3',requestId);
       return success(origin);
     }
 
@@ -124,7 +123,7 @@ serve(observe('request-data-deletion',async (req) => {
       });
 
     if (requestError) {
-      logEvent('error','request-data-deletion.diagnostic_4');
+      logEvent('error','request-data-deletion.diagnostic_4',requestId);
       return success(origin);
     }
 
@@ -139,17 +138,17 @@ serve(observe('request-data-deletion',async (req) => {
         from: FROM_ADDRESS,
         to: [storedEmail],
         subject: 'Confirm your saved review deletion request',
-        text: `We received a request to remove your matching saved brand review, its linked chat sessions and stored screenshots. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.\n\nTo confirm the request, open this link within 24 hours:\n\n${confirmationUrl}\n\nIf you did not make this request, ignore this email.`,
+        text: emailFooterText(`We received a request to remove your matching saved brand review, its linked chat sessions and stored screenshots. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.\n\nTo confirm the request, open this link within 24 hours:\n\n${confirmationUrl}\n\nIf you did not make this request, ignore this email.`),
         html: privacyEmail({title:'Your review. Your choice.',paragraphs:['We received a request to remove your matching saved brand review, its linked chat sessions and stored screenshots.','Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.','Open the secure page and confirm only if you requested deletion. This link expires in 24 hours. If you did not request this, ignore this email.'],button:{label:'Review deletion request',href:confirmationUrl}}),
       }),
     });
 
     if (!resendResponse.ok) {
-      logEvent('error','request-data-deletion.diagnostic_5');
+      logEvent('error','request-data-deletion.diagnostic_5',requestId);
     }
   } catch (error) {
     if(error instanceof HavenRequestError)return json({ok:false,error:error.message},origin,error.status);
-    logEvent('error','request-data-deletion.diagnostic_6');
+    logEvent('error','request-data-deletion.diagnostic_6',requestId);
   }
 
   return success(origin);

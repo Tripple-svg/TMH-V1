@@ -6,7 +6,7 @@ import {publicRequestLimit} from '../_shared/abuse-limits.ts';
 import {requestBucket} from '../_shared/playbook-recovery.ts';
 import {hashReviewToken} from '../_shared/review-access.ts';
 
-Deno.serve(observe('support-request',async req=>{
+Deno.serve(observe('support-request',async (req,requestId) =>{
   const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...responseHeaders(req),...(status===429?{'Retry-After':'900'}:{})}});
   if(req.method==='OPTIONS')return new Response('ok',{headers:responseHeaders(req)});
   if(req.method!=='POST')return json({ok:false,error:'Method not allowed.'},405);
@@ -41,6 +41,6 @@ Deno.serve(observe('support-request',async req=>{
     return json({ok:true,reference:id},201);
   }catch(error){
     if(error instanceof HavenRequestError)return json({ok:false,error:error.message},error.status);
-    logEvent('error','support-request.diagnostic_1');return json({ok:false,error:'Support could not save your request. Email info@themarketinghaven.xyz.'},503);
+    logEvent('error','support-request.diagnostic_1',requestId);return json({ok:false,error:'Support could not save your request. Email info@themarketinghaven.xyz.'},503);
   }
 }));

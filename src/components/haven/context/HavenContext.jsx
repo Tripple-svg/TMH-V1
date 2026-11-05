@@ -631,9 +631,9 @@ export function HavenProvider({ children }) {
 
       let greetingContent;
       if (businessDomain === 'none') {
-        greetingContent = `${greetingName}! I've received your details${brand}.\n\nBefore we go deeper — are you building from scratch, or do you already have customers and simply haven't set up a social space yet?`;
+        greetingContent = `${greetingName}! I've received your details${brand}.\n\nBefore we go deeper - are you building from scratch, or do you already have customers and simply haven't set up a social space yet?`;
       } else {
-        greetingContent = `${greetingName}! I've received your submission${brand}.\n\nBefore we dig into anything — what's the single biggest challenge you're facing with ${brandName || 'your brand'} at the moment?`;
+        greetingContent = `${greetingName}! I've received your submission${brand}.\n\nBefore we dig into anything - what's the single biggest challenge you're facing with ${brandName || 'your brand'} at the moment?`;
       }
 
       createSession('audit', {
@@ -664,7 +664,7 @@ export function HavenProvider({ children }) {
             title: 'Talk to Our Team', serviceId: 'team-inquiry',
             initialMessage: {
               id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
-              content: `Hey there! I'm Haven — I help connect people to the right TMH team member.\n\nBefore I do, what's this about? Tell me a bit about your brand and what you're looking to discuss, and I'll make sure we route you properly.`,
+              content: `Hey there! I'm Haven - I help connect people to the right TMH team member.\n\nBefore I do, what's this about? Tell me a bit about your brand and what you're looking to discuss, and I'll make sure we route you properly.`,
               chips: ['I want to discuss a service', 'I have a general question', 'Something else'],
             },
           });
@@ -881,9 +881,9 @@ export function HavenProvider({ children }) {
       const { step: newStep, cleanedText: textAfterStep } = parseStepMarker(result.text);
       const { lead: newLead, cleanedText: textAfterLead } = parseLeadMarker(textAfterStep);
       const { navChips: navChipsFromTag, cleanedText } = parseNavChipsFromText(textAfterLead);
-      if (result.currentStep || newStep) {
+        if (result.currentStep || newStep || result.platformState) {
         setSessionsForScope(activeScope, prev => prev.map((session) => session.id === activeSessionId
-          ? { ...session, currentStep: result.currentStep || newStep } : session));
+           ? { ...session, currentStep: result.currentStep || newStep, platformState:result.platformState||null } : session));
       }
 
       const regularChips = [];
@@ -922,12 +922,12 @@ export function HavenProvider({ children }) {
       if (activeRequest.stopped) return;
       const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
       const error = err.name === 'AbortError' ? 'Response stopped. You can retry the same message.'
-        : /access recovery/.test(err.message) || [400, 403, 413].includes(err.status) ? err.message
+        : /access recovery/.test(err.message) || [400, 403, 413, 429, 503].includes(err.status) ? err.message
         : isOffline ? 'Your connection dropped. Your message is saved on this device. Retry when you are back online.'
         : err.status === 409 ? 'Haven is still finishing this message. Wait a moment, then retry.'
         : 'Haven could not finish this response. Retry your saved message to continue from the same point.';
       const saved = pendingTurnsRef.current.get(turnKey);
-      const retryAt = Date.now() + Math.min(300, Math.max(0, err.retryAfter || 0)) * 1000;
+      const retryAt = Date.now() + Math.min(86400, Math.max(0, err.retryAfter || 0)) * 1000;
       if (saved) pendingTurnsRef.current.set(turnKey, { ...saved, failed: true, retryAt });
       setSessionsForScope(activeScope, prev => prev.map(s => s.id === activeSessionId
         ? { ...s, failedTurn: { content, image, requestId, screenshot: saved?.payload?.screenshot || null, error, retryAt } } : s));

@@ -1,16 +1,10 @@
 import { createContext, useContext, useEffect, useState } from 'react';
+import {readInitialTheme,saveTheme} from '../lib/themePreference';
 
 const ThemeContext = createContext(null);
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('tmh_theme');
-      if (stored === 'light' || stored === 'dark') return stored;
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    return 'dark';
-  });
+  const [theme, setTheme] = useState(()=>readInitialTheme());
 
   useEffect(() => {
     const root = document.documentElement;
@@ -24,7 +18,7 @@ export function ThemeProvider({ children }) {
       root.classList.remove('dark');
     }
 
-    localStorage.setItem('tmh_theme', theme);
+    saveTheme(theme);
   }, [theme]);
 
   const toggleTheme = () => {

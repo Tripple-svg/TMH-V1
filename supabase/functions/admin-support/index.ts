@@ -6,7 +6,7 @@ import {runAdminMutation} from '../_shared/admin-audit.ts';
 import {auditNetwork} from '../_shared/admin-operations.ts';
 import {verifyOrigin,responseHeaders,HavenRequestError} from '../_shared/haven-request.ts';
 const FIELDS='id,created_at,updated_at,first_response_at,status,category,source,name,email,message,visitor_id,revision,notes,notification_accepted_at,notification_email_id,notification_error,notification_first_attempt_at';
-Deno.serve(observe('admin-support',async req=>{
+Deno.serve(observe('admin-support',async (req,requestId) =>{
   const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...responseHeaders(req),...(status===429?{'Retry-After':'60'}:{})}});
   try{
     verifyOrigin(req);
@@ -41,6 +41,6 @@ Deno.serve(observe('admin-support',async req=>{
     return json({ok:false,error:'Invalid support action.'},400);
   }catch(error){
     if(error instanceof AdminAuthError||error instanceof HavenRequestError)return json({ok:false,error:error.message},error.status);
-    logEvent('error','admin-support.diagnostic_1');return json({ok:false,error:'Support data is unavailable. Check the support migration and retry.'},503);
+    logEvent('error','admin-support.diagnostic_1',requestId);return json({ok:false,error:'Support data is unavailable. Check the support migration and retry.'},503);
   }
 }));

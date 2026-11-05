@@ -6,7 +6,7 @@ import {runAdminMutation} from '../_shared/admin-audit.ts';
 import {verifyOrigin,responseHeaders,HavenRequestError} from '../_shared/haven-request.ts';
 const SETTINGS=['chat_enabled','scoring_enabled','visitor_daily_calls','visitor_daily_tokens','review_daily_calls','review_daily_tokens','network_daily_calls','network_daily_tokens','global_daily_calls','global_daily_tokens'];
 const AUDIT_FIELDS='id,occurred_at,actor_id,action,record_type,record_id,network_hash,changed_fields,outcome';
-Deno.serve(observe('admin-security',async req=>{
+Deno.serve(observe('admin-security',async (req,requestId) =>{
   const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...responseHeaders(req),...(status===429?{'Retry-After':'60'}:{})}});
   try{
     verifyOrigin(req);
@@ -36,6 +36,6 @@ Deno.serve(observe('admin-security',async req=>{
     return json({ok:false,error:'Invalid security action.'},400);
   }catch(error){
     if(error instanceof AdminAuthError||error instanceof HavenRequestError)return json({ok:false,error:error.message},error.status);
-    logEvent('error','admin-security.diagnostic_1');return json({ok:false,error:'Security settings are unavailable. Check the security migrations and retry.'},503);
+    logEvent('error','admin-security.diagnostic_1',requestId);return json({ok:false,error:'Security settings are unavailable. Check the security migrations and retry.'},503);
   }
 }));

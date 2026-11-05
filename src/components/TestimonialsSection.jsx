@@ -297,7 +297,7 @@ export default function TestimonialsSection() {
               type="button"
               onClick={goPrev}
               disabled={slideIndex === 0}
-              aria-label="Previous"
+              aria-label="Previous testimonial"
               className={arrowClass}
             >
               <ChevronLeft className="w-5 h-5" />
@@ -323,7 +323,7 @@ export default function TestimonialsSection() {
               type="button"
               onClick={goNext}
               disabled={slideIndex === slides.length - 1}
-              aria-label="Next"
+              aria-label="Next testimonial"
               className={arrowClass}
             >
               <ChevronRight className="w-5 h-5" />

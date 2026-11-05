@@ -1,6 +1,7 @@
 import { HavenRequestError } from './haven-request.ts';
 import { codeHash, requestBucket } from './playbook-recovery.ts';
 import { providerRequest } from './provider-request.ts';
+import {logEvent} from './logger.ts';
 
 type Plan = { provider: string; tokens: number; inputBytes: number; calls: number };
 type Attempt = { provider: string; tokens: number; actual: number | null };
@@ -60,8 +61,8 @@ export class AIBudgetReservation {
       const {error} = await this.db.rpc('settle_ai_budget',{p_id:this.id,p_tokens:tokens,p_calls:this.attempts.length});
       // A failed settlement leaves the complete reservation in place. Never
       // refund on an uncertain database write or retry a stale settlement.
-      if (error) console.error('AI budget settlement unavailable; reservation retained');
-    } catch { console.error('AI budget settlement unavailable; reservation retained'); }
+      if (error) logEvent('error','ai_budget.settlement_unavailable');
+    } catch { logEvent('error','ai_budget.settlement_unavailable'); }
   }
 }
 

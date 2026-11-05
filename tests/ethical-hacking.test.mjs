@@ -1,12 +1,27 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import {productionDb,rpc,scalar,seedReview,ADMIN_A,ADMIN_B,SESSION_A,NETWORK} from './helpers/production-db.mjs';
 
 test('ethical hacking: real PostgreSQL authorization, replay and concurrency boundaries',async t=>{
   const db=await productionDb();
   try{
     await seedReview(db);
+    await t.test('P0 regression: removing the legacy anonymous policy hides all conversations',async()=>{
+      await db.query('insert into haven_sessions(id,scope,messages) values($1,$2,$3)',[randomUUID(),'support',[{role:'user',content:'Private synthetic conversation'}]]);
+      await db.exec('grant select on public.haven_sessions to anon; create policy anon_select_sessions on public.haven_sessions for select to anon using(true)');
+      const asAnon=()=>db.exec("set role anon;select set_config('request.jwt.claim.role','anon',false)");
+      await asAnon();
+      assert.ok(await scalar(db,'select count(*)::int from public.haven_sessions')>0);
+      await db.exec('reset role');
+      await db.exec(await readFile('supabase/migrations/20261105000000_remove_anon_select.sql','utf8'));
+      await asAnon();
+      assert.equal(await scalar(db,'select count(*)::int from public.haven_sessions'),0);
+      assert.equal((await db.query('select messages from public.haven_sessions')).rows.length,0);
+      await db.exec("reset role;select set_config('request.jwt.claim.role','service_role',false)");
+      assert.ok(await scalar(db,'select count(*)::int from public.haven_sessions')>0,'private records are preserved');
+    });
     await t.test('IDOR: another visitor cannot claim or read the saved conversation',async()=>{
       const visitor=randomUUID(),session=randomUUID(),proof='b'.repeat(64);
       const ensure=(who,token)=>rpc(db,'ensure_haven_conversation',[who,token,session,'support',null,null,'2026-10-26']);

@@ -19,7 +19,7 @@ function modal({ source = null, serviceId = null, invoke = async () => ({ data: 
     useHaven: () => ({ bookingContext: { source, serviceId },userProfile:source==='services'?{}:{email:'buyer@example.com'} }),
     getHavenIdentity:()=>({visitorId:'visitor',visitorToken:'proof'}),Response,
     useState: (initial) => { const slot = cursor++; if (!(slot in states)) states[slot] = initial; return [states[slot], (value) => { states[slot] = value; }]; },
-    useEffect() {},
+    useEffect() {},useRef:()=>({current:null}),useDialogFocus(){},
     localStorage: { setItem: (key, value) => stored.set(key, value), getItem: (key) => stored.get(key) },
     supabase: { functions: { invoke } },
     window: { open: () => { opens++; return popupBlocked ? null : popup; }, location: { assign: (url) => { popup.location.href = url; } } },
@@ -77,4 +77,14 @@ test('Task 7 UI: failed capture keeps modal open and closes the blank popup', as
   await ui.render().choose.props.onClick({ preventDefault() {} });
   assert.equal(ui.closed, 0); assert.equal(ui.popup.closed, true); assert.equal(ui.stored.size, 0);
   assert.ok(ui.render().nodes.some((node) => node.props.role === 'alert'));
+});
+
+test('returning review users see the active-booking explanation without an email field',async()=>{
+  const ui=modal({invoke:async()=>({data:{ok:false,code:'already_booked',error:'You already have an upcoming call. Use your Calendly email to manage it.'}})});
+  assert.equal(ui.render().input,undefined);
+  await ui.render().choose.props.onClick({preventDefault(){}});
+  const alert=ui.render().nodes.find(node=>node.props.role==='alert');assert.ok(alert);
+  assert.match(JSON.stringify(alert),/upcoming call|Calendly confirmation/);
+  assert.equal(ui.popup.closed,true);assert.equal(ui.closed,0);
+  assert.ok(ui.render().nodes.some(node=>node.type==='link'&&node.props.to==='/support?issue=booking'));
 });

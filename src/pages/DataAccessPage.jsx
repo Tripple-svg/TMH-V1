@@ -90,6 +90,7 @@ export default function DataAccessPage() {
             {error && (
               <p role="alert" className="text-sm text-red-500">
                 {error}
+                {token&&<Link to="/data-access" className="mt-3 block underline">Request a new confirmation link</Link>}
               </p>
             )}
             <button

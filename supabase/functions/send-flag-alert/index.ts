@@ -2,7 +2,7 @@ import {ADMIN_ALERT_RECIPIENTS} from '../_shared/admin-alerts.js';
 import {logEvent} from '../_shared/logger.ts';
 import {observe} from '../_shared/observability.ts';
 import { isInternalRequest } from '../_shared/internal-auth.js';
-import { editorialEmail } from '../_shared/email-template.js';
+import { editorialEmail, currentEditorial } from '../_shared/email-template.js';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { drainModerationNotifications } from '../_shared/haven-moderation.ts';
@@ -13,7 +13,7 @@ const TEAM_RECIPIENTS = ADMIN_ALERT_RECIPIENTS;
 const SOURCE_LABELS: Record<string, string> = { lead: 'Lead / Brand review', support: 'Support', service: 'Services', admin: 'Admin action', unknown: 'Admin action / legacy record' };
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-serve(observe('send-flag-alert',async (req) => {
+serve(observe('send-flag-alert',async (req,requestId) => {
   const headers = {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store',
@@ -47,7 +47,7 @@ serve(observe('send-flag-alert',async (req) => {
     const { data: notification, error } = await supabase.from('flag_alert_notifications')
       .select('id,email,visitor_id,full_name,source,entry_point,session_id,status,reason,sent_at,team_skipped_at,team_email_id,email_template_version').eq('id', body.notificationId).maybeSingle();
     if (error) {
-      logEvent('error','send-flag-alert.diagnostic_1');
+      logEvent('error','send-flag-alert.diagnostic_1',requestId);
       return json({ ok: false, error: 'Unable to load flag notification' }, 500);
     }
     if (!notification) return json({ ok: false, error: 'Flag notification not found' }, 404);
@@ -58,7 +58,7 @@ serve(observe('send-flag-alert',async (req) => {
     }
     if (notification.sent_at) return json({ ok: true, skipped: 'already sent' });
 
-    const sourceLabel = ['editorial-v2', 'editorial-v3'].includes(notification.email_template_version) && notification.entry_point === 'team_inquiry' ? 'Team inquiry (Talk to Our Team)' : SOURCE_LABELS[notification.source] || 'Admin action / legacy record';
+    const sourceLabel = ['editorial-v2', 'editorial-v3', 'editorial-v4'].includes(notification.email_template_version) && notification.entry_point === 'team_inquiry' ? 'Team inquiry (Talk to Our Team)' : SOURCE_LABELS[notification.source] || 'Admin action / legacy record';
     await deliverFlagNotification(supabase, notification, 'team', {
           to: TEAM_RECIPIENTS,
           reply_to: 'info@themarketinghaven.xyz',
@@ -66,12 +66,12 @@ serve(observe('send-flag-alert',async (req) => {
           ...(notification.email_template_version === 'legacy' ? {} : { html: editorialEmail({ version: notification.email_template_version || 'editorial-v2', label: 'PLATFORM SAFETY', title: `User flagged: ${notification.status}`, paragraphs: ['A saved moderation event needs your review. Open the Admin Dashboard to inspect the conversation and manage access.'], details: [
             ['Name', notification.full_name || 'Not recorded (guest if no email)'], ['Email', notification.email || 'Not provided'], ['Status', notification.status], ['Reason', notification.reason || 'Not provided'], ['Source', sourceLabel], ['Session ID', notification.session_id || 'Not recorded'], ['Visitor ID', notification.visitor_id || 'Linked saved review'],
           ], button: { label: 'Review in Admin', href: 'https://themarketinghaven.xyz/admin' } }) }),
-          text: `User ${notification.email || `visitor ${notification.visitor_id}`} has been flagged as ${notification.status}. Reason Haven flagged them: ${notification.reason || 'Not provided'}. Please review in the Admin Dashboard.\n\nName: ${notification.full_name || (notification.email ? 'Not recorded' : 'Not provided (guest)')}\nSource: ${sourceLabel}\nSession ID: ${notification.session_id || 'Not recorded'}\nVisitor ID: ${notification.visitor_id || 'Linked saved review'}\nAdmin Dashboard: https://themarketinghaven.xyz/admin` + (notification.email_template_version === 'editorial-v3' ? '\n\nYour friends over at Team Haven\nBuilding with intention.' : ''),
+          text: `User ${notification.email || `visitor ${notification.visitor_id}`} has been flagged as ${notification.status}. Reason Haven flagged them: ${notification.reason || 'Not provided'}. Please review in the Admin Dashboard.\n\nName: ${notification.full_name || (notification.email ? 'Not recorded' : 'Not provided (guest)')}\nSource: ${sourceLabel}\nSession ID: ${notification.session_id || 'Not recorded'}\nVisitor ID: ${notification.visitor_id || 'Linked saved review'}\nAdmin Dashboard: https://themarketinghaven.xyz/admin` + (currentEditorial(notification.email_template_version) ? '\n\nYour friends over at Team Haven\nBuilding with intention.' : ''),
     }, Deno.env);
     return json({ ok: true });
   } catch (error) {
     if (error instanceof MailDeliveryError) return json({ ok: false, code: error.code, error: error.message }, error.status);
-    logEvent('error','send-flag-alert.diagnostic_2');
+    logEvent('error','send-flag-alert.diagnostic_2',requestId);
     return json({ ok: false, error: 'Unable to send flag alert' }, 500);
   }
 }));

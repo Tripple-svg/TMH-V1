@@ -3,6 +3,8 @@ import SupportRequestsPanel from '../components/admin/SupportRequestsPanel';
 import AdminSecurityPanel from '../components/admin/AdminSecurityPanel';
 import AdminMfaPanel from '../components/admin/AdminMfaPanel';
 import BookingCalendar from '../components/admin/BookingCalendar';
+import AdminGuide from '../components/admin/AdminGuide';
+import {getAdminDeviceId} from '../lib/adminDevice';
 import {InsightsPanel,ActivityPanel,RateLimitsPanel} from '../components/admin/AdminOperationsPanels';
 import {redactContact} from '../lib/adminProduction';
 import {subscribeAdminNotifications} from '../lib/adminRealtime';
@@ -37,6 +39,7 @@ const PAGE_SIZE = 25;
 const transcriptCache = new Map();
 const transcriptRequests = new Map();
 const ADMIN_TABS = [
+  { id:'guide',label:'Start here' },
   { id: 'leads', label: 'Leads' },
   { id: 'purchases', label: 'Playbook Purchases' },
   { id: 'bookings', label: 'Bookings' },
@@ -721,7 +724,7 @@ function LeadRow({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, sh
         </td>
         <td className="p-4 align-top">
           {lead.screenshot_signed_url ? (
-            <button type="button" onClick={toggleExpanded} className="block" title="Toggle preview">
+            <button aria-label="Toggle preview" type="button" onClick={toggleExpanded} className="block" title="Toggle preview">
               <img
                 src={lead.screenshot_signed_url} alt=""
                 className="h-12 w-12 rounded border border-zinc-700 object-cover"
@@ -740,7 +743,7 @@ function LeadRow({ lead, accessToken, onLeadChange, onLeadDelete, onAuthLost, sh
           <div className="mt-0.5 flex items-center gap-2 text-xs text-zinc-500 group">
             <span className="truncate max-w-[200px]">{lead.email || 'Not recorded'}</span>
             {lead.email && (
-              <button
+              <button aria-label="Copy email"
                 type="button" onClick={() => handleCopy(lead.email, 'Email')}
                 title="Copy email"
                 className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500 hover:text-zinc-200"
@@ -1214,7 +1217,7 @@ export default function AdminDashboard() {
     let sessionId='';try{sessionId=JSON.parse(atob(accessToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).session_id;}catch{/* The server still verifies tokens. */}
     if(!sessionId||loginRecorded.current===sessionId)return;
     loginRecorded.current=sessionId;
-    void apiRequest(OPERATIONS_URL,accessToken,{action:'login'}).then(result=>{if(!result.ok){loginRecorded.current='';showToast('error','Sign-in alert could not be confirmed. Open Activity and retry by refreshing the page.');}});
+    void apiRequest(OPERATIONS_URL,accessToken,{action:'login',device_id:getAdminDeviceId()}).then(result=>{if(!result.ok){loginRecorded.current='';showToast('error','Sign-in alert could not be confirmed. Open Activity and retry by refreshing the page.');}});
   },[accessToken,authorised,showToast]);
 
   useEffect(() => {
@@ -1336,10 +1339,11 @@ export default function AdminDashboard() {
   return (
     <main className="admin-workspace min-h-screen w-full min-w-0 max-w-full bg-[#09090b] p-4 text-zinc-100 sm:p-6 lg:p-8">
       <div className="mx-auto w-full min-w-0 max-w-[1400px]">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-6">
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-white/[0.12] bg-gradient-to-br from-white/[0.065] via-white/[0.025] to-transparent p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-7">
           <div>
             <p className="mb-2 text-[10px] uppercase tracking-[0.25em] text-zinc-500">The Marketing Haven · Private workspace</p>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">TMH Admin</h1>
+            <button type="button" onClick={()=>{setActiveTab('guide');requestAnimationFrame(()=>document.getElementById('panel-guide')?.focus());}} className="mt-3 mb-2 inline-flex min-h-11 items-center rounded-xl border border-white/15 px-4 py-2 text-sm text-zinc-200 hover:bg-white/5">New here? Open the admin guide</button>
             <p className="text-xs sm:text-sm text-zinc-400">
               Total Reviews: {leads.length} · {processed.length} shown
             </p>
@@ -1380,7 +1384,7 @@ export default function AdminDashboard() {
         <p role="status" className="mb-3 text-xs text-zinc-500">{liveStatus}{arrivals.support+arrivals.booking>0&&<button className="ml-3 min-h-11 rounded-lg border border-emerald-200/20 px-3 text-emerald-200" onClick={()=>{setArrivals({support:0,booking:0});void load();}}>{arrivals.support} new support · {arrivals.booking} new bookings · Refresh saved records</button>}</p>
         <div role="tablist" aria-label="Admin sections" className="mb-6 grid grid-cols-2 gap-2 rounded-xl border border-white/[0.07] bg-white/[0.02] p-2 sm:flex sm:gap-1 sm:overflow-x-auto">
           {ADMIN_TABS.map((tab, index) => {
-            const count = ['requests','security','insights','activity'].includes(tab.id) ? null : tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'bookings' ? bookings.length : tab.id === 'team' ? teamInquiries.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
+            const count = ['guide','requests','security','insights','activity'].includes(tab.id) ? null : tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'bookings' ? bookings.length : tab.id === 'team' ? teamInquiries.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
             return <button key={tab.id} id={`tab-${tab.id}`} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1}
               onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
                 const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -1416,6 +1420,7 @@ export default function AdminDashboard() {
         <p className="mb-5 text-[11px] leading-relaxed text-zinc-500">Work queue counts cover loaded records, not lifetime totals. Provider counts are completed replies, not token usage or billing. Flag events cover the saved delivery queue. Inquiry status is maintained by the team; confirmed bookings appear in Bookings.</p>
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-200">{error}</p>}
         <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
+        {activeTab==='guide'&&<AdminGuide onNavigate={section=>{setActiveTab(section);requestAnimationFrame(()=>document.getElementById('panel-'+section)?.focus());}}/>}
         {activeTab === 'requests' && <SupportRequestsPanel onRequest={supportRequest} onAuthLost={handleAuthLost} refreshKey={lastRefreshed} />}
         {activeTab==='insights'&&<InsightsPanel onRequest={operationsRequest} onAuthLost={handleAuthLost}/>}
         {activeTab==='activity'&&<ActivityPanel onRequest={operationsRequest} onAuthLost={handleAuthLost}/>}

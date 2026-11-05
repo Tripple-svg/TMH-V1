@@ -22,7 +22,8 @@ export default function PrivacyPage() {
   const [activeSection, setActiveSection] = useState(sectionNav[0].id);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'auto' });
+    const target=sectionNav.some(section=>'#'+section.id===window.location?.hash)?document.getElementById(window.location.hash.slice(1)):null;
+    if(target)target.scrollIntoView({behavior:'instant',block:'start'});else window.scrollTo({ top: 0, behavior: 'auto' });
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -60,7 +61,7 @@ export default function PrivacyPage() {
           <article className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100/70 backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.03]">
             <div className="border-b border-zinc-200 px-6 py-10 sm:px-10 sm:py-14 dark:border-white/[0.08]">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                Effective Date: 26 October 2026 · Updated: 3 November 2026 · Chat notice version 2026-10-26
+                Effective Date: 26 October 2026 · Updated: 5 November 2026 · Chat notice version 2026-10-26
               </p>
               <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl dark:text-white">
                 Privacy Policy
@@ -134,6 +135,7 @@ export default function PrivacyPage() {
               </section>
 
               <section id="artificial-intelligence-processing" className="scroll-mt-10">
+                <p className="mb-5 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Haven uses functional platform context to help you: the current service conversation, your securely linked review, cryptographically verified Playbook access, and an active or pending booking linked to your browser or verified review. The AI receives a limited summary, such as whether access is verified and the scheduled call times, rather than your private access keys, payment card details or receipt reference. A pending booking means a booking page was opened; a download request does not prove a file saved, and a scheduled meeting does not prove attendance. Booking updates can be delayed while Calendly syncs. We do not infer ownership from a typed email, and Haven cannot automatically identify every purchase or booking on another device. This functional context works separately from optional analytics; declining analytics does not disable purchase recovery, chat or booking protection.</p>
                 <p className="mb-5 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">We apply daily AI call and token allowances to saved reviews, browser identities, keyed network references and the service as a whole. Counters and reservations protect availability and cost. A temporary pause or cooldown does not establish misconduct. Relevant sections of our curated knowledge are selected for each question; private Playbook guidance still requires server verification of purchase. Aggregate Insights group route interest, saved review link clicks, leak labels and first-message topics. They do not display original first messages or identify visitors.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">4. Artificial Intelligence Processing</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
@@ -167,6 +169,7 @@ export default function PrivacyPage() {
                     <li><span className="font-semibold text-zinc-900 dark:text-white">Jina AI:</span> reads your website URL when you request a website brand review.</li>
                     <li><span className="font-semibold text-zinc-900 dark:text-white">Calendly:</span> handles bookings for free strategy calls.</li>
                     <li><span className="font-semibold text-zinc-900 dark:text-white">Resend:</span> transactional purchase, booking, warning, restriction and team-alert emails, with delivery metadata.</li>
+                    <li><span className="font-semibold text-zinc-900 dark:text-white">Operational monitoring:</span> Sentry receives restricted technical error reports when configured; session replay and automatic collection of chat content, identities, cookies and payment details are disabled in our integration. The provider still handles the network connection used to deliver an event. UptimeRobot checks public availability URLs. IPinfo can estimate a city from a staff sign-in IP for security alerts; this is not a precise location or proof of a person&apos;s identity.</li>
                     <li><span className="font-semibold text-zinc-900 dark:text-white">Zoho Mail:</span> our support inbox and replies; when configured, incoming-mail metadata can create an admin support notice. Team email notifications include limited request details.</li>
                     <li><span className="font-semibold text-zinc-900 dark:text-white">hCaptcha:</span> verifies that form submissions come from real visitors and not automated bots.</li>
                     <li><span className="font-semibold text-zinc-900 dark:text-white">Netlify:</span> hosts this website.</li>
@@ -186,14 +189,15 @@ export default function PrivacyPage() {
                     <li>Visit counters, traffic-source information and theme preferences</li>
                     <li>Haven AI conversation history so that you can return to an in-progress chat</li>
                     <li>Private review and guest-chat access keys, pending form retries, and notice acknowledgments</li>
-                    <li>Purchase references and private device access keys used to request a verified Playbook download again</li>
+                    <li>Purchase references and private device access keys used to request a verified Playbook download again. A prepared checkout can be saved before payment completes so an interrupted window can be checked safely. A saved reference alone is not proof of payment. Reader access is separately verified before private Playbook guidance is available to Haven.</li>
+                    <li>For team admins, a random browser identifier used to recognize returning browsers for security alerts. It remains until browser storage is cleared and does not grant account access.</li>
                   </ul>
                   <p>Optional visit counters and traffic attribution are collected only after you accept cookies. Declining removes the local visit counter and its first-visit timestamp; necessary chat access keys and service storage remain available. You can withdraw that choice by clearing the cookie preference and choosing Decline when the banner returns. Clearing local or session storage can remove access keys, drafts and locally saved chat history. It does not delete server records. Use the deletion process below for server data, and do not share private access keys with anyone.</p>
                 </div>
               </section>
 
               <section id="data-storage-and-security" className="scroll-mt-10">
-                <p className="mb-5 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Staff security records include sign-in time, a general browser and operating system label, observed IP address and, when configured through IPinfo, an approximate city. New device and IP combinations can trigger alerts to the authorized admin team. Sign-in device and activity records expire after 30 days. Authenticator backup codes are stored as keyed hashes and are single use. Destructive staff requests require approval by a different current admin and leave an audit record. Optional Sentry error reporting sends a restricted technical event without request bodies, emails, tokens, chat text or password fields. Error tracking is disabled when its connection is not configured.</p>
+                <p className="mb-5 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Staff security records include sign-in time, a general browser and operating system label, observed IP address and, when configured through IPinfo, an approximate city. A browser identifier not seen for 30 days can trigger an alert to the authorized admin team. A change of IP address alone does not create a new browser. Sign-in device and activity records expire after 30 days. Authenticator backup codes are stored as keyed hashes and are single use. Destructive staff requests require approval by a different current admin and leave an audit record. Optional Sentry error reporting sends a restricted technical event without request bodies, emails, tokens, chat text or password fields. Error tracking is disabled when its connection is not configured.</p>
                 <p className="mb-4 text-[15px] leading-7 text-zinc-600 dark:text-zinc-300">Authorized staff actions are recorded in an internal audit trail using the staff account identifier, action, record reference, changed field names, time and a keyed network identifier. The audit does not copy full private notes, passwords, tokens or raw IP addresses. Server-side AI request budgets and operational diagnostics help prevent abuse and excessive spending. If a personal data incident occurs, we assess it and make the notifications required by applicable law.</p>
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">7. Data Storage and Security</h2>
                 <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">

@@ -3,7 +3,8 @@
 // mode='alert'   → single confirm button
 // mode='confirm' → confirm + cancel buttons
 
-import { useEffect } from 'react';
+import { useEffect,useRef } from 'react';
+import {useDialogFocus} from '../../lib/useDialogFocus';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, X } from 'lucide-react';
 
@@ -18,6 +19,8 @@ export default function ConfirmModal({
   mode = 'alert',
   variant = 'default', // 'default' | 'danger'
 }) {
+  const dialog=useRef(null);
+  useDialogFocus(isOpen,dialog,onClose);
   useEffect(() => {
     if (!isOpen) return;
     const prev = document.body.style.overflow;
@@ -55,6 +58,7 @@ export default function ConfirmModal({
           />
 
           <motion.div
+            ref={dialog} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}
             initial={{ opacity: 0, scale: 0.95, y: 15 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -110,7 +114,7 @@ export default function ConfirmModal({
                 )}
                 <button
                   onClick={() => {
-                    if (mode === 'confirm') {
+                    if (onConfirm) {
                       onConfirm?.();
                     } else {
                       onClose?.();

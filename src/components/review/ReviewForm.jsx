@@ -160,7 +160,7 @@ export default function ReviewForm({ onClose, onSubmitForm, onLaunchHaven }) {
                 <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
                   <User className="w-4 h-4 text-blue-400" />
                 </div>
-                <h3 className="text-sm font-semibold tracking-widest uppercase text-gray-300">Step 1 — Your Identity</h3>
+                <h3 className="text-sm font-semibold tracking-widest uppercase text-gray-300">Step 1 - Your Identity</h3>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div className="sm:col-span-2">
@@ -202,7 +202,7 @@ export default function ReviewForm({ onClose, onSubmitForm, onLaunchHaven }) {
                 <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
                   <Globe className="w-4 h-4 text-blue-400" />
                 </div>
-                <h3 className="text-sm font-semibold tracking-widest uppercase text-gray-300">Step 2 — Your Platform</h3>
+                <h3 className="text-sm font-semibold tracking-widest uppercase text-gray-300">Step 2 - Your Platform</h3>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
@@ -285,7 +285,7 @@ export default function ReviewForm({ onClose, onSubmitForm, onLaunchHaven }) {
                               <motion.div key={previewUrl} layout initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.8, opacity: 0 }}
                                 className="relative group aspect-square rounded-lg border border-white/10 bg-black/30 overflow-hidden">
                                 <img src={previewUrl} alt="Screenshot preview" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
-                                <button type="button" onClick={() => removeFile(i)}
+                                <button aria-label="Remove screenshot" type="button" onClick={() => removeFile(i)}
                                   className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-gray-300 hover:text-white hover:bg-red-500/80 transition-all">
                                   <X className="w-3 h-3" />
                                 </button>
@@ -315,7 +315,7 @@ export default function ReviewForm({ onClose, onSubmitForm, onLaunchHaven }) {
                 className="relative w-full py-4 sm:py-5 rounded-xl font-semibold text-sm sm:text-base tracking-wide uppercase border border-blue-500/50 transition-all duration-300 flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 hover:shadow-[0_0_40px_rgba(37,99,235,0.35)] active:scale-[0.98]"
                 whileTap={{ scale: 0.98 }}>
                 <MessageCircle className="w-5 h-5 text-white" />
-                <span className="text-white">Talk to Haven — Start from Scratch</span>
+                <span className="text-white">Talk to Haven - Start from Scratch</span>
               </motion.button>
             ) : (
               <motion.button type="submit"

@@ -33,7 +33,7 @@ async function scoreWithGemini(db:any,budget:AIBudgetReservation,screenshot: str
   return { raw: geminiText(payload), status: 200 };
 }
 
-Deno.serve(observe('score-social',async (request) => {
+Deno.serve(observe('score-social',async (request,requestId) => {
   const headers = responseHeaders(request);
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
   if (request.method === 'OPTIONS') return new Response('ok', { headers });
@@ -73,24 +73,24 @@ Deno.serve(observe('score-social',async (request) => {
             return json({ ok: true, ...parsed, revision: review.scoring_revision || 0 });
           }
           lastErr = 'Gemini returned unparseable JSON';
-          logEvent('warn','score-social.diagnostic_1');
+          logEvent('warn','score-social.diagnostic_1',requestId);
         } else if (status === 503 || status === 502 || status === 504) {
           lastErr = `Gemini ${status}`;
-          logEvent('warn','score-social.diagnostic_2');
+          logEvent('warn','score-social.diagnostic_2',requestId);
         } else {
           lastErr = `Gemini ${status}: ${'[redacted model output]'}`;
-          logEvent('warn','score-social.diagnostic_3');
+          logEvent('warn','score-social.diagnostic_3',requestId);
           break;
         }
       } catch (err) {
         await recordAIUsage(supabase,'gemini',usageGeminiModel(),{},safeProviderDiagnostic(err,'gemini').code);
         lastErr = err instanceof Error ? err.message : String(err);
-        logEvent('warn','score-social.diagnostic_4');
+        logEvent('warn','score-social.diagnostic_4',requestId);
       }
 
     }
 
-    logEvent('warn','score-social.diagnostic_5');
+    logEvent('warn','score-social.diagnostic_5',requestId);
     throw new HavenRequestError('I ran into an unexpected error while reading your profile. Please try again or continue to chat.', 502);
   } catch (error) {
     if (error instanceof HavenRequestError && ['ai_paused','ai_daily_budget_exceeded','ai_budget_unavailable'].includes((error as any).code)) {
@@ -103,7 +103,7 @@ Deno.serve(observe('score-social',async (request) => {
       catch { return json({ ok: false, state: 'failed', error: 'Could not save the reader status. Please try again.' }, 500); }
     }
     const known = error instanceof HavenRequestError || error instanceof ReviewAccessError;
-    logEvent('error','score-social.diagnostic_6');
+    logEvent('error','score-social.diagnostic_6',requestId);
     return json({ ok: false, state: 'failed', reason: 'provider_unavailable', error: known ? error.message : 'Unable to read your profile. Please try again.' }, known ? error.status : 502);
   } finally { await budget?.settle(); }
 }));

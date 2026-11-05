@@ -7,7 +7,7 @@ import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { isInternalRequest } from '../_shared/internal-auth.js';
-import { editorialEmail } from '../_shared/email-template.js';
+import { editorialEmail, currentEditorial } from '../_shared/email-template.js';
 import { deliverEmail, mailConfiguration, MailDeliveryError } from '../_shared/resend-delivery.js';
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
@@ -63,10 +63,10 @@ function buildBodiesV1(firstName: string, brandName: string, platformType: strin
 }
 
 function buildBodies(firstName: string, brandName: string, platformType: string, version: string) {
-  if (!['editorial-v2', 'editorial-v3'].includes(version)) return buildBodiesV1(firstName, brandName, platformType);
+  if (!['editorial-v2', 'editorial-v3', 'editorial-v4'].includes(version)) return buildBodiesV1(firstName, brandName, platformType);
   const subject = brandName || 'your brand';
   const focus = platformType === 'website'
-    ? version === 'editorial-v3'
+    ? currentEditorial(version)
       ? 'Haven reviews the website text it can read: how clearly the offer is explained, which trust signals are present, the reason to choose your business, and the next step. If there is not enough readable evidence, Haven will explain the limit and help you continue in chat.'
       : 'Your website review starts with three questions: is the offer clear, is there a reason to trust it, and is the next step easy to find? If the reader cannot access enough of the page, Haven will explain the limit and continue from what you share in chat.'
     : platformType === 'social'
@@ -76,12 +76,12 @@ function buildBodies(firstName: string, brandName: string, platformType: string,
     'If you are already chatting with Haven, keep going there. You do not need to start again from this email.',
     'When you return, bring one question you want to resolve. The useful outcome is a clearer next move for your brand.',
     'The button reopens the review on the browser you used to submit it. Need help on another device? Reply to this email and we will help verify ownership.'];
-  return { text: paragraphs.join('\n\n') + '\n\nContinue your review: ' + SITE_URL + '/?review=continue\n\n' + (version === 'editorial-v3' ? 'Your friends over at Team Haven\nBuilding with intention.' : 'Team Haven'),
+  return { text: paragraphs.join('\n\n') + '\n\nContinue your review: ' + SITE_URL + '/?review=continue\n\n' + (currentEditorial(version) ? 'Your friends over at Team Haven\nBuilding with intention.' : 'Team Haven'),
     html: editorialEmail({ version, label: 'YOUR BRAND REVIEW', title: 'Make the next move clearer.', paragraphs,
       button: { label: 'Continue your review', href: SITE_URL + '/?review=continue' } }) };
 }
 
-serve(observe('send-welcome-email',async (req) => {
+serve(observe('send-welcome-email',async (req,requestId) => {
   const origin = req.headers.get('origin');
 
   if (req.method === 'OPTIONS') {
@@ -93,7 +93,7 @@ serve(observe('send-welcome-email',async (req) => {
 
   try {
     if (!RESEND_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      logEvent('error','send-welcome-email.diagnostic_1');
+      logEvent('error','send-welcome-email.diagnostic_1',requestId);
       return json({ ok: false, error: 'Server misconfigured' }, origin, 500);
     }
 
@@ -115,7 +115,7 @@ serve(observe('send-welcome-email',async (req) => {
       .maybeSingle();
 
     if (lookupError) {
-      logEvent('error','send-welcome-email.diagnostic_2');
+      logEvent('error','send-welcome-email.diagnostic_2',requestId);
       return json({ ok: false, error: 'Lookup failed' }, origin, 500);
     }
     if (!existing) {
@@ -149,7 +149,7 @@ serve(observe('send-welcome-email',async (req) => {
 
     return json({ ok: true }, origin);
   } catch {
-    logEvent('error','send-welcome-email.diagnostic_3');
+    logEvent('error','send-welcome-email.diagnostic_3',requestId);
     return json({ ok: false, error: 'Unable to send the welcome email.' }, origin, 500);
   }
 }));

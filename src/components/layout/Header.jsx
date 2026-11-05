@@ -33,7 +33,7 @@ export default function Header({ onOpenReview }) {
     const onKeyDown = (event) => {
       if (event.key === 'Escape') setDrawerOpen(false);
       if (event.key !== 'Tab') return;
-      const focusable = panel?.querySelectorAll('a[href], button:not([disabled]), [tabindex="0"]');
+      const focusable = [...(panel?.querySelectorAll('a[href], button:not([disabled]), [tabindex="0"]')||[])].filter(item=>!item.matches?.(':disabled,[aria-disabled="true"]'));
       if (!focusable?.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];

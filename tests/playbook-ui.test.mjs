@@ -62,10 +62,10 @@ test('Playbook card and checkout show the actual NGN 9,639 price without a test-
 test('saved device grant: no download is rendered before fresh server verification',async()=>{
   let resolve,body,attempt=0;
   const ui=shop(saved(),async(name,args)=>{body=args.body;return ++attempt===1?new Promise(done=>{resolve=done;}):{data:{ok:true,url:'https://private.example/fresh',playbookAccessToken:'reader'}};});
-  assert.equal(ui.mount().filter(node=>node.type==='a').length,0);
+  assert.equal(ui.mount().filter(node=>node.type==='a'&&node.props.download).length,0);
   assert.equal(body.downloadToken,token);
   resolve({data:{ok:true,url:'https://private.example/fresh',playbookAccessToken:'reader'}});await flush();
-  const link=ui.render().find(node=>node.type==='a');assert.equal(link.props.href,'https://private.example/fresh');
+  const link=ui.render().find(node=>node.type==='a'&&node.props.download);assert.equal(link.props.href,'https://private.example/fresh');
   await link.props.onClick({preventDefault(){}});
   const stored=JSON.parse(ui.storage.get('tmh_playbook_purchase'));
   assert.equal(stored.downloadToken,token);assert.equal(stored.accessToken,'reader');assert.ok(stored.downloadedAt);
@@ -74,7 +74,7 @@ test('saved device grant: no download is rendered before fresh server verificati
 test('a legacy email/reference snapshot does not authorize a download or trigger an unsolicited OTP',async()=>{
   let calls=0;
   const ui=shop(JSON.stringify({reference:'UNSEEN_old',email:'buyer@example.com',accessToken:'legacy'}),async()=>{calls++;return {data:{ok:true,url:'https://must-not-open'}};});
-  ui.mount();await flush();assert.equal(calls,0);assert.equal(ui.render().filter(node=>node.type==='a').length,0);
+  ui.mount();await flush();assert.equal(calls,0);assert.equal(ui.render().filter(node=>node.type==='a'&&node.props.download).length,0);
 });
 test('purchase recovery requires email code before exposing a URL or reader token',async()=>{
   const calls=[];
@@ -90,7 +90,7 @@ test('purchase recovery requires email code before exposing a URL or reader toke
   const fields=tree.filter(node=>node.type==='input');
   fields[0].props.onChange({target:{value:'buyer@example.com'}});fields[1].props.onChange({target:{value:'UNSEEN_paid'}});
   await recoveryForm(ui.render()).props.onSubmit({preventDefault(){}});
-  tree=ui.render();assert.equal(tree.filter(node=>node.type==='a').length,0);
+  tree=ui.render();assert.equal(tree.filter(node=>node.type==='a'&&node.props.download).length,0);
   assert.equal(JSON.parse(ui.storage.get('tmh_playbook_purchase')||'null'),null);
   const otp=tree.find(node=>node.type==='input'&&node.props.autoComplete==='one-time-code');
   otp.props.onChange({target:{value:'123456'}});
@@ -99,23 +99,24 @@ test('purchase recovery requires email code before exposing a URL or reader toke
     {name:'request-playbook-recovery',body:{reference:'UNSEEN_paid',email:'buyer@example.com'}},
     {name:'verify-playbook-recovery',body:{challengeId:'challenge',code:'123456'}},
   ]);
-  assert.equal(ui.render().find(node=>node.type==='a').props.href,'https://private.example/recovered');
+  assert.equal(ui.render().find(node=>node.type==='a'&&node.props.download).props.href,'https://private.example/recovered');
   assert.equal(JSON.parse(ui.storage.get('tmh_playbook_purchase')).downloadToken,token);
 });
-test('downloads refresh expiring URLs and allow one action per visit with future access',async()=>{
+test('downloads refresh expiring URLs, serialize double taps and allow a failed save to be retried without reloading',async()=>{
   let calls=0;const invoke=async(name,{body})=>{assert.equal(body.downloadToken,token);return {data:{ok:true,url:'https://private.example/fresh-'+(++calls)}};};
   const ui=shop(saved(),invoke);ui.mount();await flush();
-  const first=ui.render().find(node=>node.type==='a');await Promise.all([first.props.onClick({preventDefault(){}}),first.props.onClick({preventDefault(){}})]);
-  assert.deepEqual(ui.downloads,['https://private.example/fresh-2']);assert.equal(ui.render().filter(node=>node.type==='a').length,0);
+  const first=ui.render().find(node=>node.type==='a'&&node.props.download);await Promise.all([first.props.onClick({preventDefault(){}}),first.props.onClick({preventDefault(){}})]);
+  assert.deepEqual(ui.downloads,['https://private.example/fresh-2']);assert.equal(ui.render().filter(node=>node.type==='a'&&node.props.download).length,1);
+  await ui.render().find(node=>node.type==='a'&&node.props.download).props.onClick({preventDefault(){}});assert.deepEqual(ui.downloads,['https://private.example/fresh-2','https://private.example/fresh-3']);
   const nextVisit=shop(ui.storage.get('tmh_playbook_purchase'),invoke);nextVisit.mount();await flush();
-  await nextVisit.render().find(node=>node.type==='a').props.onClick({preventDefault(){}});
-  assert.deepEqual(nextVisit.downloads,['https://private.example/fresh-4']);assert.equal(calls,4);
+  await nextVisit.render().find(node=>node.type==='a'&&node.props.download).props.onClick({preventDefault(){}});
+  assert.deepEqual(nextVisit.downloads,['https://private.example/fresh-5']);assert.equal(calls,5);
 });
 
 test('failed verification hides downloads and offers recovery without another charge',async()=>{
   const ui=shop(saved(),async()=>({data:{ok:false,code:'recovery_required'}}));
   ui.mount();await flush();
-  const tree=ui.render();assert.ok(!tree.some(node=>node.type==='a'&&node.props.href!=='/support?issue=purchase'));
+  const tree=ui.render();assert.ok(!tree.some(node=>node.type==='a'&&node.props.download&&node.props.href!=='/support?issue=purchase'));
   assert.ok(tree.some(node=>node.type==='a'&&node.props.href==='/support?issue=purchase'));
   assert.match(text(tree),/one-time code|do not need to pay again/);
   assert.ok(recoveryForm(tree));assert.ok(!tree.some(node=>node.type==='form'&&node.props.id==='paystack-form'));
@@ -144,7 +145,7 @@ test('fresh checkout verifies its private proof and exposes the download without
   await ui.render().find(node=>node.props.id==='paystack-form').props.onSubmit({preventDefault(){}});
   assert.equal(payment.amount,963900);assert.equal(payment.ref,'UNSEEN_new');
   payment.callback({reference:'UNSEEN_new'});await flush();
-  tree=ui.render();assert.equal(tree.find(node=>node.type==='a').props.href,'https://private.example/new');
+  tree=ui.render();assert.equal(tree.find(node=>node.type==='a'&&node.props.download).props.href,'https://private.example/new');
   assert.deepEqual(calls.map(call=>call.name),['verify-paystack','verify-paystack']);
   assert.equal(calls[1].body.downloadToken,token);assert.equal(JSON.parse(ui.storage.get('tmh_playbook_purchase')).downloadToken,token);
   assert.ok(!tree.some(node=>node.props.autoComplete==='one-time-code'));
@@ -178,8 +179,29 @@ test('a payment verification outage retains checkout proof and offers a retry wi
   let tree=ui.mount();input(tree,'email').props.onChange({target:{value:'buyer@example.com'}});
   await ui.render().find(node=>node.props.id==='paystack-form').props.onSubmit({preventDefault(){}});
   payment.callback({reference:'UNSEEN_new'});await flush();
-  tree=ui.render();assert.match(text(tree),/Confirming your payment/);assert.equal(tree.filter(node=>node.type==='a').length,0);
+  tree=ui.render();assert.match(text(tree),/Confirming your payment/);assert.equal(tree.filter(node=>node.type==='a'&&node.props.download).length,0);
   assert.ok(!recoveryForm(tree));assert.ok(!tree.some(node=>node.props.id==='paystack-form'));
   await tree.find(node=>node.type==='button'&&text(node)==='Retry opening my copy').props.onClick({preventDefault(){}});
   assert.deepEqual(ui.downloads,['https://private.example/retried']);
+});
+
+test('closing an interrupted checkout preserves proof and checks the same receipt without claiming there was no debit',async()=>{
+  let payment;const calls=[];
+  const ui=shop(null,async(name,{body})=>{calls.push(body);return{data:body.action==='prepare-checkout'?{ok:true,reference:'UNSEEN_interrupted',email:'buyer@example.com',downloadToken:token,amount:963900}:{ok:false,code:'payment_not_verified',error:'Payment is still pending. Check before paying again.',newCheckoutAllowed:false}};});
+  ui.window.PaystackPop={setup(options){payment=options;return{openIframe(){}};}};
+  input(ui.mount(),'email').props.onChange({target:{value:'buyer@example.com'}});
+  await ui.render().find(node=>node.props.id==='paystack-form').props.onSubmit({preventDefault(){}});
+  assert.equal(JSON.parse(ui.storage.get('tmh_playbook_purchase')).downloadToken,token,'proof is saved before a callback');
+  payment.onClose();await flush();const tree=ui.render();assert.equal(calls.length,2);assert.equal(calls[1].reference,'UNSEEN_interrupted');assert.equal(calls[1].downloadToken,token);
+  assert.doesNotMatch(text(tree),/Your payment has not gone through/);assert.ok(!tree.some(node=>node.props.id==='paystack-form'));assert.ok(!tree.some(node=>text(node)==='No debit on my statement. Return to checkout'));
+});
+test('two rapid checkout clicks prepare and open only one payment window',async()=>{
+  let prepared=0,opened=0,payment;const ui=shop(null,async()=>{prepared++;return{data:{ok:true,reference:'UNSEEN_once',email:'buyer@example.com',downloadToken:token,amount:963900}};});
+  ui.window.PaystackPop={setup(options){payment=options;return{openIframe(){opened++;}};}};input(ui.mount(),'email').props.onChange({target:{value:'buyer@example.com'}});
+  const submit=ui.render().find(node=>node.props.id==='paystack-form').props.onSubmit;await Promise.all([submit({preventDefault(){}}),submit({preventDefault(){}})]);assert.equal(prepared,1);assert.equal(opened,1);payment.onClose();await flush();
+});
+test('only a confirmed incomplete payment exposes a deliberate return to checkout and the payment terms are visible before purchase',async()=>{
+  const ui=shop(saved(),async()=>({data:{ok:false,code:'payment_not_verified',newCheckoutAllowed:true,error:'Paystack reports that this payment was not completed.'}}));
+  ui.mount();await flush();const restart=ui.render().find(node=>node.type==='button'&&text(node)==='No debit on my statement. Return to checkout');assert.ok(restart);restart.props.onClick();
+  const tree=ui.render();assert.ok(tree.some(node=>node.props.id==='paystack-form'));assert.match(text(tree),/not a subscription/);assert.ok(tree.some(node=>node.type==='a'&&node.props.href==='/terms#refund-policy'));assert.equal(ui.render().filter(node=>node.type==='a'&&node.props.download).length,0);
 });

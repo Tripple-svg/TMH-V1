@@ -41,13 +41,14 @@ function renderInlineMarkdown(text) {
 }
 
 function NavChipBar({ navChips, onNavChipSelect }) {
+  const reduceMotion=useReducedMotion();
   if (!navChips || navChips.length === 0) return null;
   return (
     <div
       className="mt-2 flex flex-wrap gap-2 overflow-x-auto pb-1"
     >
       {navChips.map((chip, idx) => (
-        <button
+        <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
           key={`nav-${chip.text}-${idx}`}
           type="button"
           onClick={() => onNavChipSelect?.(chip)}
@@ -55,13 +56,14 @@ function NavChipBar({ navChips, onNavChipSelect }) {
         >
           <ArrowRight className="w-3 h-3 text-zinc-400 shrink-0" />
           <span className="truncate">{chip.text}</span>
-        </button>
+        </motion.button>
       ))}
     </div>
   );
 }
 
 function ChipBar({ chips, onChipSelect }) {
+  const reduceMotion=useReducedMotion();
   if (!chips || chips.length === 0) return null;
   return (
     <div
@@ -71,7 +73,7 @@ function ChipBar({ chips, onChipSelect }) {
           if(chip==='__CONTACT_SUPPORT__')return <a key={`contact-${idx}`} href="/support" target="_blank" rel="noopener noreferrer" className="inline-flex rounded-lg border border-zinc-600 px-4 py-2 text-xs font-medium text-zinc-100">Contact Team Haven<span className="sr-only"> (opens a new tab)</span></a>;
         if (chip === '__BOOK_CALL__') {
           return (
-            <button
+            <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
               key={`bc-${idx}`}
               type="button"
               onClick={() => onChipSelect?.('__BOOK_CALL__')}
@@ -79,12 +81,12 @@ function ChipBar({ chips, onChipSelect }) {
             >
               <Calendar className="w-3.5 h-3.5" />
               <span>Book a Free Strategy Call</span>
-            </button>
+            </motion.button>
           );
         }
         if (chip === '__PLAYBOOK__') {
           return (
-            <button
+            <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
               key={`pb-${idx}`}
               type="button"
               onClick={() => onChipSelect?.('__PLAYBOOK__')}
@@ -92,12 +94,12 @@ function ChipBar({ chips, onChipSelect }) {
             >
               <BookOpen className="w-3.5 h-3.5" />
               <span>Get The Unseen Playbook</span>
-            </button>
+            </motion.button>
           );
         }
         if (chip === '__TIKTOK_CONTENT__') {
           return (
-            <button
+            <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
               key={`tt-${idx}`}
               type="button"
               onClick={() => onChipSelect?.('__TIKTOK_CONTENT__')}
@@ -105,18 +107,18 @@ function ChipBar({ chips, onChipSelect }) {
             >
               <Music2 className="w-3.5 h-3.5 text-zinc-300" />
               <span>Watch on TikTok</span>
-            </button>
+            </motion.button>
           );
         }
         return (
-          <button
+          <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
             key={`${chip}-${idx}`}
             type="button"
             onClick={() => onChipSelect?.(chip)}
             className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-zinc-300 transition-colors hover:border-white/20 hover:bg-white/[0.05] hover:text-white cursor-pointer max-w-[260px]"
           >
             <span className="block truncate">{chip}</span>
-          </button>
+          </motion.button>
         );
       })}
     </div>

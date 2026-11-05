@@ -1,4 +1,5 @@
 import { getHavenIdentity } from '../../../lib/havenIdentity';
+import {useDialogFocus} from '../../../lib/useDialogFocus';
 import { quickPrompts } from '../config/quick-prompts';
 // src/components/haven/components/HavenDrawer.jsx
 // Viewport sizing and slide animation are isolated for mobile keyboards.
@@ -116,6 +117,7 @@ function ThinkingIndicator() {
 }
 
 const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt, scope, serviceId }) {
+  const reduceMotion=useReducedMotion();
   const [err, setErr] = useState(false);
   const prompts = quickPrompts(scope,serviceId).map(([title,desc])=>({title,desc,icon:Target}));
   return (
@@ -137,14 +139,14 @@ const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt, 
         {prompts.map((p, i) => {
           const Icon = p.icon;
           return (
-            <motion.button key={i} whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
+            <motion.button key={i} whileHover={reduceMotion?undefined:{ scale: 1.02, y: -2 }} whileTap={reduceMotion?undefined:{ scale: 0.98 }}
               onClick={() => onSelectPrompt(p.desc)}
               className="group flex flex-col items-start p-4 text-left rounded-xl bg-zinc-900/80 border border-white/[0.08] hover:border-white/[0.18] hover:bg-zinc-800/70 transition-colors cursor-pointer">
               <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.08] mb-3">
                 <Icon className="w-4 h-4 text-zinc-300" />
               </div>
               <span className="text-sm font-medium text-zinc-200 line-clamp-1">{p.title}</span>
-              <span className="text-xs text-zinc-500 line-clamp-2 mt-1">{p.desc}</span>
+              <span className="text-xs text-zinc-400 line-clamp-2 mt-1">{p.desc}</span>
             </motion.button>
           );
         })}
@@ -154,9 +156,12 @@ const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt, 
 });
 
 function BookingModal({ isOpen, onClose }) {
+  const bookingDialog=useRef(null);
+  useDialogFocus(isOpen,bookingDialog,onClose);
   const { bookingContext, userProfile = {} } = useHaven();
   const [bookingEmail, setBookingEmail] = useState('');
   const [bookingError, setBookingError] = useState('');
+  const [bookingCode,setBookingCode]=useState('');
   const [capturing, setCapturing] = useState(false);
   const fromServices = bookingContext.source === 'services';
   const validEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -175,18 +180,20 @@ function BookingModal({ isOpen, onClose }) {
       if (bookingWindow) bookingWindow.opener = null;
       setCapturing(true);
       setBookingError('');
+      setBookingCode('');
       try {
         const { data, error } = await supabase.functions.invoke('capture-booking-lead', {
           body: { email, serviceId: bookingContext.serviceId || null, source: bookingContext.source==='team'?'team':fromServices ? 'service' : 'lead', ...getHavenIdentity(), ...(userProfile.reviewId ? { reviewId:userProfile.reviewId,sessionId:userProfile.sessionId,accessToken:userProfile.accessToken } : {}) },
         });
-        if (error || !data?.ok) { const detail=error?.context instanceof Response?await error.context.clone().json().catch(()=>null):data; throw new Error(detail?.error || 'We could not confirm booking access. Please retry.'); }
+        if (error || !data?.ok) { const detail=error?.context instanceof Response?await error.context.clone().json().catch(()=>null):data; throw Object.assign(new Error(detail?.error || 'We could not confirm booking access. Please retry.'),{code:detail?.code}); }
         if(!/^[a-f0-9-]{36}$/i.test(data.intentId||''))throw Error('Booking access could not be confirmed. Please retry.');
         const url = `${CALENDLY_URL}?email=${encodeURIComponent(email)}&utm_content=${encodeURIComponent(data.intentId)}`;
         if (bookingWindow) bookingWindow.location.href = url;
         else window.location.assign(url);
-      } catch {
+      } catch (failure) {
         bookingWindow?.close();
-        setBookingError('We could not save your booking details. Please try again.');
+        setBookingError(failure.message||'We could not save your booking details. Please try again.');
+        setBookingCode(failure.code||'');
         return;
       } finally {
         setCapturing(false);
@@ -205,6 +212,7 @@ function BookingModal({ isOpen, onClose }) {
           onClick={onClose}
           className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4">
           <motion.div initial={{ opacity: 0, scale: 0.92, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+            ref={bookingDialog} role="dialog" aria-modal="true" aria-labelledby="booking-dialog-title" tabIndex={-1}
             exit={{ opacity: 0, scale: 0.92, y: 8 }}
             onClick={e => e.stopPropagation()}
             className="relative w-full max-w-sm rounded-2xl bg-zinc-950 border border-white/[0.08] shadow-2xl shadow-black/50 p-6 text-center space-y-4 overflow-hidden">
@@ -214,7 +222,7 @@ function BookingModal({ isOpen, onClose }) {
                 <img src={LOGO_SRC} alt="TMH" className="w-full h-full object-cover" />
               </div>
             </div>
-            <h3 className="relative text-base font-semibold text-white">Book Your Free Strategy Call</h3>
+            <h3 id="booking-dialog-title" className="relative text-base font-semibold text-white">Book Your Free Strategy Call</h3>
             <p className="relative text-sm text-zinc-400 leading-relaxed">
               Choose an available time in Calendly. Your confirmation will include the meeting details.
             </p>
@@ -227,9 +235,9 @@ function BookingModal({ isOpen, onClose }) {
                   onBlur={() => { if (bookingEmail && !validEmail(bookingEmail.trim())) setBookingError('Please enter a valid email address.'); }}
                   aria-invalid={Boolean(bookingError)} aria-describedby={bookingError ? 'booking-email-error' : undefined}
                   className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white" />
-                {bookingError && <p id="booking-email-error" role="alert" className="text-xs text-red-400">{bookingError}</p>}
               </div>
             )}
+            {bookingError&&<div id="booking-email-error" role="alert" className="relative space-y-2 text-left text-sm text-red-300"><p>{bookingError}</p>{bookingCode==='already_booked'&&<div className="space-y-2 text-zinc-300"><p>Open your inbox and search for your Calendly confirmation. That email contains your meeting link and options to reschedule or cancel.</p><p><a href="https://mail.google.com/" target="_blank" rel="noopener noreferrer" className="underline">Open Gmail</a>{' · '}<a href="https://outlook.live.com/mail/" target="_blank" rel="noopener noreferrer" className="underline">Open Outlook</a></p><p className="text-xs">Using another email provider? Open its inbox and search for Calendly.</p></div>}<Link to="/support?issue=booking" onClick={onClose} className="inline-block underline underline-offset-4">{bookingCode==='already_booked'?'Need help finding your Calendly email?':'Contact support'}</Link></div>}
             <a href={fromServices ? `${CALENDLY_URL}?email=${encodeURIComponent(bookingEmail.trim())}` : CALENDLY_URL}
               target="_blank" rel="noopener noreferrer" onClick={handleChooseTime} aria-disabled={capturing}
               className="relative flex items-center justify-center gap-2 w-full px-5 py-3 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 text-sm font-semibold transition-colors">
@@ -320,30 +328,8 @@ export default function HavenDrawer() {
   const showChat = !showPreflight && viewState !== 'landing';
   const showConsentLine = !hasUserMessage && !showPreflight;
 
-  useEffect(() => {
-    if (!isOpen || modalType || showBookingModal || bookingNoticeOpen) return;
-    const panel = dialogRef.current;
-    const previousFocus = document.activeElement;
-    panel?.focus({ preventScroll: true });
-    const handleKey = (event) => {
-      if (event.key === 'Escape') { event.preventDefault(); closeDrawer(); return; }
-      if (event.key !== 'Tab' || !panel) return;
-      const items = [...panel.querySelectorAll('a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex="0"]')]
-        .filter((item) => item.getClientRects().length > 0);
-      const first = items[0], last = items.at(-1);
-      if (!first) { event.preventDefault(); panel.focus(); return; }
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
-        event.preventDefault(); last.focus();
-      } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
-        event.preventDefault(); first.focus();
-      }
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('keydown', handleKey);
-      if (panel?.contains(document.activeElement) && previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
-    };
-  }, [isOpen, modalType, showBookingModal, bookingNoticeOpen, closeDrawer]);
+  useDialogFocus(isOpen&&!modalType&&!showBookingModal&&!bookingNoticeOpen,dialogRef,closeDrawer);
+
 
   useEffect(() => {
     if (!isOpen) { openedSessionRef.current = null; return; }
@@ -588,7 +574,7 @@ export default function HavenDrawer() {
                         <span className="relative flex h-1.5 w-1.5">
                           <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-zinc-400 animate-pulse motion-reduce:animate-none" />
                         </span>
-                        <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">{scopeLabel}</span>
+                        <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-400 font-medium">{scopeLabel}</span>
                       </div>
                     </div>
                   </div>
@@ -648,6 +634,8 @@ export default function HavenDrawer() {
                   </motion.button>
                 </div>
               </div>
+
+              {currentSession?.platformState && <p className="shrink-0 border-b border-white/[0.06] px-4 py-2 text-[11px] leading-5 text-zinc-400" aria-label="Context used for the last reply">Last reply used: {[currentSession.platformState.reviewLinked?'saved review':null,currentSession.platformState.playbookAccess==='verified'?'verified Playbook access':null,currentSession.platformState.booking?.status==='confirmed'?'scheduled call':currentSession.platformState.booking?.status==='pending'?'booking in progress':null].filter(Boolean).join(' · ')||'this conversation'}. Checked again when you send a message.</p>}
 
               {needsReviewRecovery && (
                 <p role="status" className="relative px-5 py-3 border-b border-white/[0.08] text-xs leading-relaxed text-amber-100/80">

@@ -8,7 +8,7 @@ import { followupOptOutUrl, purchaseFollowupPayload } from '../_shared/purchase-
 
 // Called by a private scheduled job. A due timestamp is not a promise of exact
 // inbox delivery. Existing/opted-out buyers never enter the eligible queue.
-serve(observe('send-purchase-followup',async request => {
+serve(observe('send-purchase-followup',async (request,requestId) => {
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
   if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   const projectUrl = Deno.env.get('SUPABASE_URL'), serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -40,7 +40,7 @@ serve(observe('send-purchase-followup',async request => {
         // Preserve a provider acceptance ID even when the final marker RPC failed.
         if (emailId) await db.from('playbook_purchase_followups').update({ provider_email_id: emailId, last_error: code }).eq('id', job.id).eq('claim_id', job.claim_id);
         else await db.rpc('complete_playbook_followup', { p_id: job.id, p_claim_id: job.claim_id, p_email_id: null, p_error: code });
-        logEvent('error','send-purchase-followup.diagnostic_1');
+        logEvent('error','send-purchase-followup.diagnostic_1',requestId);
         pending++;
       }
     }

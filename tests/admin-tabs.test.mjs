@@ -70,15 +70,15 @@ function harness({ dashboard = false, send = async () => ({ status: 200, ...sess
   };
 }
 
-test('admin tabs: ten sections switch panels, with counts only for loaded data', () => {
+test('admin tabs: eleven sections switch panels, with counts only for loaded data', () => {
   const ui = harness({ dashboard: true });
   let tree = ui.render('AdminDashboard');
   const tabs = tree.filter((node) => node.props.role === 'tab');
-  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Leads', 'Playbook Purchases', 'Bookings', 'Team Inquiries', 'Support Chats', 'Support Requests', 'Service Chats','Security & AI','Insights','Activity']);
-  assert.ok(tabs.filter(node=>!['tab-requests','tab-security','tab-insights','tab-activity'].includes(node.props.id)).every((node) => node.props.children[1].props.children[0] === (['tab-bookings','tab-team'].includes(node.props.id) ? 0 : 1)));
+  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Start here', 'Leads', 'Playbook Purchases', 'Bookings', 'Team Inquiries', 'Support Chats', 'Support Requests', 'Service Chats','Security & AI','Insights','Activity']);
+  assert.ok(tabs.filter(node=>!['tab-guide','tab-requests','tab-security','tab-insights','tab-activity'].includes(node.props.id)).every((node) => node.props.children[1].props.children[0] === (['tab-bookings','tab-team'].includes(node.props.id) ? 0 : 1)));
   assert.equal(tabs.find(node=>node.props.id==='tab-requests').props.children[1],false);
   assert.ok(tree.some((node) => node.type === 'table'));
-  tabs[4].props.onClick();
+  tree.find(node=>node.props.id==='tab-support').props.onClick();
   tree = ui.render('AdminDashboard');
   assert.ok(!tree.some((node) => node.type === 'table'));
   const support = tree.find((node) => node.type?.name === 'SessionsPanel');

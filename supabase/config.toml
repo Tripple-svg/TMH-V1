@@ -131,3 +131,6 @@ verify_jwt = false
 
 [functions.sync-haven-session]
 verify_jwt = false
+
+[functions.validate-hcaptcha]
+verify_jwt = false

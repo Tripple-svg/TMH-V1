@@ -1,3 +1,4 @@
+import {logEvent} from './logger.ts';
 // Only allowlisted diagnostics leave the server. Never log credentials or raw responses.
 export class MailDeliveryError extends Error {
   constructor(code, message, status = 502) { super(message); this.code = code; this.status = status; }
@@ -64,6 +65,9 @@ export function providerFailure(status, body) {
 }
 
 export async function deliverEmail(configuration, payload, idempotencyKey) {
+  // New templates opt into the footer. Frozen older payloads remain byte-stable
+  // under their existing provider idempotency keys.
+  if(payload.html?.includes('data-tmh-footer="launch-v4"')&&payload.text&&!payload.text.includes('The Marketing Haven\nLagos, Nigeria'))payload={...payload,text:payload.text+'\n\nThe Marketing Haven\nLagos, Nigeria'};
   let response;
   try {
     response = await fetch('https://api.resend.com/emails', {
@@ -106,7 +110,7 @@ export async function deliverFlagNotification(supabase, event, channel, payload,
     const failure = error instanceof MailDeliveryError ? error : new MailDeliveryError('flag_delivery_failed', 'Unable to process the saved flag notification.');
     await supabase.from('flag_alert_notifications').update({ [errorColumn]: failure.code, ...(acceptedId ? { [idColumn]: acceptedId } : {}) })
       .eq('id', event.id).is(sentColumn, null);
-    console.error(`flag-${channel}: ${failure.code}`);
+    logEvent('error','flag_'+channel+'.delivery_failed');
     throw failure;
   }
 }

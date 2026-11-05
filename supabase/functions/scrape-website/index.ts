@@ -60,26 +60,26 @@ async function scoreWithGroq(db:any,budget:AIBudgetReservation,summary: string):
   return data.choices?.[0]?.message?.content || '';
 }
 
-async function scoreWebsite(db:any,budget:AIBudgetReservation,summary: string) {
+async function scoreWebsite(db:any,budget:AIBudgetReservation,summary: string,requestId="background") {
   for (let attempt = 0; geminiProcessingEnabled() && attempt < 1; attempt++) {
     try {
       const { raw, status } = await scoreWithGemini(db,budget,summary);
       if (status === 200) {
         const parsed = parseScoreJson(raw, summary);
         if (parsed) {
-          logEvent('info','scrape-website.diagnostic_1');
+          logEvent('info','scrape-website.diagnostic_1',requestId);
           return parsed;
         }
-        logEvent('warn','scrape-website.diagnostic_2');
+        logEvent('warn','scrape-website.diagnostic_2',requestId);
       } else if (status === 503 || status === 502 || status === 504) {
-        logEvent('warn','scrape-website.diagnostic_3');
+        logEvent('warn','scrape-website.diagnostic_3',requestId);
       } else {
-        logEvent('warn','scrape-website.diagnostic_4');
+        logEvent('warn','scrape-website.diagnostic_4',requestId);
         break;
       }
     } catch (err) {
       await recordAIUsage(db,'gemini',usageGeminiModel(),{},safeProviderDiagnostic(err,'gemini').code);
-      logEvent('warn','scrape-website.diagnostic_5');
+      logEvent('warn','scrape-website.diagnostic_5',requestId);
     }
 
   }
@@ -88,19 +88,19 @@ async function scoreWebsite(db:any,budget:AIBudgetReservation,summary: string) {
     const raw = await scoreWithGroq(db,budget,summary);
     const parsed = parseScoreJson(raw, summary);
     if (parsed) {
-      logEvent('info','scrape-website.diagnostic_6');
+      logEvent('info','scrape-website.diagnostic_6',requestId);
       return parsed;
     }
-    logEvent('warn','scrape-website.diagnostic_7');
+    logEvent('warn','scrape-website.diagnostic_7',requestId);
   } catch (err) {
     await recordAIUsage(db,'groq',Deno.env.get('GROQ_MODEL')?.trim()||'openai/gpt-oss-120b',{},safeProviderDiagnostic(err,'groq').code);
-    logEvent('warn','scrape-website.diagnostic_8');
+    logEvent('warn','scrape-website.diagnostic_8',requestId);
   }
 
   return null;
 }
 
-Deno.serve(observe('scrape-website',async (request) => {
+Deno.serve(observe('scrape-website',async (request,requestId) => {
   const headers = responseHeaders(request);
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
   if (request.method === 'OPTIONS') return new Response('ok', { headers });
@@ -165,7 +165,7 @@ Deno.serve(observe('scrape-website',async (request) => {
         ...(geminiProcessingEnabled() ? [aiBudgetPlan('gemini',{prompt:SCORING_PROMPT,summary},4096,2)] : []),
         ...(Deno.env.get('GROQ_API_KEY')?.trim() ? [aiBudgetPlan('groq',{prompt:SCORING_PROMPT,summary},1600,1)] : []),
       ]);
-      try { return await scoreWebsite(db,budget,summary); }
+      try { return await scoreWebsite(db,budget,summary,requestId); }
       finally { await budget.settle(); }
     };
     const scoring = hasMeaningfulBusinessText(summary) ? await score(supabase, review.id)
@@ -184,7 +184,7 @@ Deno.serve(observe('scrape-website',async (request) => {
       catch { return json({ ok: false, state: 'failed', error: 'Could not save the reader status. Please try again.' }, 500); }
     }
     const known = error instanceof HavenRequestError || error instanceof ReviewAccessError;
-    logEvent('error','scrape-website.diagnostic_9');
+    logEvent('error','scrape-website.diagnostic_9',requestId);
     return json({ ok: false, state: 'failed', reason: error instanceof Error && error.name === 'AbortError' ? 'reader_timeout' : failureReason, error: known ? error.message : SCORING_COPY.failed }, known ? error.status : 502);
   }
 }));

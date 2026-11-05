@@ -6,7 +6,7 @@ import { verifyReviewAccess, ReviewAccessError } from '../_shared/review-access.
 import { readBoundedJson, HavenRequestError } from '../_shared/haven-request.ts';
 
 const ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz'];
-serve(observe('sync-haven-session',async (req) => {
+serve(observe('sync-haven-session',async (req,requestId) => {
   const origin = req.headers.get('origin');
   const allowed = origin && (ORIGINS.includes(origin) || /^http:\/\/localhost:\d+$/.test(origin));
   const headers = { 'Access-Control-Allow-Origin': allowed ? origin! : ORIGINS[0],
@@ -41,7 +41,7 @@ serve(observe('sync-haven-session',async (req) => {
     return json({ ok: true });
   } catch (error) {
     if (error instanceof ReviewAccessError || error instanceof HavenRequestError) return json({ ok: false, error: error.message }, error.status);
-    logEvent('error','sync-haven-session.diagnostic_1');
+    logEvent('error','sync-haven-session.diagnostic_1',requestId);
     return json({ ok: false, error: 'Unable to save your session. Please retry.' }, 500);
   }
 }));

@@ -1,5 +1,7 @@
 # TMH completion and security report · 1 November 2026
 
+> Historical report. See [the final launch-lock report](FINAL_LAUNCH_LOCK_REPORT.md) for the current branch, function inventory, migration-drift caution and latest live findings.
+
 The implementation is prepared on **`codex/support-recovery-and-production-audit`**, compared with **`641843bb466c5bdbb677afbe66cc9708b171bc36`**. Changes are local and uncommitted. This pass did not push, deploy, change provider accounts, enroll an authenticator, send real email, make a payment or create an appointment.
 
 The work addresses the requested security, support, admin, privacy and usability gaps. The release must be deployed and pass the live acceptance checks below before it is described as production-ready. Local tests cannot establish the current state of provider dashboards or certify that a system is unhackable.

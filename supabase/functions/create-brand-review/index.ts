@@ -19,7 +19,7 @@ function headers(origin: string | null) {
 const text = (value: unknown, max = 500) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const boundedInt = (value: unknown, min: number, max: number) => Math.min(max, Math.max(min, Math.trunc(Number(value) || min)));
 
-serve(observe('create-brand-review',async (req) => {
+serve(observe('create-brand-review',async (req,requestId) => {
   const origin = req.headers.get('origin');
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers(origin),...(status===429?{'Retry-After':'600'}:{})} });
   if (req.method === 'OPTIONS') return new Response('ok', { headers: headers(origin) });
@@ -98,7 +98,7 @@ serve(observe('create-brand-review',async (req) => {
       catch (error) {
         if (error instanceof ReviewAccessError && error.status === 403) {
           const { error: cleanupError } = await supabase.storage.from('tmh-screenshots').remove([screenshotPath]);
-          if (cleanupError) logEvent('error','create-brand-review.diagnostic_1');
+          if (cleanupError) logEvent('error','create-brand-review.diagnostic_1',requestId);
         }
         throw error;
       }
@@ -106,7 +106,7 @@ serve(observe('create-brand-review',async (req) => {
     return json({ ok: true, reviewId: id, sessionId });
   } catch (error) {
     if (error instanceof ReviewAccessError || error instanceof HavenRequestError || error instanceof ScreenshotValidationError) return json({ ok: false, error: error.message }, error.status);
-    logEvent('error','create-brand-review.diagnostic_2');
+    logEvent('error','create-brand-review.diagnostic_2',requestId);
     return json({ ok: false, error: 'Unable to save your review. Please try again.' }, 500);
   }
 }));

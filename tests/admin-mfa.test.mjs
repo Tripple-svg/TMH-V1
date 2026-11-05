@@ -171,7 +171,7 @@ test('banned and deleted accounts cannot resume Admin or change their password',
 
 function authenticatorUi(file,auth,props={}){
   const states=[],effects=[];let cursor=0;
-  const react={useState(initial){const index=cursor++;if(!(index in states))states[index]=initial;return[states[index],value=>{states[index]=typeof value==='function'?value(states[index]):value;}];},useEffect(effect){if(!effects.length)effects.push(effect);}};
+  const react={useState(initial){const index=cursor++;if(!(index in states))states[index]=initial;return[states[index],value=>{states[index]=typeof value==='function'?value(states[index]):value;}];},useRef:value=>({current:value}),useEffect(effect){if(!effects.length)effects.push(effect);}};
   const storage=new Proxy({},{get(){throw Error('Authenticator secrets must stay in memory');}});
   const context={module:{exports:{}},require:name=>name==='react'?react:name.includes('adminMfa')?mfa:{adminSupabase:{auth}},localStorage:storage,sessionStorage:storage,React:{createElement:(type,props,...children)=>({type,props:{...props,children}})}};
   vm.runInNewContext(transformSync(readFileSync(file,'utf8'),{loader:'jsx',format:'cjs'}).code,context);

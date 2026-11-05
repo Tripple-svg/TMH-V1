@@ -24,7 +24,7 @@ export async function verifyFollowupOptOut(url: URL, secret: string) {
   return await crypto.subtle.verify('HMAC', await keyFor(secret), bytes, text.encode(id + ':' + expires)) ? id : null;
 }
 
-export function purchaseFollowupPayload(job: { email: string; first_name?: string | null }, unsubscribe: string) {
+export function purchaseFollowupPayload(job: { email: string; first_name?: string | null; template_version?: string }, unsubscribe: string) {
   const name = typeof job.first_name === 'string' ? job.first_name.replace(/[\u0000-\u001f\u007f]/g, '').trim().split(/\s+/)[0].slice(0, 60) : '';
   const paragraphs = [name ? 'Hey ' + name + ',' : 'Hey there,',
     'Did you get a chance to open Chapter 5, The Shift From Knowing to Doing?',
@@ -35,7 +35,7 @@ export function purchaseFollowupPayload(job: { email: string; first_name?: strin
   return {
     to: [job.email], reply_to: 'info@themarketinghaven.xyz', subject: 'Did you get a chance to read The Playbook?',
     text: paragraphs.join('\n\n') + '\n\nExplore TMH Services: https://themarketinghaven.xyz/#services\n\nYour friends over at Team Haven\nBuilding with intention.\n\n' + notice + '\nCancel this check-in: ' + unsubscribe,
-    html: editorialEmail({ version: 'editorial-v3', label: 'YOUR NEXT STEP', title: 'One idea. One useful action.', paragraphs,
+    html: editorialEmail({ version: job.template_version || 'editorial-v3', label: 'YOUR NEXT STEP', title: 'One idea. One useful action.', paragraphs,
       button: { label: 'Explore TMH Services', href: 'https://themarketinghaven.xyz/#services' } })
       .replace('</body>', '<p style="max-width:560px;margin:16px auto;padding:0 16px;font:11px/1.6 Arial,sans-serif;color:#71717a;">' + escapeHtml(notice) + ' <a style="color:#52525b;" href="' + escapeHtml(unsubscribe) + '">Cancel this check-in</a>.</p></body>'),
     headers: { 'List-Unsubscribe': '<' + unsubscribe + '>', 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },

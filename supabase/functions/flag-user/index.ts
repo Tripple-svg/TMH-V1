@@ -10,7 +10,7 @@ import { isInternalRequest } from '../_shared/internal-auth.js';
 
 const STATUSES = ['white', 'yellow', 'red'];
 
-serve(observe('flag-user',async (req) => {
+serve(observe('flag-user',async (req,requestId) => {
   const origin = req.headers.get('origin');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json', 'Cache-Control': 'no-store', Vary: 'Origin',
@@ -80,7 +80,7 @@ serve(observe('flag-user',async (req) => {
   } catch (error) {
     if(error instanceof AdminAuthError)return json({ok:false,error:error.message},error.status);
     if (error instanceof ModerationError) return json({ ok: false, error: error.message }, error.status);
-    logEvent('error','flag-user.diagnostic_1');
+    logEvent('error','flag-user.diagnostic_1',requestId);
     return json({ ok: false, error: 'Unable to update flag' }, 500);
   }
 }));

@@ -27,7 +27,8 @@ export default function TermsPage() {
   const [activeSection, setActiveSection] = useState(sectionNav[0].id);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'auto' });
+    const target=sectionNav.some(section=>'#'+section.id===window.location?.hash)?document.getElementById(window.location.hash.slice(1)):null;
+    if(target)target.scrollIntoView({behavior:'instant',block:'start'});else window.scrollTo({ top: 0, behavior: 'auto' });
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -65,7 +66,7 @@ export default function TermsPage() {
           <article className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100/70 backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.03]">
             <div className="border-b border-zinc-200 px-6 py-10 sm:px-10 sm:py-14 dark:border-white/[0.08]">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-                Effective Date: 26 October 2026 · Updated: 3 November 2026 · Chat notice version 2026-10-26
+                Effective Date: 26 October 2026 · Updated: 5 November 2026 · Chat notice version 2026-10-26
               </p>
               <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl dark:text-white">
                 Terms of Service
@@ -126,6 +127,7 @@ export default function TermsPage() {
                   <p>
                     Haven&apos;s advice does not automatically place an order or book a call for you. Scores and diagnoses are directional and may vary; they are not promises of revenue or business success. Automated misuse detection can raise a warning for team review, as described below. You can challenge a score or flag and ask for a person to review it by emailing info@themarketinghaven.xyz.
                   </p>
+                  <p>Haven may use your securely linked review, current service conversation, verified Playbook access and saved booking status to keep advice relevant. It cannot see every activity or identify a purchase on another device without the appropriate access check. Opening a recommendation or payment window is not a completed purchase or booking.</p>
                 </div>
               </section>
 
@@ -153,6 +155,7 @@ export default function TermsPage() {
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">7. Payments and Pricing</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   <p>Payments for The Unseen Playbook are processed by Paystack. We do not receive or store your card details. By making a payment, you agree to Paystack&apos;s own terms of service. The price shown at checkout is the price charged.</p>
+                  <p>The Playbook is a one-time PDF purchase, not a subscription. We verify successful payment on the server before providing download access. Closing a payment window, a pending status or a missing callback does not prove that no debit occurred. Keep your reference and check the existing payment or contact Support before paying again. You can recover access on another device by confirming your checkout inbox. A download request records an attempt to open a file; it does not prove the file was saved or read.</p>
                   <p><span className="font-semibold text-zinc-900 dark:text-white">No discounts and no haggling.</span> The listed price is the price. We do not offer discounts, coupon codes, or price reductions through chat, direct message, or negotiation on any platform. Any exception to this, if one is ever offered, will be published clearly on this website in advance and will apply equally to all buyers. Anyone claiming to offer a discount on our behalf is not authorized to do so.</p>
                 </div>
               </section>
@@ -162,6 +165,7 @@ export default function TermsPage() {
                 <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   Strategy calls are free and follow the duration and availability shown in Calendly. We may need to reschedule or cancel a call with reasonable notice. Repeatedly missing calls without notice may lead to a review of booking access. When you provide a booking email, we record it to prepare for the call and match booking records to a prior review where appropriate. Providing an email for booking does not grant access to someone else&apos;s chat history.
                 </p>
+                <p className="mt-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">Keep one active strategy call at a time. Website booking protection uses the booking email, secure browser link or verified review and normally lasts until the scheduled end, or until a cancellation syncs. Opening the booking page reserves an attempt for up to 30 minutes. Calendly sends the confirmation, joining and management links; its timezone display is authoritative for your selected local time. A scheduled end does not establish attendance, and sync delays or a different device/email can limit automatic recognition. Contact Support if a cancelled call remains blocked or a confirmed call is missing. You can continue discussing services with Haven while waiting.</p>
               </section>
 
               <section id="paid-agency-services" className="scroll-mt-10">

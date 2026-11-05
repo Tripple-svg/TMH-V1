@@ -1,10 +1,22 @@
 @import "tailwindcss";
 
+.admin-workspace .text-zinc-500 { color: #a1a1aa; }
+
 @media (max-width: 639px) {
   .admin-workspace button { min-height: 44px; }
   .admin-workspace input:not([type="checkbox"]):not([type="radio"]),
   .admin-workspace select,
   .admin-workspace textarea { font-size: 16px; }
+}
+
+:root { --tmh-focus-ring: #52525b; }
+.dark { --tmh-focus-ring: #e4e4e7; }
+:where(a,button,input,select,textarea,summary,[tabindex],[role="button"],[role="tab"]):focus-visible {
+  outline: 2px solid var(--tmh-focus-ring);
+  outline-offset: 3px;
+}
+@media (forced-colors: active) {
+  :focus-visible { outline: 2px solid CanvasText; }
 }
 
 @variant dark (&:where(.dark, .dark *));

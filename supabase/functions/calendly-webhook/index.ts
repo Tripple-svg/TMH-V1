@@ -1,3 +1,4 @@
+import {currentEditorial} from '../_shared/email-template.js';
 import {logEvent} from '../_shared/logger.ts';
 import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
@@ -24,7 +25,7 @@ async function validSignature(raw: string, header: string, secret: string) {
   return false;
 }
 
-serve(observe('calendly-webhook',async (req) => {
+serve(observe('calendly-webhook',async (req,requestId) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   const secret = Deno.env.get('CALENDLY_WEBHOOK_SECRET');
   const url = Deno.env.get('SUPABASE_URL');
@@ -77,11 +78,11 @@ serve(observe('calendly-webhook',async (req) => {
     const savedBooking = await saveCalendlyBooking(supabase, { ...scheduled, uri: scheduled?.uri || (typeof payload.event === 'string' ? payload.event : null), status: canceled ? 'canceled' : 'active' }, { ...payload, status: canceled ? 'canceled' : 'active' }, review, intent);
     if (canceled) return json({ ok: true, canceled: true });
     if (!review && !intent) {
-      logEvent('info','calendly-webhook.diagnostic_1');
+      logEvent('info','calendly-webhook.diagnostic_1',requestId);
       return json({ ok: true, matched: false });
     }
     // Reviews without a services intent still receive one generic confirmation.
-    const sent = savedBooking?.booking_email_version === 'editorial-v3' ? savedBooking.confirmation_email_sent === true : intent ? intent.confirmation_sent === true : review?.booking_confirmation_sent === true;
+    const sent = currentEditorial(savedBooking?.booking_email_version) ? savedBooking.confirmation_email_sent === true : intent ? intent.confirmation_sent === true : review?.booking_confirmation_sent === true;
     if (!sent) {
       const { data, error } = await supabase.functions.invoke('send-tmh-booking-confirmation', {
         headers: internalHeaders(serviceKey),
@@ -95,7 +96,7 @@ serve(observe('calendly-webhook',async (req) => {
     }
     return json({ ok: true, matched: true });
   } catch {
-    logEvent('error','calendly-webhook.diagnostic_2');
+    logEvent('error','calendly-webhook.diagnostic_2',requestId);
     return json({ ok: false, error: 'Unable to process booking' }, 500);
   }
 }));

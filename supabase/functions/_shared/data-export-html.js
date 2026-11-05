@@ -1,0 +1,20 @@
+import {escapeHtml} from './email-template.js';
+const text=value=>escapeHtml(value==null||value===''?'Not recorded':value);
+function date(value){
+  if(value==null||value==='')return 'Not recorded';
+  const parsed=new Date(value);
+  return Number.isFinite(parsed.getTime())?parsed.toLocaleString('en-GB',{timeZone:'Africa/Lagos',dateStyle:'medium',timeStyle:'short'})+' (Lagos)': 'Not recorded';
+}
+export function dataExportHtml(snapshot){
+  const reviews=Array.isArray(snapshot?.reviews)?snapshot.reviews:[];
+  const conversations=Array.isArray(snapshot?.conversations)?snapshot.conversations:[];
+  const fields=[['name','Name'],['brand','Brand'],['email','Email'],['phone','Phone'],['website','Website'],['social','Social profile'],['score','Review score'],['assessment','Assessment']];
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>My TMH data</title><style>
+body{margin:0;background:#f4f4f5;color:#18181b;font:16px/1.65 system-ui,sans-serif}main{max-width:860px;margin:auto;padding:32px 20px}h1,h2,h3{line-height:1.3}section,article{margin:24px 0;padding:24px;border:1px solid #d4d4d8;border-radius:12px;background:white}article article{background:#fafafa}dt{font-weight:650;margin-top:16px}dd{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}.message{padding:16px;border-left:3px solid #71717a;margin:16px 0;background:#f4f4f5}.content{white-space:pre-wrap;overflow-wrap:anywhere}.meta{color:#52525b;font-size:14px}a{color:#27272a;text-decoration:underline}a:focus-visible{outline:2px solid #27272a;outline-offset:3px}@media print{body{background:white}main{max-width:none;padding:0}article{break-inside:avoid}a{color:inherit}}
+</style></head><body><main><header><p>The Marketing Haven</p><h1>Your saved reviews and conversations</h1><p class="meta">Archive requested: ${text(date(snapshot?.exportedAt))}</p><p>Keep this archive private. It covers matching saved reviews and linked conversations. Purchases, bookings, support requests and unlinked guest chats may require a separate ownership check with our team.</p><nav aria-label="Archive sections"><a href="#reviews">My reviews (${reviews.length})</a> · <a href="#conversations">My conversations (${conversations.length})</a></nav></header>
+<section id="reviews"><h2>My reviews</h2>${reviews.length?reviews.map((review,index)=>`<article><h3>Review ${index+1}: ${text(review.brand)}</h3><p class="meta">Saved: ${text(date(review.createdAt))}</p><dl>${fields.map(([key,label])=>`<dt>${label}</dt><dd>${text(review[key])}</dd>`).join('')}</dl>${review.scoreBreakdown&&typeof review.scoreBreakdown==='object'?`<h4>Score breakdown</h4><dl>${Object.entries(review.scoreBreakdown).map(([key,value])=>`<dt>${text(key.replaceAll('_',' '))}</dt><dd>${text(typeof value==='object'?JSON.stringify(value):value)}</dd>`).join('')}</dl>`:''}</article>`).join(''):'<p>No matching saved reviews were found.</p>'}</section>
+<section id="conversations"><h2>My conversations</h2>${conversations.length?conversations.map((chat,index)=>`<article><h3>Conversation ${index+1}</h3><p class="meta">${text(chat.scope)} · Started ${text(date(chat.createdAt))}</p>${(Array.isArray(chat.messages)?chat.messages:[]).map(message=>`<div class="message"><p><strong>${message.role==='user'?'You':message.role==='assistant'||message.role==='agent'?'Haven':'Message'}</strong> <span class="meta">${text(date(message.timestamp))}</span></p><div class="content">${text(message.content)}</div></div>`).join('')||'<p>No saved messages.</p>'}</article>`).join(''):'<p>No linked conversations were found.</p>'}</section>
+<footer><p>The raw machine-readable copy is in reviews-and-chats.json.</p><p>Questions or corrections? Email info@themarketinghaven.xyz and ask for a secure ownership check. Never send passwords or access keys.</p><p>The Marketing Haven<br>Lagos, Nigeria</p></footer></main></body></html>`;
+}

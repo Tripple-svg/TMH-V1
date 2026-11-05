@@ -3,7 +3,7 @@ import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { isInternalRequest } from '../_shared/internal-auth.js';
-import { bookingEmail } from '../_shared/email-template.js';
+import { bookingEmail, currentEditorial } from '../_shared/email-template.js';
 import { deliverEmail, mailConfiguration, MailDeliveryError } from '../_shared/resend-delivery.js';
 
 const SERVICES: Record<string, string> = {
@@ -13,7 +13,7 @@ const SERVICES: Record<string, string> = {
 };
 const ALLOWED_ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz', 'http://localhost:5173', 'http://localhost:5175'];
 
-serve(observe('send-tmh-booking-confirmation',async (req) => {
+serve(observe('send-tmh-booking-confirmation',async (req,requestId) => {
   const origin = req.headers.get('origin');
   const headers: Record<string, string> = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -72,8 +72,8 @@ serve(observe('send-tmh-booking-confirmation',async (req) => {
         .eq('invitee_uri',body.inviteeUri).ilike('email',pattern).maybeSingle();
       if(error)throw error;
       if(!booking || !['active','confirmed'].includes(booking.status))return json({ok:false,error:'Active booking not found'},404);
-      if(booking.booking_email_version==='editorial-v3'){
-        table='strategy_call_bookings';record={id:String(booking.id),booking_confirmation_sent:booking.confirmation_email_sent,booking_email_version:'editorial-v3'};
+      if(currentEditorial(booking.booking_email_version)){
+        table='strategy_call_bookings';record={id:String(booking.id),booking_confirmation_sent:booking.confirmation_email_sent,booking_email_version:booking.booking_email_version};
         flag='confirmation_email_sent';name=booking.full_name||name;bookedService=booking.service_id||null;
       }
     }
@@ -82,8 +82,8 @@ serve(observe('send-tmh-booking-confirmation',async (req) => {
     // Use the stored intent as the source of truth for the email's service copy.
     const friendly = bookedService ? SERVICES[bookedService] : intent?.service_id ? SERVICES[intent.service_id] : null;
     const configuration = mailConfiguration(Deno.env);
-    const version = record.booking_email_version === 'editorial-v3' ? 'editorial-v3' : 'legacy-v1';
-    const id = `tmh-booking-confirmation/${table}/${record.id}${version === 'editorial-v3' ? '/editorial-v3' : ''}`;
+    const version = currentEditorial(record.booking_email_version) ? record.booking_email_version : 'legacy-v1';
+    const id = `tmh-booking-confirmation/${table}/${record.id}${currentEditorial(version) ? '/'+version : ''}`;
     const proposed = { from:configuration.from,to:[email],reply_to:'info@themarketinghaven.xyz',...bookingEmail({name,service:friendly,version}) };
     const {data:notification,error:prepareError}=await supabase.rpc('prepare_booking_confirmation',{p_id:id,p_payload:proposed});
     if(prepareError || !notification?.payload) throw new MailDeliveryError('booking_email_tracking_unavailable','Apply the booking email migration before retrying.',503);
@@ -101,7 +101,7 @@ serve(observe('send-tmh-booking-confirmation',async (req) => {
     return json({ ok: true });
   } catch (error) {
     const code = error instanceof MailDeliveryError ? error.code : 'booking_confirmation_failed';
-    logEvent('error','send-tmh-booking-confirmation.diagnostic_1');
+    logEvent('error','send-tmh-booking-confirmation.diagnostic_1',requestId);
     return json({ ok: false, code, error: error instanceof MailDeliveryError ? error.message : 'Unable to send confirmation' }, error instanceof MailDeliveryError ? error.status : 500);
   }
 }));

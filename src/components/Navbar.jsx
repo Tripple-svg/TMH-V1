@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect,useRef } from 'react';
+import {useDialogFocus} from '../lib/useDialogFocus';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, Moon, Sun, ArrowRight } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
@@ -13,11 +14,13 @@ const navLinks = [
 ];
 
 export default function Navbar({ onOpenReview }) {
+  const menuRef=useRef(null);
   // Correctly destruct properties matching ThemeContext.jsx
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
 
   const [mobileOpen, setMobileOpen] = useState(false);
+  useDialogFocus(mobileOpen,menuRef,()=>setMobileOpen(false));
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -117,7 +120,7 @@ export default function Navbar({ onOpenReview }) {
               </button>
 
               {/* Tablet & Mobile Menu Button */}
-              <button
+              <button aria-label="Open navigation menu"
                 onClick={() => setMobileOpen(true)}
                 className={`xl:hidden w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center transition-colors border ${
                   isDark
@@ -146,6 +149,7 @@ export default function Navbar({ onOpenReview }) {
             />
 
             <motion.div
+              ref={menuRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Navigation menu"
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -161,7 +165,7 @@ export default function Navbar({ onOpenReview }) {
                   <span className="font-bold text-xs tracking-widest uppercase opacity-70">
                     Menu
                   </span>
-                  <button
+                  <button aria-label="Close navigation menu"
                     onClick={() => setMobileOpen(false)}
                     className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors border ${
                       isDark

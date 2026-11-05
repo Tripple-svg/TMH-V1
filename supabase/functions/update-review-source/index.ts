@@ -6,7 +6,7 @@ import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson, scre
 import { normalizeWebsiteUrl } from '../_shared/haven-scoring.ts';
 import { limitRecovery, requestBucket } from '../_shared/playbook-recovery.ts';
 
-Deno.serve(observe('update-review-source',async request => {
+Deno.serve(observe('update-review-source',async (request,requestId) => {
   const headers = responseHeaders(request);
   const json = (body: unknown, status=200) => Response.json(body,{status,headers});
   if(request.method==='OPTIONS') return new Response(null,{status:204,headers});
@@ -49,8 +49,8 @@ Deno.serve(observe('update-review-source',async request => {
       &&!data.oldScreenshotPath.split('/').includes('..')&&data.oldScreenshotPath!==uploaded) {
       try {
         const {error:cleanupError}=await db.storage.from('tmh-screenshots').remove([data.oldScreenshotPath]);
-        if(cleanupError) logEvent('warn','update-review-source.diagnostic_1');
-      } catch { logEvent('warn','update-review-source.diagnostic_2'); }
+        if(cleanupError) logEvent('warn','update-review-source.diagnostic_1',requestId);
+      } catch { logEvent('warn','update-review-source.diagnostic_2',requestId); }
     }
     return json({ok:true,revision:data.revision,review:data.review});
   } catch(error) {

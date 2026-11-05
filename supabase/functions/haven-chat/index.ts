@@ -15,6 +15,7 @@ import { resolveHavenRouting, supportHelpReply, acceptedCallInvitation, inferHav
 import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiText } from '../_shared/haven-model.ts';
 import { applyAutomaticFlag, ModerationError, detectHavenAbuse, moderationReply } from '../_shared/haven-moderation.ts';
 import { verifyPlaybookAccess } from '../_shared/playbook-access.js';
+import {havenPlatformState,bookingQuestionReply} from '../_shared/haven-platform-state.js';
 import {
   HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson, screenshotPart,
   textValue, validateChatBody, savedStep,
@@ -72,10 +73,10 @@ async function askGroq(db:any,budget:AIBudgetReservation,systemPrompt: string, m
   if (!text) throw new Error('groq_empty_response');
   return text;
 }
-async function callModel(db:any,budget:AIBudgetReservation,systemPrompt: string, messages: HavenMessage[], screenshot: string | null): Promise<{text: string; model: ModelUsed; diagnostics: ProviderDiagnostic[]}> {
+async function callModel(db:any,budget:AIBudgetReservation,systemPrompt: string, messages: HavenMessage[], screenshot: string | null,requestId="background"): Promise<{text: string; model: ModelUsed; diagnostics: ProviderDiagnostic[]}> {
   const diagnostics: ProviderDiagnostic[]=[];
   try { return { text: await askGemini(db,budget,systemPrompt, messages, screenshot), model: 'gemini', diagnostics }; }
-  catch (error) { diagnostics.push(safeProviderDiagnostic(error,'gemini')); logEvent('warn','haven-chat.diagnostic_1'); await recordAIUsage(db,'gemini',usageGeminiModel(),{},diagnostics[0].code); }
+  catch (error) { diagnostics.push(safeProviderDiagnostic(error,'gemini')); logEvent('warn','haven-chat.diagnostic_1',requestId); await recordAIUsage(db,'gemini',usageGeminiModel(),{},diagnostics[0].code); }
   const fallbackMessages = screenshot ? messages.map((message, index) => index === messages.length - 1
     ? { ...message, content: '[The image reader is unavailable. You cannot see the image. Ask the user to describe it; never pretend to inspect it.] ' + (message.content || '') } : message) : messages;
   try { return { text: await askGroq(db,budget,systemPrompt, fallbackMessages), model: 'groq', diagnostics }; }
@@ -87,7 +88,7 @@ async function callModel(db:any,budget:AIBudgetReservation,systemPrompt: string,
   }
 }
 
-Deno.serve(observe('haven-chat',async (request) => {
+Deno.serve(observe('haven-chat',async (request,traceId) => {
   const headers = responseHeaders(request);
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
   if (request.method === 'OPTIONS') return new Response('ok', { headers });
@@ -122,12 +123,16 @@ Deno.serve(observe('haven-chat',async (request) => {
     const conversation = await prepareConversation(supabase, scope, context, body.noticeVersion);
     if (conversation.flagStatus === 'red') return json({ ok: true, text: RESTRICTED_MESSAGE, chips: [], flagStatus: 'red', model: null });
     const latest = messages[messages.length-1].content || '';
+    const {data:bookingStatus,error:bookingError}=await supabase.rpc('visitor_strategy_booking',{p_visitor:conversation.visitor.id});
+    if(bookingError)throw new HavenRequestError('Booking status could not be checked. Please retry shortly.',503);
+    const playbookVerified = await verifyPlaybookAccess(context.playbookAccessToken, key);
+    const platformState=havenPlatformState({review:conversation.review,playbookVerified,bookingStatus,serviceId:conversation.session.service_id});
     const previousRoute = conversation.session.routing_state;
     const acceptedCall = acceptedCallInvitation(latest, conversation.session.messages)
       || (isAffirmative(latest) && previousRoute?.lastAction === 'offer_call' && previousRoute?.permission === 'granted');
     const acceptedResource = isAffirmative(latest) && previousRoute?.pendingAction === 'playbook' && previousRoute?.permission === 'asked';
     const supportContext = { teamInquiry: conversation.session.service_id === 'team-inquiry' };
-    const supportReply = supportHelpReply(latest, scope, supportContext);
+    const supportReply = bookingQuestionReply(latest,platformState)||supportHelpReply(latest, scope, supportContext);
     const directHelp = supportReply
       || (acceptedCall ? 'Choose an available time using the button below. The team can discuss the scope and whether we can help. [[BOOK_CALL]]' : acceptedResource ? 'The Unseen Playbook offers practical exercises for the learning need we have discussed.' : null);
     const { data: turn, error: turnError } = await supabase.rpc('begin_haven_turn', {
@@ -175,8 +180,7 @@ Deno.serve(observe('haven-chat',async (request) => {
         auditData: { ...qualification, routingState: session.routing_state || null, currentStep: allowedPublicSteps.includes(session.current_step as string) ? session.current_step : defaultStep },
       };
     }
-    const playbookVerified = await verifyPlaybookAccess(context.playbookAccessToken, key);
-    const systemPrompt = buildHavenSystemPrompt({ ...promptContext, playbookVerified, latestMessage:latest });
+    const systemPrompt = buildHavenSystemPrompt({ ...promptContext, playbookVerified, platformState, latestMessage:latest });
     // Client history is only validated input; provider context comes from saved turns.
     const history: HavenMessage[] = [];
     let chars = 0;
@@ -195,7 +199,7 @@ Deno.serve(observe('haven-chat',async (request) => {
         ...(geminiProcessingEnabled() ? [aiBudgetPlan('gemini',{systemPrompt,messages:modelMessages,screenshot},4096,2,Boolean(screenshot))] : []),
         ...(Deno.env.get('GROQ_API_KEY')?.trim() ? [aiBudgetPlan('groq',{systemPrompt,messages:modelMessages},2000,1)] : []),
       ]);
-      try { return await callModel(supabase,budget,systemPrompt,modelMessages,screenshot); }
+      try { return await callModel(supabase,budget,systemPrompt,modelMessages,screenshot,traceId); }
       finally { await budget.settle(); }
     };
     const { text: modelText, model, diagnostics=[] } = directAbuse ? { text: moderationReply(directAbuse), model: null, diagnostics:[] } : directHelp
@@ -216,8 +220,6 @@ Deno.serve(observe('haven-chat',async (request) => {
       flagStatus = moderation.flagStatus;
       warned = moderation.changed && flagStatus === 'yellow';
     }
-    const {data:bookingStatus,error:bookingError}=await supabase.rpc('visitor_strategy_booking',{p_visitor:conversation.visitor.id});
-    if(bookingError)throw new HavenRequestError('Booking status could not be checked. Please retry shortly.',503);
     const routed = directAbuse || supportReply ? { text: rawText, routingState: session.routing_state || { problemType: 'unknown', permission: 'none' } } : resolveHavenRouting(rawText, { scope, ...qualification, bookingStatus, teamInquiry: session.service_id === 'team-inquiry', acceptedCall, playbookVerified, routingState: session.routing_state, serviceId: session.service_id, latestUserText: latest, messages:session.messages||[] });
     rawText = routed.text;
     const askedQuestion = !directHelp && !flag && rawText.includes('?') && !/\[\[(?:BOOK_CALL|PLAYBOOK|STEP:AWAITING_PERMISSION)/.test(rawText);
@@ -230,9 +232,9 @@ Deno.serve(observe('haven-chat',async (request) => {
     const leadMatch = [...rawText.matchAll(/\[\[LEAD:([A-Z]+)\]\]/g)].at(-1)?.[1];
     const currentStep = Object.values(STEPS).includes(stepMatch || '') && stepMatch !== STEPS.GREETING ? stepMatch : promptContext.auditData.currentStep;
     const leadTemperature = Object.values(LEADS).includes(leadMatch || '') ? leadMatch : null;
-    parsed.text=parsed.text.replace(/\[\[(?:STEP:[A-Z0-9_]+|LEAD:[A-Z_]+|DECISION:[\s\S]*?|MEMORY:[\s\S]*?)\]\]/g,'').trim();
+    parsed.text=parsed.text.replace(/\[\[(?:STEP:[A-Z0-9_]+|LEAD:[A-Z_]+|DECISION:[\s\S]*?|MEMORY:[\s\S]*?)\]\]/g,'').replace(/\s*\u2014\s*/g,'; ').trim();
     if(/info@themarketinghaven\.xyz/i.test(parsed.text))parsed.chips=[...parsed.chips,'__CONTACT_SUPPORT__'];
-    const response = { ok: true, ...parsed, model, currentStep, leadTemperature, flagStatus, sessionId: session.id, routingState: routed.routingState, providerDiagnostics:diagnostics };
+    const response = { ok: true, ...parsed, model, currentStep, leadTemperature, flagStatus, sessionId: session.id, routingState: routed.routingState, platformState, providerDiagnostics:diagnostics };
     const { error: completionError } = await supabase.rpc('finish_haven_turn', {
       p_session_id: session.id, p_turn_id: requestId, p_attempt_id:activeTurn.attemptId, p_response: { ...response, conversationMemory: captured.memory }, p_question: askedQuestion, p_step: currentStep,
     });
@@ -242,10 +244,10 @@ Deno.serve(observe('haven-chat',async (request) => {
   } catch (error) {
     if (activeTurn && supabase) {
       try { await supabase.rpc('fail_haven_turn',{p_session_id:activeTurn.sessionId,p_turn_id:activeTurn.requestId,p_attempt_id:activeTurn.attemptId,p_error_code:(error as any)?.code||'request_failed',p_diagnostics:(error as any)?.diagnostics||[],p_retry_seconds:(error as any)?.retryAfter||0}); }
-      catch { logEvent('error','haven-chat.diagnostic_2'); }
+      catch { logEvent('error','haven-chat.diagnostic_2',traceId); }
     }
     const known = error instanceof HavenRequestError || error instanceof ReviewAccessError || error instanceof ModerationError;
-    logEvent('error','haven-chat.diagnostic_3');
+    logEvent('error','haven-chat.diagnostic_3',traceId);
     const retryAfter=Number((error as any)?.retryAfter)||0;
     if(retryAfter) (headers as Record<string,string>)['Retry-After']=String(retryAfter);
     return json({ ok: false, code:(error as any)?.code||'request_failed',retryAfter,error: known ? error.message : 'Haven is having trouble reaching the AI service. Please try again.' }, known ? error.status : 502);

@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion';
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 
 import Header from './components/layout/Header';
+import PageProgress from './components/layout/PageProgress';
 import HeroSection from './components/HeroSection';
 import AboutSection from './components/AboutSection';
 import ServiceGrid from './components/services/ServiceGrid';
@@ -183,6 +184,7 @@ function AppInner() {
         )}
       </AnimatePresence>
 
+      <PageProgress />
       <Header
         onOpenReview={handleOpenReview}
       />

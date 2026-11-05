@@ -42,7 +42,7 @@ function escapeIlikePattern(value: string) {
   return value.replace(/[\\%_]/g, '\\$&');
 }
 
-serve(observe('check-email-exists',async (req) => {
+serve(observe('check-email-exists',async (req,requestId) => {
   const origin = req.headers.get('origin');
 
   if (req.method === 'OPTIONS') {
@@ -81,7 +81,7 @@ serve(observe('check-email-exists',async (req) => {
       .limit(1);
 
     if (error) {
-      logEvent('error','check-email-exists.diagnostic_1');
+      logEvent('error','check-email-exists.diagnostic_1',requestId);
       return response(false, origin, undefined, includeFlag ? 503 : 200);
     }
 
@@ -92,7 +92,7 @@ serve(observe('check-email-exists',async (req) => {
     return response(Boolean(reviews?.length), origin, flagStatus);
   } catch (error) {
     if(error instanceof HavenRequestError)return new Response(JSON.stringify({exists:false,error:error.message}),{status:error.status,headers:{...corsHeaders(origin),'Content-Type':'application/json','Cache-Control':'no-store',...(error.status===429?{'Retry-After':'600'}:{})}});
-    logEvent('error','check-email-exists.diagnostic_2');
+    logEvent('error','check-email-exists.diagnostic_2',requestId);
     return response(false, origin, undefined, includeFlag ? 503 : 200);
   }
 }));

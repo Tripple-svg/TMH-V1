@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion,useReducedMotion } from 'framer-motion';
 
 // Imports the video file placed in your src/assets folder
 import logoVideo from '../assets/Logo_loading_animation.mp4';
@@ -7,28 +7,36 @@ import logoVideo from '../assets/Logo_loading_animation.mp4';
 export default function Preloader({ onComplete }) {
   const videoRef = useRef(null);
   const [hasError, setHasError] = useState(false);
+  const reduceMotion=useReducedMotion();
+  const skipAnimation=reduceMotion||(typeof navigator!=='undefined'&&(navigator.connection?.saveData||/^(slow-)?2g$/.test(navigator.connection?.effectiveType||'')));
+  const complete=useRef(onComplete);
+  useEffect(()=>{complete.current=onComplete;},[onComplete]);
 
   useEffect(() => {
+    if(skipAnimation){complete.current?.();return;}
+    // A decorative intro must never hold the website behind a slow video.
+    const timeout=setTimeout(()=>complete.current?.(),1800);
     if (videoRef.current) {
       // 2.25x speed turns the 9-second animation into ~4 seconds
       videoRef.current.playbackRate = 2.25;
 
       const playPromise = videoRef.current.play();
       if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-          console.warn("Autoplay blocked or playback error:", err);
+        playPromise.catch(() => {
+          console.warn("Brand intro could not play.");
           setHasError(true);
-          if (onComplete) onComplete();
+          complete.current?.();
         });
       }
     }
-  }, [onComplete]);
+    return()=>clearTimeout(timeout);
+  }, [skipAnimation]);
 
   return (
     <motion.div
       initial={{ opacity: 1 }}
-      exit={{ opacity: 0, scale: 1.05 }}
-      transition={{ duration: 0.8, ease: [0.76, 0, 0.24, 1] }}
+      exit={{ opacity: 0, scale: reduceMotion?1:1.01 }}
+      transition={{ duration: reduceMotion?0:0.2, ease: 'easeOut' }}
       className="preloader-container"
     >
       <style>{`
@@ -54,7 +62,7 @@ export default function Preloader({ onComplete }) {
         }
       `}</style>
 
-      {!hasError ? (
+      {!hasError && !skipAnimation ? (
         <video
           ref={videoRef}
           src={logoVideo}

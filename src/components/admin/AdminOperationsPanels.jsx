@@ -220,14 +220,12 @@ export function RateLimitsPanel({ onRequest, onAuthLost }) {
       </div>
       <Status error={error} busy={busy} />
       {data?.limits?.length
-        ? data.limits.map((row) => (
+        ? data.limits.map((row,index) => (
             <article className={card} key={row.id}>
               <p className="text-sm">
-                {row.reason.replaceAll("_", " ")} · {row.identity_type}
+                {row.reason==='verification'?'Browser verification':row.reason==='public'?'Website request':row.reason.startsWith('haven')?'Haven conversation':row.reason.startsWith('score')?'Review scoring':'Request'} limit {index+1}
               </p>
-              <p className="mt-2 break-all font-mono text-[11px] text-zinc-500">
-                {row.id}
-              </p>
+              <p className="mt-2 text-sm text-zinc-400">{row.identity_type==='Saved browser'?'A saved browser needs verification.':'Requests from a browser or shared network reached this allowance.'}</p>
               <p className="mt-2 text-xs text-zinc-400">
                 Reset:{" "}
                 {row.reset_at

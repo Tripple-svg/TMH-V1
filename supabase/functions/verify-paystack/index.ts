@@ -1,7 +1,7 @@
 import {observe} from '../_shared/observability.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson } from '../_shared/haven-request.ts';
-import { purchaseDetails, hasDownloadGrant, verifyPurchasePayment, downloadResult, limitRecovery, requestBucket, privateToken, digest, PLAYBOOK_AMOUNT_KOBO } from '../_shared/playbook-recovery.ts';
+import { purchaseDetails, hasDownloadGrant, purchasePaymentStatus, downloadResult, limitRecovery, requestBucket, privateToken, digest, PLAYBOOK_AMOUNT_KOBO } from '../_shared/playbook-recovery.ts';
 
 // Receipt details are identifiers, not authentication. A private proof belongs
 // either to a newly generated checkout or to an inbox-verified recovery.
@@ -24,9 +24,8 @@ Deno.serve(observe('verify-paystack',async request => {
       // capability can unlock only the NEW payment generated here.
       const { email } = details;
       await limitRecovery(db, 'checkout-ip:' + await requestBucket(request, secret), 5);
-      const {data:existing,error:existingError}=await db.from('playbook_purchases').select('id').eq('email',email).limit(1).maybeSingle();
-      if(existingError)throw new HavenRequestError('Purchase history could not be checked. Please retry shortly.',503);
-      if(existing)return json({ok:false,code:'purchase_exists',error:'A purchase is already recorded for this checkout email. Use Already purchased to verify your inbox and recover your copy; you do not need to pay again.'},409);
+      // A typed email is not ownership proof. Preparing checkout must not expose
+      // whether another person's address appears in the purchase ledger.
       const reference = 'UNSEEN_' + crypto.randomUUID();
       const downloadToken = privateToken();
       const { error } = await db.from('playbook_download_grants').insert({
@@ -40,7 +39,8 @@ Deno.serve(observe('verify-paystack',async request => {
       await limitRecovery(db,'invalid-download-ip:'+await requestBucket(request,secret),5,600);
       return json({ ok: false, code: 'recovery_required', error: 'Confirm your checkout email with a one-time code to access your copy.' }, 403);
     }
-    if (!await verifyPurchasePayment(db, reference, email)) return json({ ok: false, code: 'payment_not_verified', error: 'Payment has not been confirmed. If you were charged, keep your receipt and retry shortly. You do not need to pay again.' }, 403);
+    const payment=await purchasePaymentStatus(db,reference,email);
+    if (!payment.verified) return json({ ok: false, code: 'payment_not_verified', paymentStatus:payment.status,newCheckoutAllowed:['failed','abandoned'].includes(payment.status),error: ['failed','abandoned'].includes(payment.status)?'Paystack reports that this payment was not completed. If your bank shows a debit, contact support before paying again. Otherwise, you can return to checkout.':'Payment has not been confirmed. If you were charged, keep your receipt and retry shortly. Check this payment before paying again.' }, 403);
     return json(await downloadResult(db, reference, secret));
   } catch (error) {
     if(error instanceof HavenRequestError && error.status===429)Object.assign(headers,{'Retry-After':String(error.retryAfter||600)});

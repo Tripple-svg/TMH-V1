@@ -61,6 +61,13 @@ function grantDatabase({ publicBucket = false, validGrant = true } = {}) {
   }};
 }
 const paid = (patch={}) => ({status:true,data:{reference:'UNSEEN_123',status:'success',amount:963900,currency:'NGN',customer:{email:'buyer@example.com'},paid_at:'2026-10-25T12:00:00Z',...patch}});
+test('preparing checkout never queries or reveals the purchase history of a typed email',async()=>{
+  for(const email of ['existing-buyer@example.test','new-buyer@example.test']){
+    let inserted;const client={rpc:async()=>({data:true}),from(table){assert.equal(table,'playbook_download_grants','public checkout must not query the buyer ledger');return{insert:async value=>{inserted=value;return{error:null};}};}};
+    const handler=loadHandler('verify-paystack',{client});const response=await handler(request({action:'prepare-checkout',email,reference:'UNSEEN_existing-receipt'}));const body=await response.json();
+    assert.equal(response.status,200);assert.equal(body.ok,true);assert.notEqual(body.reference,'UNSEEN_existing-receipt');assert.equal(body.amount,963900);assert.equal(inserted.email,email);assert.doesNotMatch(JSON.stringify(body),/purchase_exists|already purchased|history/);
+  }
+});
 test('download security: email/reference alone never receive a URL or reader capability', async () => {
   const db=grantDatabase();
   const handler=loadHandler('verify-paystack',{client:db.client,fetch:async()=>{throw new Error('Must reject before Paystack');}});
@@ -75,6 +82,15 @@ test('download security: verified device grants get short-lived URLs; historical
     const result=await handler(request({reference:'UNSEEN_123',email:'buyer@example.com',downloadToken:GRANT}));
     const body=await result.json();assert.equal(body.ok,true);assert.equal(body.expiresIn,600);assert.ok(body.playbookAccessToken);assert.equal(db.signed,1);
   }
+});
+test('payment status never permits new checkout while pending, processing or mismatched, and never unlocks an unpaid PDF',async()=>{
+  for(const status of ['pending','ongoing','processing','queued','reversed','failed','abandoned']){
+    const db=grantDatabase(),handler=loadHandler('verify-paystack',{client:db.client,fetch:async()=>response(paid({status}))});
+    const result=await handler(request({reference:'UNSEEN_123',email:'buyer@example.com',downloadToken:GRANT}));const body=await result.json();
+    assert.equal(result.status,403);assert.equal(body.newCheckoutAllowed,['failed','abandoned'].includes(status));assert.equal(body.url,undefined);assert.equal(db.signed,0);
+  }
+  const db=grantDatabase(),handler=loadHandler('verify-paystack',{client:db.client,fetch:async()=>response(paid({status:'failed',customer:{email:'another@example.test'}}))});
+  assert.equal((await (await handler(request({reference:'UNSEEN_123',email:'buyer@example.com',downloadToken:GRANT}))).json()).newCheckoutAllowed,false);
 });
 test('download security: invalid references, origins, methods and missing service configuration fail closed', async () => {
   const handler=loadHandler('verify-paystack');

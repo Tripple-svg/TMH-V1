@@ -4,16 +4,14 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import {Sentry,sentryEnabled} from './lib/errorTracking';
 import './index.css';
+import {readInitialTheme} from './lib/themePreference';
 
 import { ThemeProvider } from './context/ThemeContext'; 
 import { UserProvider } from './context/UserContext';
 
 // Force initial theme class setup on root <html> tag before React mounts
 if (typeof window !== 'undefined') {
-  const storedTheme = localStorage.getItem('tmh_theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  
-  if (storedTheme === 'dark' || (!storedTheme && prefersDark)) {
+  if (readInitialTheme() === 'dark') {
     document.documentElement.classList.add('dark');
   } else {
     document.documentElement.classList.remove('dark');

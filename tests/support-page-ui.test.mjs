@@ -6,15 +6,16 @@ import vm from 'node:vm';
 import { transformSync } from 'esbuild';
 
 function supportPage({ issue = '', invoke = async () => ({ data: { ok: true, reference: 'support-reference' } }) } = {}) {
-  const slots = [], calls = [];
-  let cursor = 0, resets = 0;
+  const slots = [], calls = [],effects=[],scrolls=[];
+  let cursor = 0, resets = 0,headingFocus=0;
   const react = {
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     useState(initial) { const index = cursor++; if (!(index in slots)) slots[index] = initial; return [slots[index], value => { slots[index] = value; }]; },
     useRef(initial) { const index = cursor++; return slots[index] ||= { current: initial }; },
+    useEffect(effect){const index=cursor++;if(!(index in slots)){slots[index]=true;effects.push(effect);}},
   };
   const context = {
-    module: { exports: {} }, React: react, window: { location: { search: issue ? `?issue=${encodeURIComponent(issue)}` : '' } }, URLSearchParams, Response,
+    module: { exports: {} }, React: react, window: { scrollTo:options=>scrolls.push(options),location: { search: issue ? `?issue=${encodeURIComponent(issue)}` : '' } }, URLSearchParams, Response,
     require(name) {
       if (name === 'react') return react;
       if (name === 'react-router-dom') return { Link: 'Link',useLocation:()=>({search:issue?'?issue='+encodeURIComponent(issue):''}) };
@@ -36,12 +37,17 @@ function supportPage({ issue = '', invoke = async () => ({ data: { ok: true, ref
       if (Array.isArray(node)) return node.forEach(walk);
       if (!node || typeof node !== 'object') return;
       if (node.type === 'HCaptcha') node.props.ref.current = { resetCaptcha() { resets++; } };
+      if(node.type==='h1'&&node.props.ref)node.props.ref.current={focus(){headingFocus++;}};
       nodes.push(node); walk(node.props.children);
     }
-    walk(context.module.exports.default()); return nodes;
+    walk(context.module.exports.default());while(effects.length)effects.shift()();return nodes;
   }
-  return { render, calls, get resets() { return resets; } };
+  return { render, calls,scrolls,get headingFocus(){return headingFocus;}, get resets() { return resets; } };
 }
+test('support entry resets retained footer scroll and focuses the heading once without disturbing form edits',()=>{
+  const ui=supportPage();ui.render();assert.equal(ui.scrolls[0].top,0);assert.equal(ui.headingFocus,1);
+  ui.render();assert.equal(ui.scrolls.length,1);assert.equal(ui.headingFocus,1);
+});
 const text = node => Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props.children) : typeof node === 'string' ? node : '';
 const radios = tree => tree.filter(node => node.type === 'input' && node.props.type === 'radio');
 const submitButton = tree => tree.find(node => node.type === 'button' && node.props.type === 'submit');

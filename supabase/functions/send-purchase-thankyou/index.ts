@@ -19,7 +19,7 @@ type PurchaseDatabase = { public: {
   Views: Record<string, never>; Functions: Record<string, never>;
 } };
 
-serve(observe('send-purchase-thankyou',async (req) => {
+serve(observe('send-purchase-thankyou',async (req,requestId) => {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
@@ -32,7 +32,7 @@ serve(observe('send-purchase-thankyou',async (req) => {
   let purchaseId: string | null = null;
   let acceptedEmailId: string | null = null;
   const failure = async (code: string, message: string, status: number) => {
-    logEvent('error','send-purchase-thankyou.diagnostic_1');
+    logEvent('error','send-purchase-thankyou.diagnostic_1',requestId);
     if (supabase && purchaseId) {
       try {
         // A concurrent successful send must not be overwritten by a failing retry.
@@ -40,8 +40,8 @@ serve(observe('send-purchase-thankyou',async (req) => {
           thankyou_last_error: code, ...(acceptedEmailId ? { thankyou_email_id: acceptedEmailId } : {}),
         })
           .eq('id', purchaseId).eq('thankyou_sent', false);
-        if (error) logEvent('error','send-purchase-thankyou.diagnostic_2');
-      } catch { logEvent('error','send-purchase-thankyou.diagnostic_3'); }
+        if (error) logEvent('error','send-purchase-thankyou.diagnostic_2',requestId);
+      } catch { logEvent('error','send-purchase-thankyou.diagnostic_3',requestId); }
     }
     return json({ ok: false, code, error: message }, status);
   };

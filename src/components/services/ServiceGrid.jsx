@@ -2,7 +2,8 @@
 // Clean — no dead props, Haven calls go to 'service' bucket only,
 // zero contamination with support or audit sessions.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import {useDialogFocus} from '../../lib/useDialogFocus';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   Code2, TrendingUp, Share2, ArrowRight,
@@ -63,6 +64,8 @@ const SERVICE_CTA_LABELS = {
 
 export default function ServiceGrid() {
   const [selectedService, setSelectedService] = useState(null);
+  const dialogRef=useRef(null);
+  useDialogFocus(Boolean(selectedService),dialogRef,()=>setSelectedService(null));
   const reduceMotion = useReducedMotion();
 
   const { openDrawer } = useHaven();
@@ -140,7 +143,7 @@ export default function ServiceGrid() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: reduceMotion ? 0 : 0.4, delay: reduceMotion ? 0 : i * 0.06 }}
-                onPointerMove={moveCardLight}
+                whileTap={reduceMotion?undefined:{scale:0.98,transition:{duration:0.08}}} onPointerMove={moveCardLight}
                 className="service-glass-card group relative isolate overflow-hidden text-left rounded-2xl bg-white/90 dark:bg-zinc-900/80 border border-zinc-200/80 dark:border-white/[0.08] p-6 sm:p-8 hover:border-zinc-400 dark:hover:border-white/20 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.8)] dark:shadow-[0_16px_40px_-28px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.05)] flex flex-col justify-between"
               >
                 <div>
@@ -166,14 +169,14 @@ export default function ServiceGrid() {
                   </ul>
                 </div>
 
-                <button
+                <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
                   type="button"
                   onClick={() => setSelectedService(s)}
                   className="mt-8 flex items-center text-xs font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider hover:text-zinc-950 dark:hover:text-white w-full pt-4 border-t border-zinc-200/70 dark:border-white/[0.06] cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-500"
                 >
                   <span>{SERVICE_CTA_LABELS[s.id]}</span>
                   <ArrowRight className="service-glass-arrow w-4 h-4 ml-2" />
-                </button>
+                </motion.button>
               </motion.div>
             );
           })}
@@ -182,7 +185,7 @@ export default function ServiceGrid() {
 
       <AnimatePresence>
         {selectedService && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="service-overview-title">
+          <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="service-overview-title">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -198,14 +201,14 @@ export default function ServiceGrid() {
               transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}
               className="relative z-10 w-full max-w-xl bg-zinc-50 dark:bg-zinc-950 sm:bg-white/95 sm:dark:bg-zinc-950/95 sm:backdrop-blur-lg border border-white/70 dark:border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl max-h-[90vh] overflow-y-auto"
             >
-              <button
+              <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
                 type="button"
                 onClick={() => setSelectedService(null)}
                 aria-label="Close service details"
                 className="absolute top-4 right-4 w-11 h-11 rounded-xl flex items-center justify-center text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-white/5 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-zinc-500"
               >
                 <X className="w-5 h-5" />
-              </button>
+              </motion.button>
 
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-white/[0.04] border border-zinc-200 dark:border-white/[0.08] flex items-center justify-center text-zinc-600 dark:text-zinc-300">
@@ -239,23 +242,23 @@ export default function ServiceGrid() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <button
+                <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
                   type="button"
                   onClick={handleGetMoreInfo}
                   className="w-full bg-zinc-900 hover:bg-zinc-700 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-950 font-medium py-3 px-4 rounded-xl transition-colors text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500"
                 >
                   <MessageSquare className="w-4 h-4" />
                   <span>Get More Info</span>
-                </button>
+                </motion.button>
 
-                <button
+                <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
                   type="button"
                   onClick={handleBookCall}
                   className="w-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-medium py-3 px-4 rounded-xl transition-all active:scale-95 text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Calendar className="w-4 h-4" />
                   <span>Book a Strategy Call</span>
-                </button>
+                </motion.button>
               </div>
 
             </motion.div>

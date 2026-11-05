@@ -9,7 +9,7 @@ import { hashReviewToken,verifyReviewAccess,ReviewAccessError } from '../_shared
 const ALLOWED_ORIGINS = ['https://themarketinghaven.xyz', 'https://www.themarketinghaven.xyz', 'http://localhost:5173', 'http://localhost:5175'];
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-serve(observe('capture-booking-lead',async (req) => {
+serve(observe('capture-booking-lead',async (req,requestId) => {
   const origin = req.headers.get('origin');
   const headers: Record<string, string> = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -46,7 +46,7 @@ serve(observe('capture-booking-lead',async (req) => {
     return json({ ok: true,intentId:data.intentId });
   } catch (error) {
     if(error instanceof HavenRequestError||error instanceof ReviewAccessError)return json({ok:false,error:error.message},error.status);
-    logEvent('error','capture-booking-lead.diagnostic_1');
+    logEvent('error','capture-booking-lead.diagnostic_1',requestId);
     return json({ ok: false, error: 'Unable to save booking details' }, 500);
   }
 }));

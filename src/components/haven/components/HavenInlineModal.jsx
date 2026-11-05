@@ -1,4 +1,5 @@
 import { quickPrompts } from '../config/quick-prompts';
+import {useDialogFocus} from '../../../lib/useDialogFocus';
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Sparkles, Minimize2, Maximize2, Target } from 'lucide-react';
@@ -131,6 +132,7 @@ export default function HavenInlineModal({
   const scrollRef = useRef(null);
   const endRef = useRef(null);
   const containerRef = useRef(null);
+  useDialogFocus(isOpen,containerRef,onClose);
 
   /* ── Scroll to bottom ── */
   useEffect(() => {
@@ -196,6 +198,7 @@ export default function HavenInlineModal({
 
           <motion.div
             ref={containerRef}
+            role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}
             initial={{ opacity: 0, scale: 0.9, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 16 }}
@@ -229,7 +232,7 @@ export default function HavenInlineModal({
                     whileTap={{ scale: 0.9 }}
                     onClick={() => setIsExpanded((p) => !p)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/[0.05] transition-colors cursor-pointer"
-                    title={isExpanded ? 'Collapse' : 'Expand'}
+                    title={isExpanded ? 'Collapse' : 'Expand'} aria-label={isExpanded?'Collapse Haven dialog':'Expand Haven dialog'}
                   >
                     {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
                   </motion.button>

@@ -34,7 +34,7 @@ function json(body: unknown, origin: string | null, status = 200) {
   });
 }
 
-serve(observe('admin-update-lead',async (req) => {
+serve(observe('admin-update-lead',async (req,requestId) => {
   const origin = req.headers.get('origin');
 
   if (origin && !ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, origin, 403);
@@ -138,7 +138,7 @@ serve(observe('admin-update-lead',async (req) => {
     const { data, error } = await runAdminMutation(supabase,req,SERVICE_ROLE_KEY,actor,'review_update',reviewId,update);
 
     if (error) {
-      logEvent('error','admin-update-lead.diagnostic_3');
+      logEvent('error','admin-update-lead.diagnostic_3',requestId);
       return json({ ok: false, error: 'Could not save the lead. Please retry.' }, origin, 500);
     }
     if (!data) {
@@ -148,7 +148,7 @@ serve(observe('admin-update-lead',async (req) => {
     return json({ ok: true, review: data }, origin);
   } catch (err) {
     if(err instanceof AdminAuthError)return json({ok:false,error:err.message},origin,err.status);
-    logEvent('error','admin-update-lead.diagnostic_4');
+    logEvent('error','admin-update-lead.diagnostic_4',requestId);
     return json({ ok: false, error: 'Could not update the lead. Please retry.' }, origin, 500);
   }
 }));

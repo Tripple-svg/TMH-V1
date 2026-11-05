@@ -1,4 +1,5 @@
 import { HavenRequestError } from './haven-request.ts';
+import { edgeClientAddress } from './edge-client-address.ts';
 import { issuePlaybookAccess } from './playbook-access.js';
 
 export const PLAYBOOK_AMOUNT_KOBO = 963900;
@@ -31,8 +32,7 @@ export async function limitRecovery(supabase: any, bucket: string, max: number, 
   if (data !== true) throw new HavenRequestError(`Too many attempts. Please wait ${Math.ceil(seconds/60)} minutes before trying again.`, 429, seconds);
 }
 export async function requestBucket(request: Request, secret: string) {
-  const ip = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  return codeHash('rate-limit', ip.slice(0, 200), secret);
+  return codeHash('rate-limit', edgeClientAddress(request), secret);
 }
 export async function acceptedPaymentAmount(supabase: any, amount: unknown, paidAt: unknown) {
   if (amount === PLAYBOOK_AMOUNT_KOBO) return true;
@@ -43,7 +43,7 @@ export async function acceptedPaymentAmount(supabase: any, amount: unknown, paid
   const paid = typeof paidAt === 'string' ? Date.parse(paidAt) : NaN;
   return Number.isFinite(paid) && paid <= Date.parse(data.legacy_cutover_at);
 }
-export async function verifyPurchasePayment(supabase: any, reference: string, email: string) {
+export async function purchasePaymentStatus(supabase: any, reference: string, email: string) {
   const key = Deno.env.get('PAYSTACK_SECRET_KEY')?.trim();
   if (!key) throw new HavenRequestError('Payment verification is not configured.', 503);
   const response = await fetch('https://api.paystack.co/transaction/verify/' + encodeURIComponent(reference), {
@@ -52,9 +52,13 @@ export async function verifyPurchasePayment(supabase: any, reference: string, em
   if (!response.ok) throw new HavenRequestError('Payment verification is temporarily unavailable.', 502);
   const payment = await response.json();
   const data = payment?.data;
-  if (payment?.status !== true || data?.status !== 'success' || data.reference !== reference || data.currency !== 'NGN'
-    || typeof data.customer?.email !== 'string' || data.customer.email.trim().toLowerCase() !== email) return false;
-  return acceptedPaymentAmount(supabase, data.amount, data.paid_at || data.paidAt);
+  if (payment?.status !== true || data.reference !== reference || data.currency !== 'NGN'
+    || typeof data.customer?.email !== 'string' || data.customer.email.trim().toLowerCase() !== email) return {verified:false,status:'not_confirmed'};
+  const status=['success','pending','ongoing','processing','queued','failed','abandoned','reversed'].includes(data.status)?data.status:'not_confirmed';
+  return {verified:status==='success'&&await acceptedPaymentAmount(supabase,data.amount,data.paid_at||data.paidAt),status};
+}
+export async function verifyPurchasePayment(supabase: any, reference: string, email: string) {
+  return (await purchasePaymentStatus(supabase,reference,email)).verified;
 }
 export async function hasDownloadGrant(supabase: any, reference: string, email: string, token: unknown) {
   if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return false;

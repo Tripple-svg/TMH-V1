@@ -1,11 +1,12 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {adminSupabase} from '../../lib/adminAuth';
-import {AdminMfaError,enrollAdminTotp,listAdminTotp,removeAdminTotp,verifyAdminTotp,verifiedTotpFactors} from '../../lib/adminMfa';
+import {AdminMfaError,adminMfaFailure,enrollAdminTotp,listAdminTotp,removeAdminTotp,verifyAdminTotp,verifiedTotpFactors} from '../../lib/adminMfa';
 export default function AdminMfaPanel(){
+  const operationLock=useRef(false);
   const [backupCodes,setBackupCodes]=useState([]);
   const [factors,setFactors]=useState([]),[enrollment,setEnrollment]=useState(null),[removal,setRemoval]=useState(null),[verifier,setVerifier]=useState(''),[code,setCode]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
-  useEffect(()=>{let live=true;void listAdminTotp(adminSupabase.auth).then(data=>{if(live)setFactors(data);}).catch(()=>{if(live)setError('Authenticator settings could not be loaded.');});return()=>{live=false;};},[]);
-  const perform=async action=>{if(busy)return;setBusy(true);setError('');setNotice('');try{await action();}catch(failure){setError(failure?.name==='AdminMfaError'?failure.message:'Authenticator settings could not be saved. Please try again.');}finally{setCode('');setBusy(false);}};
+  useEffect(()=>{let live=true;void listAdminTotp(adminSupabase.auth).then(data=>{if(live)setFactors(data);}).catch(failure=>{if(live)setError(adminMfaFailure(failure).message);});return()=>{live=false;};},[]);
+  const perform=async action=>{if(operationLock.current)return;operationLock.current=true;setBusy(true);setError('');setNotice('');try{await action();}catch(failure){setError(adminMfaFailure(failure).message);}finally{setCode('');operationLock.current=false;setBusy(false);}};
   const start=()=>void perform(async()=>{setEnrollment(await enrollAdminTotp(adminSupabase.auth));setRemoval(null);});
   const generateBackupCodes=async()=>{setBackupCodes([]);const result=await adminSupabase.functions.invoke('admin-operations',{body:{action:'generateBackupCodes'}});if(result.error||!Array.isArray(result.data?.codes)||result.data.codes.length!==10)throw new AdminMfaError('Your authenticator remains enabled, but backup codes could not be confirmed. Reload settings, then generate a new set when the connection returns.');setBackupCodes(result.data.codes);setNotice('Authenticator enabled. Save these ten backup codes privately. They are shown once.');};
   const enable=event=>{event.preventDefault();void perform(async()=>{await verifyAdminTotp(adminSupabase.auth,enrollment.id,code);setEnrollment(null);setFactors(await listAdminTotp(adminSupabase.auth));setNotice('Authenticator enabled. Generate backup codes below if they do not appear.');await generateBackupCodes();});};
@@ -20,5 +21,6 @@ export default function AdminMfaPanel(){
     {!enrollment&&!removal&&verifiedTotpFactors(factors).length>0&&<button type="button" disabled={busy} className="min-h-11 rounded-lg border border-white/20 px-4 text-xs disabled:opacity-40" onClick={()=>{if(window.confirm('Replace your backup codes? Every previous code will stop working.'))void perform(generateBackupCodes);}}>Generate new backup codes</button>}
     <button type="button" disabled={busy} className="min-h-11 px-3 text-xs text-zinc-400 underline" onClick={()=>void perform(async()=>{setFactors(await listAdminTotp(adminSupabase.auth));})}>Reload authenticator settings</button>
     <p className="text-xs leading-5 text-zinc-500">The QR code, setup key and readable backup codes stay in this page’s memory and are never saved to browser storage. If the network drops, reload settings before restarting setup. Use an unused backup code at sign-in if your authenticator is lost, or contact the owner for verified recovery.</p>
+    <p className="text-xs leading-5 text-zinc-500">This browser uses a random identifier for sign-in alerts. Clearing or blocking browser storage can make it appear new. The identifier never grants account access.</p>
   </section>;
 }

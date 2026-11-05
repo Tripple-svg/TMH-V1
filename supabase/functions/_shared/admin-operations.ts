@@ -1,4 +1,5 @@
 import { codeHash, requestBucket } from "./playbook-recovery.ts";
+import { edgeClientAddress } from './edge-client-address.ts';
 export function verifiedClaims(request: Request) {
   // Call only after auth.getUser has verified this exact bearer.
   const token =
@@ -32,13 +33,7 @@ export async function auditNetwork(request: Request, key: string) {
   return requestBucket(request, key);
 }
 export function observedIp(request: Request) {
-  const value = (
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-real-ip") ||
-    request.headers.get("x-forwarded-for")?.split(",")[0] ||
-    ""
-  ).trim();
-  return value.length <= 64 && /^[0-9a-f:.]+$/i.test(value) ? value : "unknown";
+  return edgeClientAddress(request);
 }
 export function deviceLabel(request: Request) {
   const ua = request.headers.get("user-agent") || "";

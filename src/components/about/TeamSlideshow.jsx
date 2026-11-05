@@ -84,7 +84,7 @@ export default function TeamSlideshow({
             <motion.img
               key={photosForSlideshow[slideIdx]?._index}
               src={photosForSlideshow[slideIdx]?.image}
-              alt={photosForSlideshow[slideIdx]?.name}
+              alt="" aria-hidden="true"
               initial={{ opacity: 0, scale: 1.06 }}
               animate={{ opacity: 0.32, scale: 1.0 }}
               exit={{ opacity: 0, scale: 1.02 }}
@@ -142,7 +142,7 @@ export default function TeamSlideshow({
           {hasPhoto ? (
             <img
               src={currentPerson.image}
-              alt={currentPerson.name}
+              alt={`Portrait of ${currentPerson.name||'a Team Haven member'}`}
               className="absolute inset-0 w-full h-full object-cover object-top"
               style={{ imageRendering: '-webkit-optimize-contrast' }}
             />

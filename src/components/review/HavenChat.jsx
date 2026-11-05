@@ -128,7 +128,7 @@ export default function HavenChat({ userData, mode, context = 'audit', onClose }
       const msg = `Hi ${greetingName}! I noticed you requested an update. Since ${brand} details are already logged, how can I assist your review today?`;
       pushMessage(msg, 'agent');
     } else if (mode === 'newbie') {
-      const msg = `Hi ${greetingName}! Starting fresh without an active web presence? No problem—we build from zero. Tell me about the brand concept you want to launch.`;
+      const msg = `Hi ${greetingName}! Starting fresh without an active web presence? No problem-we build from zero. Tell me about the brand concept you want to launch.`;
       pushMessage(msg, 'agent');
       setTimeout(() => setShowQuickReplies(true), 1200);
     } else if (mode === 'scan') {
@@ -166,7 +166,7 @@ export default function HavenChat({ userData, mode, context = 'audit', onClose }
     if (reply.type === 'web_tech') {
       botResponse = "We engineer modern React & Vite frontends with Tailwind CSS, backed by high-performance APIs and Paystack integration for seamless payments.";
     } else if (reply.type === 'web_custom') {
-      botResponse = "Yes! Every platform we build is 100% custom-tailored to your brand architecture—no generic, bloated templates.";
+      botResponse = "Yes! Every platform we build is 100% custom-tailored to your brand architecture-no generic, bloated templates.";
     } else if (reply.type === 'web_speed') {
       botResponse = "Standard web engineering sprints take between 2 to 4 weeks from architecture lock-in to live production release.";
     } else if (reply.type === 'supp_order') {
@@ -230,7 +230,7 @@ export default function HavenChat({ userData, mode, context = 'audit', onClose }
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all cursor-pointer">
+          <button aria-label="Close Haven conversation" onClick={onClose} className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -292,7 +292,7 @@ export default function HavenChat({ userData, mode, context = 'audit', onClose }
               placeholder="Type your message to Haven..."
               className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 transition-colors"
             />
-            <button type="submit" disabled={!inputText.trim()} className="p-3 rounded-xl bg-blue-600 text-white disabled:opacity-40 hover:bg-blue-500 transition-all shrink-0 cursor-pointer">
+            <button aria-label="Send message to Haven" type="submit" disabled={!inputText.trim()} className="p-3 rounded-xl bg-blue-600 text-white disabled:opacity-40 hover:bg-blue-500 transition-all shrink-0 cursor-pointer">
               <Send className="w-4 h-4" />
             </button>
           </form>

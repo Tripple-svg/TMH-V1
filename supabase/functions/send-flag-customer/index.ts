@@ -1,6 +1,6 @@
 import {observe} from '../_shared/observability.ts';
 import { isInternalRequest } from '../_shared/internal-auth.js';
-import { editorialEmail } from '../_shared/email-template.js';
+import { editorialEmail, currentEditorial } from '../_shared/email-template.js';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 
@@ -28,7 +28,7 @@ serve(observe('send-flag-customer',async (req) => {
     const originalText = restricted
       ? 'Your access to Haven is currently restricted following a review of your use of the platform. You may not continue chatting while this restriction is active. If you believe this is a mistake, please reply to this email or contact info@themarketinghaven.xyz.\n\nTeam Haven'
       : 'Warning regarding your usage of Haven. Please keep conversations respectful and follow our terms. Your Haven usage has been marked for review; this warning does not automatically restrict your access. For questions, reply to this email or contact info@themarketinghaven.xyz.\n\nTeam Haven';
-    const text = event.email_template_version === 'editorial-v3' ? originalText.replace(/\n\nTeam Haven$/, '\n\nYour friends over at Team Haven\nBuilding with intention.') : originalText;
+    const text = currentEditorial(event.email_template_version) ? originalText.replace(/\n\nTeam Haven$/, '\n\nYour friends over at Team Haven\nBuilding with intention.') : originalText;
     await deliverFlagNotification(supabase, event, 'customer', { to: [event.email], reply_to: 'info@themarketinghaven.xyz', subject, text,
       ...(event.email_template_version === 'legacy' ? {} : { html: editorialEmail({ version: event.email_template_version || 'editorial-v2', label: 'YOUR HAVEN ACCESS', title: restricted ? 'Your access is restricted.' : 'A note about your usage.', paragraphs: originalText.replace(/\n\nTeam Haven$/, '').split('\n\n'), button: { label: 'Contact Team Haven', href: 'mailto:info@themarketinghaven.xyz' } }) }),
     }, Deno.env);

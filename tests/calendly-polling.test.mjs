@@ -118,7 +118,7 @@ test('updates matching review and builds briefing from assessment and last five 
   assert.equal(db.emails.length, 0); // A review alone must not send confirmation.
   assert.equal(db.rows.calendly_processed_events.length, 0); // A late intent must remain discoverable.
   const query = urls.find((url) => url.pathname === '/scheduled_events').searchParams;
-  assert.equal(query.get('user'), 'https://api.calendly.com/users/owner'); assert.equal(query.get('status'), null); assert.equal(query.get('count'), '100');
+  assert.equal(query.get('user'), 'https://api.calendly.com/users/owner'); assert.equal(query.get('status'), 'active'); assert.ok(urls.some(url=>url.pathname==='/scheduled_events'&&url.searchParams.get('status')==='canceled')); assert.equal(query.get('count'), '100');
   assert.equal(Date.parse(query.get('min_start_time')), NOW - 3 * HOUR_MS);
   assert.equal(Date.parse(query.get('max_start_time')), NOW + 60 * 86400000);
 });

@@ -59,7 +59,7 @@ const text = node => Array.isArray(node) ? node.map(text).join('') : node&&typeo
 test('story video timeline waits for a finite duration, updates seconds and seeks the actual inline media',()=>{
   const f=fixture();button(f.render(),'Play story video with sound').props.onClick();
   assert.equal(timeline(f.render()).props.disabled,true);
-  assert.match(text(f.render()),/0:00 \/ —:—/);
+  assert.match(text(f.render()),/0:00 \/ --:--/);
   for(const invalid of [NaN,Infinity,-1]){
     f.video.duration=invalid;media(f.render()).props.onDurationChange({currentTarget:f.video});
     assert.equal(timeline(f.render()).props.disabled,true);

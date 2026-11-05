@@ -166,6 +166,7 @@ Deno.serve(
         return json({ ok: true, events: result.data });
       }
       if (body.action === "login") {
+        if(!UUID.test(body.device_id||''))return json({ok:false,error:'Reload Admin to identify this browser before recording sign-in.'},400);
         const claims = verifiedClaims(request);
         if (!UUID.test(claims.session_id || ""))
           return json(
@@ -194,8 +195,8 @@ Deno.serve(
             /* City remains unavailable. */
           }
         const combo = await codeHash(
-          "admin-device:" + actor.id,
-          ip + ":" + (request.headers.get("user-agent") || "").slice(0, 1000),
+          "admin-browser:" + actor.id,
+          body.device_id,
           key,
         );
         const result = await rpc("record_admin_login", {

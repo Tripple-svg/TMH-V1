@@ -1,4 +1,4 @@
-import {useRef,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {Link,useLocation} from 'react-router-dom';
 import {supportPrefill} from '../lib/supportPrefill';
 import HCaptcha from '@hcaptcha/react-hcaptcha';
@@ -15,6 +15,8 @@ const CATEGORIES=[
   ['other','Something else','My question does not fit the choices above.',MessageSquare],
 ];
 export default function SupportPage(){
+  const heading=useRef(null);
+  useEffect(()=>{window.scrollTo({top:0,behavior:'instant'});heading.current?.focus({preventScroll:true});},[]);
   const location=useLocation();
   const initial=supportPrefill(location.search);
   const [category,setCategory]=useState(initial.category);
@@ -45,7 +47,7 @@ export default function SupportPage(){
       <header className="pb-8 pt-10 sm:pb-10 sm:pt-12">
         <div className="mb-5 inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white bg-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur-lg dark:border-white/15 dark:bg-white/[0.04] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"><LifeBuoy aria-hidden="true" className="h-5 w-5 text-zinc-600 dark:text-zinc-300"/></div>
         <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-zinc-500">Team Haven · Support</p>
-        <h1 className="mt-3 font-serif text-4xl leading-tight tracking-tight sm:text-5xl">How can we help?</h1>
+        <h1 ref={heading} tabIndex={-1} className="mt-3 font-serif text-4xl leading-tight tracking-tight sm:text-5xl">How can we help?</h1>
         <p className="mt-4 max-w-lg text-sm leading-7 text-zinc-600 dark:text-zinc-400">Choose an issue, tell us what happened, then send your request. You’ll receive a reference to keep, and the team can reply by email.</p>
       </header>
       {reference?<section role="status" className="rounded-3xl border border-zinc-200 bg-white/70 p-6 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.025] sm:p-8">

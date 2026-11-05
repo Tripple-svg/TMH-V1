@@ -11,6 +11,7 @@ import { publicRequestLimit } from "../_shared/abuse-limits.ts";
 import { digest } from "../_shared/playbook-recovery.ts";
 import { deliverEmail, mailConfiguration } from "../_shared/resend-delivery.js";
 import { privacyEmail } from "../_shared/email-template.js";
+import {dataExportHtml} from '../_shared/data-export-html.js';
 Deno.serve(
   observe("confirm-data-export", async (request) => {
     const json = (body: unknown, status = 200) =>
@@ -58,22 +59,25 @@ Deno.serve(
           413,
         );
       if (!row?.id || !row.email || !row.snapshot) throw Error("snapshot");
+      const readable=row.archiveVersion===2;
       const zip = zipSync(
         {
+          ...(readable?{"My-Data.html":strToU8(dataExportHtml(row.snapshot))}:{}),
           "reviews-and-chats.json": strToU8(
             JSON.stringify(row.snapshot, null, 2),
           ),
           "README.txt": strToU8(
-            "TMH saved reviews and linked chats. This archive does not include every purchase, booking, support, security or unlinked guest record. Contact info@themarketinghaven.xyz for assistance with those records. Keep this archive private.",
+            readable?"Open My-Data.html in your browser to read your reviews and conversations. reviews-and-chats.json is the machine-readable copy. This archive does not include every purchase, booking, support, security or unlinked guest record. Contact info@themarketinghaven.xyz for assistance with those records. Keep this archive private.":"TMH saved reviews and linked chats. This archive does not include every purchase, booking, support, security or unlinked guest record. Contact info@themarketinghaven.xyz for assistance with those records. Keep this archive private.",
           ),
         },
         { mtime: new Date("2020-01-01T00:00:00Z"), level: 6 },
       );
+      if(zip.byteLength>8*1024*1024)return json({ok:false,error:'Your archive needs personal assistance. Contact info@themarketinghaven.xyz for a secure data access request.'},413);
       let binary = "";
       for (let offset = 0; offset < zip.length; offset += 8192)
         binary += String.fromCharCode(...zip.subarray(offset, offset + 8192));
       const paragraphs = [
-        "Your requested saved reviews and linked chats are attached as a ZIP file containing JSON. Keep it somewhere private.",
+        readable?"Your saved reviews and linked chats are attached as a ZIP file. Open My-Data.html to read them in your browser. A raw JSON copy is included too. Keep the archive somewhere private.":"Your requested saved reviews and linked chats are attached as a ZIP file containing JSON. Keep it somewhere private.",
         "This archive covers the records matched to your verified inbox. Ask us about other record categories, corrections or privacy concerns at info@themarketinghaven.xyz.",
       ];
       const accepted = await deliverEmail(
@@ -83,6 +87,7 @@ Deno.serve(
           subject: "Your TMH data archive",
           text: paragraphs.join("\n\n"),
           html: privacyEmail({
+            version:readable?'editorial-v4':'editorial-v3',
             title: "Your data archive is ready.",
             paragraphs,
           }),

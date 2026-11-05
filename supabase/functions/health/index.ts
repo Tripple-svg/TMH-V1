@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.118.0";
 import { observe } from "../_shared/observability.ts";
+import {healthConfiguration} from '../_shared/health-configuration.ts';
 Deno.serve(
   observe("health", async (request) => {
     const headers = {
@@ -34,9 +35,10 @@ Deno.serve(
     } catch {
       /* Public output contains check names only, never secrets or SQL. */
     }
-    const ok = Object.values(checks).every(Boolean);
+    const configuration=healthConfiguration(Deno.env);
+    const ok = Object.values(checks).every(Boolean)&&Object.values(configuration.required).every(Boolean);
     return new Response(
-      request.method === "HEAD" ? null : JSON.stringify({ ok, checks }),
+      request.method === "HEAD" ? null : JSON.stringify({ ok, checks,configuration,scope:'infrastructure_and_configuration',providerAvailability:'not_probed' }),
       { status: ok ? 200 : 503, headers },
     );
   }),
