@@ -129,8 +129,10 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     const playbookVerified = await verifyPlaybookAccess(context.playbookAccessToken, key);
     const platformState=havenPlatformState({review:conversation.review,playbookVerified,bookingStatus,serviceId:conversation.session.service_id});
     const previousRoute = conversation.session.routing_state;
-    const acceptedCall = acceptedCallInvitation(latest, conversation.session.messages)
-      || (isAffirmative(latest) && previousRoute?.lastAction === 'offer_call' && previousRoute?.permission === 'granted');
+    const acceptedCall = isAffirmative(latest) && (previousRoute?.version === 2
+      ? (previousRoute.pendingAction === 'call' && previousRoute.permission === 'asked')
+        || (previousRoute.lastAction === 'offer_call' && previousRoute.permission === 'granted')
+      : acceptedCallInvitation(latest, conversation.session.messages));
     const acceptedResource = isAffirmative(latest) && previousRoute?.pendingAction === 'playbook' && previousRoute?.permission === 'asked';
     const supportContext = { teamInquiry: conversation.session.service_id === 'team-inquiry' };
     const supportReply = bookingQuestionReply(latest,platformState)||supportHelpReply(latest, scope, supportContext);
@@ -138,7 +140,7 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
       || (acceptedCall ? 'Choose an available time using the button below. The team can discuss the scope and whether we can help. [[BOOK_CALL]]' : acceptedResource ? 'The Unseen Playbook offers practical exercises for the learning need we have discussed.' : null);
     const { data: turn, error: turnError } = await supabase.rpc('begin_haven_turn', {
       p_session_id: conversation.session.id, p_turn_id: requestId, p_content: latest,
-      p_has_image: Boolean(screenshot), p_substantive: !directHelp && substantiveAnswer(latest), p_explicit_call: explicitCallRequest(latest) || acceptedCallInvitation(latest, conversation.session.messages),
+      p_has_image: Boolean(screenshot), p_substantive: !directHelp && substantiveAnswer(latest), p_explicit_call: explicitCallRequest(latest) || acceptedCall,
       p_request_hash: await hashReviewToken(JSON.stringify({ content: latest, screenshot })),
     });
     if (turnError || !turn) throw new HavenRequestError('Could not save your message. Please try again.', 500);

@@ -604,7 +604,7 @@ export default function HavenDrawer() {
                   {isSupportScope && (
                     <>
                       <button
-                        onClick={() => { createNewSession(); setShowHistorySidebar(false); }}
+                        onClick={() => { createNewSession('support'); setShowHistorySidebar(false); }}
                         aria-label="Start a new support chat"
                         className="p-2 rounded-xl text-zinc-400 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] transition-colors cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                         <Plus className="w-5 h-5" />
@@ -698,7 +698,7 @@ export default function HavenDrawer() {
                       <div className="flex items-center justify-between pb-2 border-b border-white/[0.05]">
                         <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">Chat History</span>
                         <button
-                          onClick={() => { createNewSession(); setShowHistorySidebar(false); }}
+                          onClick={() => { createNewSession('support'); setShowHistorySidebar(false); }}
                           className="p-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-zinc-300 hover:bg-white/[0.08] text-[11px] font-medium flex items-center gap-1 px-2.5 cursor-pointer">
                           <Plus className="w-3 h-3" /> New
                         </button>

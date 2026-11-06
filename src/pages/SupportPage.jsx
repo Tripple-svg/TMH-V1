@@ -16,7 +16,8 @@ const CATEGORIES=[
   ['other','Something else','My question does not fit the choices above.',MessageSquare],
 ];
 export default function SupportPage(){
-  const {openDrawer}=useHaven();
+  const {createNewSession, toggleDrawer, isOpen}=useHaven();
+  const [hasStartedHaven, setHasStartedHaven]=useState(false);
   const heading=useRef(null);
   useLayoutEffect(()=>{window.scrollTo({top:0,behavior:'instant'});heading.current?.focus({preventScroll:true});},[]);
   const location=useLocation();
@@ -55,7 +56,10 @@ export default function SupportPage(){
       {!reference&&<section aria-label="Help from Haven" className="mb-6 rounded-2xl border border-zinc-200 bg-white/70 p-5 dark:border-white/15 dark:bg-white/[0.04]">
         <h2 className="text-base font-medium">Need a quick answer?</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">Haven can explain how to open your review, find your Playbook copy or use the website. It can also help with marketing questions. For payment checks, refunds or account access, send the team a request below.</p>
-        <button type="button" onClick={()=>openDrawer('support')} className="mt-4 min-h-11 rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 focus-visible:outline focus-visible:outline-offset-4 dark:border-white/25 dark:hover:bg-white/10">Ask Haven</button>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button type="button" onClick={()=>{createNewSession('support');setHasStartedHaven(true);}} className="min-h-11 rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 focus-visible:outline focus-visible:outline-offset-4 dark:border-white/25 dark:hover:bg-white/10">Ask Haven</button>
+          {hasStartedHaven && !isOpen && <button type="button" onClick={toggleDrawer} className="min-h-11 rounded-lg px-2 text-sm underline underline-offset-4">Resume Haven chat</button>}
+        </div>
         <p className="mt-3 text-xs leading-5 text-zinc-500">Opening Haven does not send your form. You can contact the team directly at any time.</p>
       </section>}
       {reference?<section role="status" className="rounded-3xl border border-zinc-200 bg-white/70 p-6 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.025] sm:p-8">

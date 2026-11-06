@@ -1,8 +1,6 @@
 import { editorialEmail } from './email-template.js';
 import { SERVICE_NAMES } from './team-assignment-public.js';
-export { SERVICE_NAMES } from './team-assignment-public.js';
-
-export const TEAM_NAMES = ['Francis Fadeyi', 'Paschal Ikiriko', 'Great Jordan', 'Obabi Babalola', 'Yakubu Dalil'];
+export { SERVICE_NAMES, TEAM_NAMES } from './team-assignment-public.js';
 export const ASSIGNMENT_FIELDS = 'id,booking_id,inquiry_id,assignee_name,assignee_email,preparation_note,revision,expires_at,revoked_at,acknowledged_at,email_attempted_at,email_sent_at,email_last_error,created_at,updated_at';
 const encoder = new TextEncoder();
 const hex = bytes => Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2,'0')).join('');

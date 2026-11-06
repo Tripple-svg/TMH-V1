@@ -1,7 +1,7 @@
 // One routing policy for primary and fallback models. User permission and
 // evidence are server-owned; generated tags never authorize privileged actions.
 import {platformNavigationHelp} from './platform-navigation.js';
-const NEEDS = ['learning', 'implementation', 'research', 'support', 'unknown'];
+const NEEDS = ['learning', 'implementation', 'research', 'support', 'out_of_scope', 'unknown'];
 const COMPLEXITIES = ['simple', 'complex', 'unknown'];
 const PREFERENCES = ['learn', 'delegate', 'unsure', 'none'];
 const ACTIONS = ['answer', 'clarify', 'offer_playbook', 'offer_call', 'support_handoff', 'close'];
@@ -10,7 +10,7 @@ const ROUTES = /\[\[(?:BOOK_CALL|PLAYBOOK|TIKTOK_CONTENT)\]\]/g;
 const CALL_URL = /https?:\/\/(?:www\.)?calendly\.com\/[^\s<>]+/gi;
 const SHOP_URL = /https?:\/\/(?:www\.)?themarketinghaven\.xyz\/?#shop\b/gi;
 const SUPPORT_ISSUE = /\b(?:download|billing|payment|paid|receipt|otp|refund|access|log[ -]?in|restriction|restricted|delet(?:e|ion)|privacy)\b/i;
-const WORK = /\b(?:websites?|sites?|wordpress|checkout|landing pages?|product pages?|campaigns?|ads?|paid media|tracking|funnels?|brand identity|branding|brand strategy|positioning|content|social media|marketing|customer research|market research)\b/i;
+const WORK = /\b(?:web|websites?|sites?|wordpress|checkout|landing pages?|product pages?|orders?|ordering|payments?|fulfilment|fulfillment|automation|campaigns?|ads?|paid media|tracking|funnels?|brand identity|branding|brand strategy|positioning|content|social media|marketing|customer research|market research)\b/i;
 const DELEGATE = /\b(?:(?:your|the|tmh) team|hire|done[ -]for[ -]me|do it for me|(?:build|make|design|create|develop|rebuild) (?:me|us)|(?:want|need) (?:mine|ours|my website|our website) (?:to be |to look )?(?:like yours|like your)|handle (?:it|the (?:work|execution))|help from (?:your|the) team)\b/i;
 const IMPLEMENT = /\b(?:rebuild|implement|redesign|set up|build|repair|fix|manage|run|design|develop|create|produce|write|improve|help with|work on)\b/i;
 const RESEARCH = /\b(?:customer interviews?|interview(?:ing)? customers|customer research|market research|competitor research|research (?:the|a|our) market|new market|multiple audiences|different customer segments)\b/i;
@@ -24,6 +24,9 @@ const DIAGNOSTIC = '[[DIAGNOSTIC_QUESTION]]';
 function wantsDelegation(text) {
   return DELEGATE.test(text) && !/\b(?:do not|don['’]?t|rather not|no need|not want)\b.{0,60}\b(?:team|hire|handle|do it)/i.test(text);
 }
+function requestsImplementation(text) {
+  return wantsDelegation(text) && WORK.test(text) && (IMPLEMENT.test(text) || /like yours/i.test(text));
+}
 function wantsLearning(text) {
   return LEARN.test(text) && !/\b(?:do not|don['’]?t|rather not|not want)\b.{0,45}\b(?:learn|myself|my own)/i.test(text);
 }
@@ -33,7 +36,7 @@ function humanRequest(text) {
 }
 function hasBusinessNeed(text) {
   return RESEARCH.test(text) || (WORK.test(text) || learningSubject(text))
-    && /\b(?:need|want|struggl\w*|problem|stuck|not|don['’]?t|nobody|no sales|no orders|declin\w*|drop\w*|missing|unclear|wrong|confus\w*|can['’]?t|cannot|los\w*|disappear\w*|improv\w*|rebuild|research|interview\w*|audience|why|how)\b/i.test(text);
+    && /\b(?:need|want|struggl\w*|problem|stuck|not|don['’]?t|nobody|no sales|no orders|declin\w*|drop\w*|missing|unclear|wrong|confus\w*|can['’]?t|cannot|los\w*|disappear\w*|improv\w*|rebuild|research|interview\w*|audience|why|how|manually|by hand|too long|bottleneck)\b/i.test(text);
 }
 
 function userTexts(context = {}) {
@@ -74,9 +77,13 @@ function bookApplicationQuestion(text) {
     && !/already purchased|\b(?:download|otp|refund|billing|recover(?:y)?|missing|lost|broken|expired|failed|receipt|unable to open)\b|\b(?:can['’]?t|cannot|won['’]?t|not)\s+(?:open|opening|access|download|find)\b/i.test(text);
 }
 function publicSupport(text, context) {
+  const merchantContext = learningSubject(text)
+    || /\b(?:customers|buyers|paid ads|campaigns|my (?:website|checkout|store)|our (?:website|checkout|store))\b/i.test(text);
+  const platformIssue = SUPPORT_ISSUE.test(text)
+    && (!merchantContext || /\b(?:tmh|haven|playbook|this (?:site|platform)|saved review)\b/i.test(text));
   return context.scope === 'support' && !context.teamInquiry
     && (humanRequest(text) || supportHelpReply(text, context.scope, context) !== null
-      || !bookApplicationQuestion(text) && SUPPORT_ISSUE.test(text));
+      || !bookApplicationQuestion(text) && platformIssue);
 }
 function normalizeState(previous = {}) {
   const oldNeed = previous.problemType === 'foundational' ? 'learning' : previous.problemType === 'operational' ? 'implementation' : 'unknown';
@@ -102,13 +109,13 @@ export function inferHavenNeed(messages = []) {
   const latest = sources.at(-1) || '';
   const latestPreference = [...sources].reverse().find(value => wantsDelegation(value) || wantsLearning(value));
   const preference = latestPreference ? wantsDelegation(latestPreference) ? 'delegate' : 'learn' : 'none';
-  const implementationRequested = sources.some(value => wantsDelegation(value) && (IMPLEMENT.test(value) || /like yours/i.test(value)) && WORK.test(value));
+  const implementationRequested = sources.some(requestsImplementation);
   const researchRequested = sources.some(value => RESEARCH.test(value));
   const need = researchRequested ? 'research' : implementationRequested ? 'implementation'
     : wantsLearning(latest) && learningSubject(facts) ? 'learning' : 'unknown';
   return { implementationRequested, researchRequested, need, complexity: researchRequested || implementationRequested ? 'complex' : 'unknown',
     preference, bookFit: need === 'learning' && !IMPLEMENT.test(latest),
-    evidence: quotedSources(sources.filter(value => RESEARCH.test(value) || (wantsDelegation(value) && IMPLEMENT.test(value) && WORK.test(value)) || wantsLearning(value))),
+    evidence: quotedSources(sources.filter(value => RESEARCH.test(value) || requestsImplementation(value) || wantsLearning(value))),
     problemType: ['research', 'implementation'].includes(need) ? 'operational' : need === 'learning' ? 'foundational' : 'unknown' };
 }
 
@@ -118,12 +125,30 @@ export function isAffirmative(text) {
 }
 export function acceptedCallInvitation(latest, messages = []) {
   const previous = [...messages].reverse().find(message => message.role === 'agent');
-  return isAffirmative(latest) && /\b(?:would you like|want to|shall we|can i)\b[^?\n]{0,160}\b(?:book|schedule|call)\b/i.test(previous?.content || '');
+  return isAffirmative(latest)
+    && /\b(?:would you like|want to|shall we|can i)\b[^?\n]{0,160}\b(?:book|schedule|call)\b/i.test(previous?.content || '')
+    && userTexts({messages}).some(quote => hasBusinessNeed(quote) && (WORK.test(quote) || RESEARCH.test(quote)));
+}
+
+const PLAYBOOK_PREVIEW = 'Open Get The Unseen Playbook in the Shop, then choose See what the Playbook contains for the chapter preview. If you have a question about your own offer or audience, I can help you work through it here.';
+
+function asksForBookContents(text) {
+  const chapter = /\bchapters?\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine)\b/i;
+  const book = /\b(?:playbook|ebook|book)\b/i;
+  const material = /\b(?:table of contents|chapter (?:list|titles|summaries)|all (?:the )?chapters|nine chapters|every chapter|full (?:text|framework)|whole (?:book|framework)|contents|contain(?:s)?|what(?:'s|’s| is) (?:in|inside)|what does .*? cover)\b/i;
+  const extract = /\b(?:tell me|show me|give me|send me|list|summari[sz]e|recite|quote|paste|reproduce|translate|read|rewrite|explain|what)\b/i;
+  if (book.test(text) && material.test(text)) return true;
+  if (chapter.test(text) && extract.test(text) && !bookApplicationQuestion(text)) return true;
+  return /^chapter\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine)[.!?\s]*$/i.test(text);
 }
 
 function platformHelpReply(text) {
+  if (asksForBookContents(text)) return PLAYBOOK_PREVIEW;
   const navigation=platformNavigationHelp(text);if(navigation)return navigation.text;
   const value = String(text || '').toLowerCase();
+  if (/^(?:tmh|the marketing haven|haven)\s+(?:is|was)\s+(?:(?:really|very|so)\s+)?(?:bad|terrible|useless|rubbish|disappointing)[.!\s]*$/i.test(value.trim())) {
+    return 'What specifically went wrong, and what were you trying to do?';
+  }
   // Specific platform operations are useful in any Haven conversation. These
   // factual answers do not change the marketing route or authorize an action.
   if (/\b(?:support (?:form|ticket|request)|contact support)\b/.test(value)) {
@@ -158,7 +183,7 @@ export function supportHelpReply(text, scope, context = {}) {
   }
   if (/\b(?:where|find|navigate|take me|show me|how do i)\b/.test(value)) {
     if (/\b(?:shop|playbook|download)\b/.test(value)) return 'Open Playbook in the menu, or scroll to Digital Products. Get The Unseen Playbook opens its panel. A new verified checkout opens the download directly; on another device or without saved access, Already purchased confirms the checkout inbox with a one-time code. Enter recovery details only in that panel.';
-    if (/\b(?:services|web engineering|growth|content)\b/.test(value)) return 'Open Services in the menu. Brand & Web Engineering covers brand/web implementation, Strategic Growth & Consulting covers positioning and growth systems, and Content & Social Architecture covers content planning and production. Each card explains the service and opens its enquiry.';
+    if (/\b(?:services (?:page|section|menu|card)|(?:your|tmh(?:'s)?) (?:services|web engineering|growth|content))\b/.test(value)) return 'Open Services in the menu. Brand & Web Engineering covers brand/web implementation, Strategic Growth & Consulting covers positioning and growth systems, and Content & Social Architecture covers content planning and production. Each card explains the service and opens its enquiry.';
     if (/\b(?:privacy|delete|deletion|data)\b/.test(value)) return 'Privacy Policy, Terms and Data Deletion are in the footer. The confirmed deletion flow targets saved reviews and their linked chats/screenshots; purchase access and all browser storage are separate. Contact info@themarketinghaven.xyz for records outside that flow.';
     if (/\b(?:team|about|contact)\b/.test(value)) return 'About introduces Team Haven. Public contact is info@themarketinghaven.xyz and WhatsApp +2347084232046 in the footer; the public location is Lagos, Nigeria.';
   }
@@ -180,6 +205,13 @@ function bookExplanation(raw, state) {
     : /\btrust|proof|testimonial/i.test(state.evidence.join(' '))
       ? 'The Unseen Playbook explains how clarity, positioning and trust affect a buying decision. For the proof gap you described, it can help you work out what would give a buyer a concrete reason to believe your offer. Open the details below to see whether it fits.'
       : 'The Unseen Playbook offers a way to examine your offer and the obstacles a buyer faces. The button below opens the details so you can decide whether it suits what you want to work on.';
+}
+function bookInvitation(raw) {
+  const candidate = cleanReply(raw).replace(/\[\[(?:STEP:[A-Z0-9_]+|DIAGNOSTIC_QUESTION|CHIPS:.*?)\]\]/gs, '').trim();
+  const invitesResource = /\b(?:would you like|may i|can i)\b/i.test(candidate) && /\b(?:resource|guide)\b/i.test(candidate);
+  const prematureOffer = PRICE.test(candidate) || /\b(?:playbook|call|buy|purchase|chapters?|guarantee)\b/i.test(candidate);
+  if (candidate.length <= 450 && invitesResource && !prematureOffer && candidate.match(/\?/g)?.length === 1) return candidate;
+  return 'I can point you to a resource for that part of your marketing. Would you like to see it?';
 }
 function callExplanation(raw) {
   const candidate = cleanReply(raw).replace(/\[\[(?:STEP:[A-Z0-9_]+|DIAGNOSTIC_QUESTION|CHIPS:.*?)\]\]/gs, '').trim();
@@ -223,7 +255,7 @@ export function resolveHavenRouting(rawText, context = {}) {
     try {
       const value = JSON.parse(marker[1]);
       const evidence = exactEvidence(value.evidence, sources);
-      if (evidence.some(hasBusinessNeed) || value.need === 'support' && evidence.length) proposed = { ...value, evidence };
+      if (evidence.some(hasBusinessNeed) || ['support', 'out_of_scope'].includes(value.need) && evidence.length) proposed = { ...value, evidence };
     } catch { /* Invalid metadata never becomes facts or UI content. */ }
   }
   if (proposed && !isAffirmative(latest)) {
@@ -234,13 +266,14 @@ export function resolveHavenRouting(rawText, context = {}) {
     state.evidence = proposed.evidence;
     state.missing = Array.isArray(proposed.missing) ? proposed.missing.filter(key => ['goal', 'scope', 'evidence', 'preference', 'problem'].includes(key)).slice(0, 4) : [];
   }
-  const currentDelegation = wantsDelegation(latest) && WORK.test(latest) && (IMPLEMENT.test(latest) || RESEARCH.test(latest) || /like yours/i.test(latest));
+  const currentDelegation = requestsImplementation(latest) || wantsDelegation(latest) && RESEARCH.test(latest);
   const currentResearch = RESEARCH.test(latest);
-  if (inferred.need !== 'unknown' && (currentDelegation || currentResearch || (!proposed && ['unknown','support'].includes(state.need)))) {
+  if (proposed?.need !== 'out_of_scope' && inferred.need !== 'unknown' && (currentDelegation || currentResearch || (!proposed && ['unknown','support'].includes(state.need)))) {
     state.need = inferred.need;
     state.complexity = inferred.complexity === 'unknown' ? state.complexity : inferred.complexity;
     state.evidence = inferred.evidence.length ? inferred.evidence : state.evidence;
     if (inferred.bookFit) state.bookFit = true;
+    if (currentDelegation && !proposed) state.missing = [];
   }
   if ((wantsDelegation(latest) || wantsLearning(latest)) && inferred.preference !== 'none') state.preference = inferred.preference;
   if (!isAffirmative(latest) && previous.need !== 'unknown' && state.need !== previous.need) {
@@ -272,8 +305,11 @@ export function resolveHavenRouting(rawText, context = {}) {
   const asksResource = !declines && RESOURCE_REQUEST.test(latest);
   const knowsNeed = state.evidence.length > 0 && state.need !== 'unknown' && state.need !== 'support';
   const explicitDelegation = currentDelegation;
-  const wantsTeam = state.preference === 'delegate' || asksCall || explicitDelegation;
-  const learningFits = state.need === 'learning' && state.bookFit && state.preference !== 'delegate';
+  const missingWork = state.missing.some(key => ['goal', 'scope', 'evidence', 'problem'].includes(key));
+  const operationalFits = knowsNeed && !missingWork && ['implementation', 'research'].includes(state.need)
+    && state.evidence.some(quote => WORK.test(quote) || RESEARCH.test(quote));
+  const learningFits = knowsNeed && !missingWork && state.need === 'learning' && state.bookFit
+    && !['delegate', 'unsure'].includes(state.preference);
   const wasOffered = previous.permission === 'asked' && ['playbook', 'call', 'service'].includes(previous.pendingAction);
   if (declines && (offersBook || offersCall || wasOffered)) {
     state.permission = 'declined'; state.pendingAction = null;
@@ -297,7 +333,12 @@ export function resolveHavenRouting(rawText, context = {}) {
     state.permission = 'granted'; state.pendingAction = null; state.preference = 'learn';
     return result(bookExplanation(raw, state) + '\n[[PLAYBOOK]]\n[[STEP:ROUTING_TO_PLAYBOOK]]', state, 'offer_playbook');
   }
-  if ((explicitDelegation || (asksCall && knowsNeed)) && context.scope !== undefined) {
+  if (state.need === 'out_of_scope') {
+    state.permission = 'none'; state.pendingAction = null; state.bookFit = false;
+    const answer = cleanReply(raw);
+    return result(!offersBook && !offersCall && answer ? answer : 'That work falls outside TMH’s services. A specialist who handles that specific task can help you assess your options.', state, 'answer');
+  }
+  if (operationalFits && (explicitDelegation || asksCall) && context.scope !== undefined) {
     state.permission = 'granted'; state.pendingAction = null; state.preference = 'delegate';
     return result(callExplanation(raw) + '\n[[BOOK_CALL]]\n[[STEP:ROUTING_TO_CALL]]', state, 'offer_call');
   }
@@ -315,21 +356,13 @@ export function resolveHavenRouting(rawText, context = {}) {
     return result('We can start with one manageable next step using what you have shared, then decide whether you need more help. You do not have to choose a paid option now.\n[[STEP:AWAITING_DIAGNOSTIC_Q2]]', state, 'answer');
   }
   if (offersBook || offersCall || preferenceQuestion) {
-    if (knowsNeed && preferenceQuestion && ['none', 'unsure'].includes(state.preference)) {
-      state.missing = ['preference']; state.pendingAction = 'preference';
-      return result('Would you prefer to work through this yourself, or discuss getting help from the team?\n[[STEP:AWAITING_DIAGNOSTIC_Q2]]', state, 'clarify');
-    }
-    if (knowsNeed && wantsTeam) {
+    if (operationalFits && offersCall && !['learn', 'unsure'].includes(state.preference)) {
       state.permission = 'asked'; state.pendingAction = 'call';
       return result('The work you have described can be discussed with the team. Would you like to explore its scope on a free 25-minute strategy call?\n[[STEP:AWAITING_PERMISSION]]', state, 'offer_call');
     }
-    if (knowsNeed && learningFits) {
+    if (learningFits) {
       state.permission = 'asked'; state.pendingAction = 'playbook';
-      return result('I can recommend a practical resource for working on the audience, offer and trust questions we have discussed. Would you like to see what it covers?\n[[STEP:AWAITING_PERMISSION]]', state, 'offer_playbook');
-    }
-    if (knowsNeed && ['none', 'unsure'].includes(state.preference)) {
-      state.missing = ['preference']; state.pendingAction = 'preference';
-      return result('Would you prefer to work through this yourself, or discuss getting help from the team?\n[[STEP:AWAITING_DIAGNOSTIC_Q2]]', state, 'clarify');
+      return result(bookInvitation(raw) + '\n[[STEP:AWAITING_PERMISSION]]', state, 'offer_playbook');
     }
     if (knowsNeed && state.preference === 'learn') {
       return result('The Playbook does not carry out research or technical implementation. I can help you understand a bounded next step for doing this yourself. Which part would you like to work through?\n[[STEP:AWAITING_DIAGNOSTIC_Q2]]', state, 'clarify');
@@ -339,7 +372,7 @@ export function resolveHavenRouting(rawText, context = {}) {
     state.missing = ['goal'];
     return result(question + '\n' + DIAGNOSTIC + '\n[[STEP:AWAITING_DIAGNOSTIC_Q2]]', state, 'clarify');
   }
-  if (asksCall && !knowsNeed) {
+  if (asksCall && !operationalFits) {
     state.missing = ['goal'];
     return result('What marketing or website work would you like the call to help you solve?\n' + DIAGNOSTIC + '\n[[STEP:AWAITING_DIAGNOSTIC_Q2]]', state, 'clarify');
   }

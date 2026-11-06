@@ -229,3 +229,16 @@ test('MFA diagnostics preserve safe provider codes and operation while dropping 
   const safe=mfa.adminMfaFailure({code:'mfa_ip_address_mismatch',status:400,message:'token=SECRET'},'cleanup');
   assert.equal(safe.code,'mfa_ip_address_mismatch');assert.match(mfa.adminMfaErrorText(safe),/mfa_ip_address_mismatch \(cleanup\)/);assert.doesNotMatch(mfa.adminMfaErrorText(safe),/SECRET/);
 });
+
+test('blocked orphan cleanup explains owner recovery and does not attempt another enrollment',async()=>{
+  const f=fixture({enrolled:false});
+  f.user.factors=[{...factor,status:'unverified'}];
+  f.auth.mfa.unenroll=async()=>({error:{code:'mfa_unavailable',message:'PRIVATE PROVIDER DETAIL'}});
+  await assert.rejects(mfa.enrollAdminTotp(f.auth),error=>{
+    assert.match(error.message,/Authentication > Users/);
+    assert.match(error.message,/only the unverified TOTP factor/);
+    assert.doesNotMatch(error.message,/PRIVATE PROVIDER DETAIL/);
+    return error.code==='mfa_unavailable' && error.operation==='cleanup';
+  });
+  assert.equal(f.calls.some(([action])=>action==='enroll'),false);
+});

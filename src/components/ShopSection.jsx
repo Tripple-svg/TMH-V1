@@ -2,7 +2,7 @@ import {getHavenIdentity} from '../lib/havenIdentity';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
-  BookOpen, CheckCircle2, ArrowRight, X, ShieldCheck,
+  BookOpen, CheckCircle2, ArrowRight, ChevronDown, X, ShieldCheck,
   Download,
 } from 'lucide-react';
 import ConfirmModal from './ui/ConfirmModal';
@@ -632,7 +632,12 @@ export default function ShopSection() {
                       </p>}
                     </div>
 
-                    {!recoveryOpen && <details className="group rounded-xl border border-white/10 px-4"><summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-3 text-sm font-medium text-zinc-200">See the nine chapters<ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none"/></summary><div className="divide-y divide-white/10">
+                    {!recoveryOpen && <details className="group rounded-xl border border-white/20 bg-white/5 open:bg-white/[0.07]">
+                      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10 [&::-webkit-details-marker]:hidden">
+                        See what the Playbook contains
+                        <ChevronDown aria-hidden="true" className="h-5 w-5 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none" />
+                      </summary>
+                      <div className="divide-y divide-white/10 border-t border-white/10 px-4 py-4">
                       {playbookModules.map((m, idx) => (
                         <div
                           key={idx}

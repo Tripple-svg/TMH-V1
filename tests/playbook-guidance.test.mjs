@@ -48,6 +48,18 @@ test('book routing: verified application help stays conversational; an unspecifi
   assert.doesNotMatch(resolveHavenRouting('Use the Playbook. [[PLAYBOOK]]', { playbookVerified: true }).text, /\[\[PLAYBOOK\]\]/);
 });
 
+test('book routing: explicit contents and chapter requests receive Shop directions in every scope', () => {
+  for (const scope of ['audit', 'service', 'support']) {
+    for (const latestUserText of ['What does the Playbook contain?', 'Tell me chapter one', 'Translate chapter 2']) {
+      for (const playbookVerified of [true, false]) {
+        const reply = resolveHavenRouting('Chapter one says... [[PLAYBOOK]]', { scope, latestUserText, playbookVerified });
+        assert.match(reply.text, /See what the Playbook contains/);
+        assert.doesNotMatch(reply.text, /Chapter one says|\[\[PLAYBOOK\]\]/);
+      }
+    }
+  }
+});
+
 test('editorial mail: purchase button has the requested destination, plain-text fallback and honest recovery wording', () => {
   const { html, text } = purchaseEmail();
   assert.match(html, /href="https:\/\/themarketinghaven.xyz\/#shop"[^>]*>Access Your Playbook</);

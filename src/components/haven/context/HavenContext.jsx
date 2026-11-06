@@ -393,7 +393,7 @@ export function HavenProvider({ children }) {
 
   const createSession = useCallback((scope, { id: providedId, title, serviceId = null, initialMessage = null } = {}) => {
     const newSession = {
-      id: providedId || `session-${scope}-${serviceId || 'gen'}-${Date.now()}`,
+      id: providedId || `session-${scope}-${serviceId || 'gen'}-${crypto.randomUUID()}`,
       title: title || 'New Chat', scope, serviceId,
       isPinned: false, createdAt: Date.now(),
       messages: initialMessage ? [{ ...initialMessage, reveal: true }] : [],
@@ -738,12 +738,6 @@ export function HavenProvider({ children }) {
   const closeDrawer  = useCallback(() => setIsOpen(false), []);
   const toggleDrawer = useCallback(() => setIsOpen(prev => !prev), []);
 
-  const createNewSession = useCallback(() => {
-    const newId = createSession('support', { title: 'New Chat' });
-    triggerToast('New chat started');
-    return newId;
-  }, [createSession, triggerToast]);
-
   const switchSession = useCallback((sessionId, scope = activeScope) => {
     const target = getSessionsForScope(scope).find(s => s.id === sessionId);
     if (target) {
@@ -807,6 +801,17 @@ export function HavenProvider({ children }) {
     setIsThinking(false);
     triggerToast('Response stopped');
   }, [triggerToast, setSessionsForScope]);
+
+  const createNewSession = useCallback((scope = 'support') => {
+    const previousRequest = activeRequestRef.current;
+    if (previousRequest && !previousRequest.stopped) stopResponse();
+    const newId = createSession(scope, { title: 'New Chat' });
+    setMode(scope);
+    setActiveService(null);
+    setIsOpen(true);
+    triggerToast('New chat started');
+    return newId;
+  }, [createSession, stopResponse, triggerToast]);
 
   const dismissFailedTurn = useCallback(() => {
     const key = `${activeScope}/${activeSessionId}`;

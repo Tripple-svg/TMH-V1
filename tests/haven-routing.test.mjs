@@ -67,10 +67,11 @@ test('routing: a resource invitation without naming the book still saves the pen
   assert.match(next.text,/PLAYBOOK/);
 });
 
-test('routing: a first preference question is recorded even when it names no commercial product',()=>{
-  const latest='We need to improve our message for two different audiences.';
-  const first=resolveHavenRouting(decision('Would you prefer to work through this yourself, or discuss getting help from the team?',{...learningDecision,evidence:[latest],preference:'none',nextAction:'clarify'}),context(latest));
-  assert.equal(first.routingState.pendingAction,'preference');assert.match(first.text,/Would you prefer/);
+test('routing: a strong website review can surface a foundational gap without a product menu',()=>{
+  const latest='My website looks fine and gets enquiries. I do not know who the offer is for.';
+  const first=resolveHavenRouting(decision('Would you prefer to work through this yourself, or discuss getting help from the team?',{...learningDecision,evidence:[latest],preference:'none',nextAction:'clarify'}),context(latest,{presenceType:'website',score:92}));
+  assert.equal(first.routingState.pendingAction,'playbook');
+  assert.doesNotMatch(first.text,/Would you prefer|BOOK_CALL|\[\[PLAYBOOK/);
 });
 test('routing: an explicit request to view the book opens the real Shop without pretending it is paid',()=>{
   const result=resolveHavenRouting('Would you like to purchase the Playbook for ₦9,639?',context('Show me The Unseen Playbook'));
@@ -93,11 +94,27 @@ test('routing: self-help preference cannot turn technical implementation into a 
   const result=resolveHavenRouting(raw,context(latest));
   assert.doesNotMatch(result.text,/\[\[PLAYBOOK\]\]|BOOK_CALL/);assert.match(result.text,/does not carry out research or technical implementation/);
 });
-test('routing: unknown preference can be clarified without treating an established business as automatic delegation',()=>{
-  const latest='We need to understand why our offer is not distinct from other options.';
-  const raw=decision('The right next step is a call. [[BOOK_CALL]]',{need:'research',complexity:'complex',preference:'none',bookFit:false,evidence:[latest],nextAction:'offer_call'});
+test('routing: a concrete operational need merits a call invitation and still needs consent',()=>{
+  const latest='We sell on Instagram and confirm orders and payments by hand. It takes too long each evening.';
+  const raw=decision('The right next step is a call. [[BOOK_CALL]]',{need:'implementation',complexity:'complex',preference:'none',bookFit:false,evidence:[latest],nextAction:'offer_call'});
   const result=resolveHavenRouting(raw,context(latest));
-  assert.match(result.text,/Would you prefer/);assert.doesNotMatch(result.text,/BOOK_CALL|\[\[PLAYBOOK/);assert.equal(result.routingState.pendingAction,'preference');
+  assert.match(result.text,/free 25-minute strategy call/);
+  assert.doesNotMatch(result.text,/BOOK_CALL|\[\[PLAYBOOK/);
+  assert.equal(result.routingState.pendingAction,'call');
+  assert.equal(result.routingState.permission,'asked');
+});
+
+test('routing: support chat treats a merchant checkout fault as their business and leaves unsupported work out of sales',()=>{
+  const checkout='Our customers cannot pay on our website. I want your team to fix the checkout.';
+  const supported=resolveHavenRouting('We can discuss the work.',context(checkout,{scope:'support'}));
+  assert.match(supported.text,/\[\[BOOK_CALL\]\]/);
+  assert.equal(supported.routingState.need,'implementation');
+
+  const outside='I want your team to fix our delivery van.';
+  const raw=decision('Book a call [[BOOK_CALL]]',{need:'out_of_scope',evidence:[outside],nextAction:'offer_call'});
+  const unsupported=resolveHavenRouting(raw,context(outside));
+  assert.match(unsupported.text,/falls outside TMH/);
+  assert.doesNotMatch(unsupported.text,/BOOK_CALL|PLAYBOOK/);
 });
 test('routing: an answered preference is not asked again and undecided users are not forced into a sale',()=>{
   const state={version:2,need:'learning',complexity:'simple',bookFit:true,preference:'none',evidence:[learning],pendingAction:'preference'};

@@ -19,6 +19,7 @@ const MESSAGES={
   over_request_rate_limit:'Too many authenticator attempts. Wait a few minutes, then reload settings and try again.',
 };
 const providerCode=error=>typeof error?.code==='string'&&/^[a-z][a-z0-9_]{0,79}$/.test(error.code)?error.code:null;
+const cleanupUnavailable = 'Supabase could not remove an incomplete authenticator setup. Reload this page and try once more. If it still fails, ask the project owner to check your user in Supabase under Authentication > Users and remove only the unverified TOTP factor. Then sign in again and retry setup.';
 function logFailure(error,operation){
   console.log('TMH authenticator request failed',{operation,code:providerCode(error)||'code_not_supplied',status:Number.isInteger(error?.status)?error.status:null});
 }
@@ -29,6 +30,9 @@ export function adminMfaFailure(error,operation='settings'){
   if(error?.status===401)return new AdminMfaError(MESSAGES.session_expired,'session_expired',operation);
   if(error?.status===429)return new AdminMfaError(MESSAGES.over_request_rate_limit,'over_request_rate_limit',operation);
   if(['AbortError','TimeoutError','AuthRetryableFetchError','TypeError'].includes(error?.name))return new AdminMfaError('The authenticator request could not reach the server. Check your connection, reload settings, then retry. An incomplete setup may already be saved.','mfa_network_error',operation);
+  if(operation==='cleanup'&&(!providerCode(error)||error.code==='mfa_unavailable')){
+    return new AdminMfaError(cleanupUnavailable,'mfa_unavailable',operation);
+  }
   return new AdminMfaError(operation==='verify'?MESSAGES.mfa_verification_failed:'Supabase could not complete this authenticator request. Reload settings and try again. The project owner can check Authentication > Multi-Factor Authentication and Authentication > Logs using the error code below.',providerCode(error)||'mfa_unavailable',operation);
 }
 export function adminMfaErrorText(error){const safe=adminMfaFailure(error);return safe.message+' Error code: '+safe.code+' ('+safe.operation+').';}

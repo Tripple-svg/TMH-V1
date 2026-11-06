@@ -1,5 +1,6 @@
 import { internalHeaders } from './internal-auth.js';
 import { invocationFailure } from './resend-delivery.js';
+import { TEAM_NAMES } from './team-assignment-public.js';
 export class ModerationError extends Error {
   constructor(message: string, public status = 500) { super(message); }
 }
@@ -65,16 +66,22 @@ export async function applyAutomaticFlag(supabase: any, input: { reviewId?: stri
 
 // Obvious direct abuse is handled even if every model is unavailable. Specific
 // product criticism, legal complaints and quoting an insult are not violations.
+const teamTarget = [...TEAM_NAMES.flatMap(name => [name, name.split(' ')[0]]), 'your founder', 'the founder', 'the ceo', 'your ceo', 'your team member'].join('|');
+const privateLocation = new RegExp(`^(?:please )?where (?:does|is) (?:${teamTarget})(?:\\s+(?:live|living|staying))?[?!.\\s]*$`, 'i');
+const privateContact = new RegExp(`^(?:please |can you |could you )?(?:what is|what's|tell me|give me|send me|show me|i want|i need)\\b.{0,25}\\b(?:your|${teamTarget})(?:'s)?\\s+(?:home address|private phone|personal phone number|personal email)\\b`, 'i');
+const directedSexual = new RegExp(`^(?:(?:please )?(?:send|show|give) me (?:your|(?:${teamTarget})'s) nudes?\\b|i want to have sex with (?:you|${teamTarget})\\b)`, 'i');
+
 export function detectHavenAbuse(text: string) {
   const value = text.trim().toLowerCase().replaceAll('’', "'");
-  if (/^(?:you(?:'re| are)|haven(?: is)?|tmh(?: is)?|the marketing haven(?: is)?)\s+(?:(?:so|an?|absolutely|really)\s+)*(?:stupid|idiot|useless|moron|dumb|fuck\w*|bitch)\b/.test(value)
+  if (/^you(?:'re| are)\s+(?:(?:so|an?|absolutely|really)\s+)*(?:stupid|idiot|moron|dumb|fuck\w*|bitch)\b/.test(value)
     && !/\b(?:because|when|download|payment|broken|error|response|review|booking|website)\b/.test(value)) return 'ABUSE';
   if (/^(?:i(?:'ll| will| am going to)|we(?:'ll| will))\s+(?:kill|hurt|attack)\s+(?:you|your team|haven|tmh)\b/.test(value)) return 'HARASSMENT';
-  if (/\b(?:your|francis|paschal|cto|team member(?:'s)?)\b.{0,30}\b(?:home address|private phone|personal phone number)\b/.test(value)) return 'PERSONAL_INFO';
+  if (privateLocation.test(value) || privateContact.test(value)) return 'PERSONAL_INFO';
+  if (directedSexual.test(value)) return 'SEXUAL';
   return null;
 }
 export function moderationReply(category: string) {
-  return category === 'PERSONAL_INFO'
-    ? 'I cannot share private contact details. You can reach the team at info@themarketinghaven.xyz. What do you need help with?'
-    : 'Let us keep this respectful. What happened that you want the team to address: the review, a response, or something else?';
+  if (category === 'PERSONAL_INFO') return 'I keep the team’s home addresses and personal details private. You can reach TMH at info@themarketinghaven.xyz. What can I help you with?';
+  if (category === 'SEXUAL') return 'Let us keep the conversation respectful. What would you like help with in your marketing?';
+  return 'Let us keep this respectful. What happened that you want the team to address: the review, a response, or something else?';
 }

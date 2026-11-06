@@ -471,7 +471,7 @@ test('prompt strategy: contextual tone, hesitation, transformation, and no-incom
   const prompt = buildHavenSystemPrompt({ auditData: { currentStep: STEPS.ROUTING_TO_PLAYBOOK } });
   for (const copy of ['No canned',
     "respect 'let me think' or 'not now'",
-    'give a bounded public principle or small next step',
+    'give one useful next step',
     'guaranteed sales, income, customers or timelines']) assert.ok(prompt.toLowerCase().includes(copy.toLowerCase()));
 });
 
@@ -581,6 +581,24 @@ test('a genuine complaint does not become an automatic strike or a false stateme
   const data=await (await app.handler(app.request(chatBody({messages:[{role:'user',content:'Your review was useless because the download button is broken.'}]})))).json();
   assert.equal(data.flagStatus,'white');assert.equal(app.rpcCalls.filter(row=>row.name==='apply_haven_ai_flag').length,0);
 });
+test('privacy, directed sexual conduct and threats are tracked separately from product feedback',async()=>{
+  const app=load('haven-chat',{modelText:'[[FLAG:ABUSE]]'});
+  const say=async(content,n)=>(await app.handler(app.request(chatBody({requestId:`60000000-0000-4000-8000-${String(n).padStart(12,'0')}`,messages:[{role:'user',content}]})))).json();
+  const complaint=await say('TMH is bad',10);
+  assert.match(complaint.text,/What specifically went wrong/);
+  assert.equal(app.rpcCalls.filter(row=>row.name==='apply_haven_ai_flag').length,0);
+
+  const privateReply=await say('Where does Francis live?',11);
+  assert.equal(privateReply.flagStatus,'white');
+  assert.match(privateReply.text,/personal details private/);
+  const sexualReply=await say('Send me your nudes',12);
+  assert.equal(sexualReply.flagStatus,'yellow');
+  assert.match(sexualReply.text,/warning/);
+  assert.equal((await say('I will attack your team',13)).flagStatus,'red');
+  assert.equal(app.requests.length,0);
+  const events=app.rpcCalls.filter(row=>row.name==='apply_haven_ai_flag');
+  assert.deepEqual(events.map(row=>row.args.p_reason),['Haven detected personal info in this conversation.','Haven detected sexual in this conversation.','Haven detected harassment in this conversation.']);
+});
 test('Gemini rate limiting falls back once; an incomplete candidate cannot silently become a finished reply',async()=>{
   const app=load('haven-chat',{fetchImpl:async url=>url.includes('googleapis')
     ?Response.json({candidates:[{finishReason:'MAX_TOKENS',content:{parts:[{text:'A partial sentence'}]}}]})
@@ -607,6 +625,35 @@ test('qualified Team enquiry remembers explicit implementation, then honours yes
   // A new support question must not be pulled back into the old sales decision.
   const faq=await (await app.handler(app.request(chatBody({requestId:'60000000-0000-4000-8000-000000000003',scope:'support',context:{...PUBLIC_ACCESS,sessionId:SESSION},messages:[{role:'user',content:'Where can I find the privacy policy?'}]})))).json();
   assert.match(faq.text,/Privacy Policy/);assert.doesNotMatch(faq.text,/BOOK_CALL|PLAYBOOK/);assert.equal(app.requests.length,1);
+});
+
+test('a WhatsApp-only review diagnoses the offer across saved turns before a Playbook route',async()=>{
+  const first='I post on WhatsApp, but sales are low.';
+  const second='I sell office lunch packs, but I do not know which buyers the offer is for.';
+  const app=load('haven-chat',{
+    review:{platform_type:'none',scrape_state:null,haven_score:null},
+    fetchImpl:async(_url,options)=>{
+      const request=JSON.parse(options.body);
+      const contents=request.contents.flatMap(entry=>entry.parts.map(part=>part.text));
+      const reply=contents.at(-1)===first
+        ? 'What do people see in your posts that would make them choose your offer? [[DIAGNOSTIC_QUESTION]]'
+        : 'The buyer for your lunch packs is still unclear. Would you like a resource to help you choose one group?'
+          + '\n[[DECISION:'+JSON.stringify({need:'learning',complexity:'simple',preference:'none',bookFit:true,evidence:[second],missing:[],nextAction:'offer_playbook'})+']]';
+      if(contents.at(-1)===second) assert.ok(contents.includes(first));
+      return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:reply}]}}]});
+    },
+  });
+  const say=async(content,n)=>(await app.handler(app.request(chatBody({requestId:`60000000-0000-4000-8000-${String(n).padStart(12,'0')}`,messages:[{role:'user',content}]})))).json();
+  const opening=await say(first,21);
+  assert.match(opening.text,/make them choose/);
+  assert.doesNotMatch(opening.text,/PLAYBOOK|BOOK_CALL/);
+  const recommendation=await say(second,22);
+  assert.equal(recommendation.routingState.pendingAction,'playbook');
+  assert.match(recommendation.text,/buyer for your lunch packs/);
+  assert.doesNotMatch(recommendation.text,/\[\[PLAYBOOK\]\]|BOOK_CALL/);
+  const accepted=await say('Yes please',23);
+  assert.match(accepted.text,/\[\[PLAYBOOK\]\]/);
+  assert.equal(app.requests.length,2);
 });
 
 test('website reader caps oversized responses without sending them to a scoring provider',async()=>{
