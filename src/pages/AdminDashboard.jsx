@@ -313,7 +313,7 @@ function TranscriptViewer({ session }) {
               <div
                 className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words ${
                   isAgent
-                    ? 'bg-white/[0.025] text-zinc-200 border border-white/[0.06]'
+                    ? 'bg-white/[0.045] text-zinc-200 border border-white/[0.06]'
                     : 'bg-white/[0.07] text-zinc-100 border border-white/10'
                 }`}
               >
@@ -949,7 +949,7 @@ function PurchasesPanel({ purchases, error, accessToken, onAuthLost, onPurchaseC
     }
   };
   return (
-    <section aria-labelledby="purchases-heading" className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.025] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+    <section aria-labelledby="purchases-heading" className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-white/[0.12] bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-zinc-800 p-4">
         <h2 id="purchases-heading" className="text-base font-semibold">Playbook Purchases</h2>
         <button type="button" disabled={checkingSetup} onClick={checkEmailSetup} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-200 disabled:opacity-50">{checkingSetup ? 'Checking…' : 'Check email setup'}</button>
@@ -957,7 +957,7 @@ function PurchasesPanel({ purchases, error, accessToken, onAuthLost, onPurchaseC
       </div>
       {emailSetup && <p role="status" className="border-b border-white/[0.06] px-4 py-3 text-xs leading-relaxed text-zinc-300">{emailSetup.from && <span className="mr-2">Sender: {emailSetup.from}.</span>}{emailSetup.message || emailSetup.error}</p>}
       <div className="p-4"><input aria-label="Search purchases" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search buyer email or payment reference" className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm outline-none focus:border-white/30" /></div>
-      {!error&&<div className="space-y-3 p-4 md:hidden">{rows.map(purchase=><article key={purchase.id||purchase.reference} className="rounded-2xl border border-white/10 bg-white/[0.025] p-4"><p className="break-all text-sm">{purchase.email}</p><p className="mt-2 break-all font-mono text-[11px] text-zinc-500">{purchase.reference}</p><p className="mt-3 text-sm">{purchase.amount==null?"Amount unavailable":currency(Number(purchase.amount)/100)}</p><p className="mt-2 text-xs text-zinc-500">{formatDate(purchase.created_at)}</p><p className="mt-3 text-xs text-zinc-400">{purchase.thankyou_sent?"Email provider accepted":"Email pending"}</p>{!purchase.thankyou_sent&&<button disabled={retrying[purchase.reference]} onClick={()=>retryEmail(purchase)} className="mt-3 min-h-11 rounded-lg border border-white/20 px-4 text-xs">Retry email</button>}{retryErrors[purchase.reference]&&<p role="alert" className="mt-2 text-xs text-red-300">{retryErrors[purchase.reference]}</p>}<button onClick={()=>requestPurchaseDeletion(purchase)} className="mt-3 block min-h-11 text-xs text-red-200 underline">Request deletion</button></article>)}</div>}
+      {!error&&<div className="space-y-3 p-4 md:hidden">{rows.map(purchase=><article key={purchase.id||purchase.reference} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4"><p className="break-all text-sm">{purchase.email}</p><p className="mt-2 break-all font-mono text-[11px] text-zinc-500">{purchase.reference}</p><p className="mt-3 text-sm">{purchase.amount==null?"Amount unavailable":currency(Number(purchase.amount)/100)}</p><p className="mt-2 text-xs text-zinc-500">{formatDate(purchase.created_at)}</p><p className="mt-3 text-xs text-zinc-400">{purchase.thankyou_sent?"Email provider accepted":"Email pending"}</p>{!purchase.thankyou_sent&&<button disabled={retrying[purchase.reference]} onClick={()=>retryEmail(purchase)} className="mt-3 min-h-11 rounded-lg border border-white/20 px-4 text-xs">Retry email</button>}{retryErrors[purchase.reference]&&<p role="alert" className="mt-2 text-xs text-red-300">{retryErrors[purchase.reference]}</p>}<button onClick={()=>requestPurchaseDeletion(purchase)} className="mt-3 block min-h-11 text-xs text-red-200 underline">Request deletion</button></article>)}</div>}
       {error ? <p role="alert" className="p-4 text-sm text-red-300">{error}</p> : rows.length === 0 ? (
         <p className="p-4 text-sm text-zinc-500">{query ? 'No purchases match this search.' : 'No purchases recorded yet.'}</p>
       ) : (
@@ -1007,12 +1007,12 @@ function BookingsPanel({ bookings, error, now = 0, accessToken, onAuthLost }) {
   return <section aria-label="Strategy call bookings" className="space-y-4">
     <div className="flex gap-3">{['calendar','list'].map(value=><button key={value} type="button" aria-pressed={view===value} onClick={()=>setView(value)} className={`min-h-11 rounded-xl border px-4 py-2 text-sm ${view===value?'border-white/30 bg-white/10':'border-white/10 text-zinc-400'}`}>{value==='calendar'?'Monthly calendar':'Booking cards'}</button>)}</div>
     {view==='calendar'&&!error&&<BookingCalendar bookings={bookings} now={now}/>}
-    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4 sm:p-5">
+    <div className="rounded-2xl border border-white/[0.12] bg-white/[0.045] p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-semibold">Bookings</h2><p className="mt-2 text-xs leading-relaxed text-zinc-400">Synced Calendly records and historical onsite bookings, including cancellations. Opening a booking link alone does not create a booking.</p></div><p className="text-xs text-zinc-400">{upcoming.length} upcoming · {bookings.length} loaded / 500 maximum</p></div>
       <div className="mt-5 flex flex-col gap-3 sm:flex-row"><input aria-label="Search bookings" placeholder="Search name, email or service" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm outline-none focus:border-white/30" /><select aria-label="Filter bookings" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="rounded-xl border border-white/10 bg-zinc-950 p-3 text-xs"><option value="all">All bookings</option><option value="upcoming">Upcoming</option><option value="active">Active (including past)</option><option value="canceled">Canceled</option></select></div>
     </div>
     <label className="block text-xs text-zinc-400">Service<select aria-label="Filter booking service" value={serviceFilter} onChange={event=>{setServiceFilter(event.target.value);setPage(1);}} className="mt-2 block w-full rounded-xl border border-white/10 bg-zinc-950 p-3 sm:max-w-sm"><option value="all">All services</option>{Object.entries(SERVICE_NAMES).map(([id,name])=><option key={id} value={id}>{name}</option>)}<option value="unspecified">Not specified / direct booking</option></select></label>
-    {view==="list"&&(error ? <p role="alert" className="rounded-xl border border-red-500/20 p-5 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">{query || status !== 'all' || serviceFilter!=='all' ? 'No bookings match these filters.' : 'No bookings have synced yet. Calendly polling imports meetings from the last 3 hours through the next 60 days; older meetings are not backfilled.'}</p> : <div className="grid gap-4 lg:grid-cols-2">{filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map((booking) => <article key={booking.id} className="min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5">
+    {view==="list"&&(error ? <p role="alert" className="rounded-xl border border-red-500/20 p-5 text-sm text-red-300">{error}</p> : filtered.length === 0 ? <p className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">{query || status !== 'all' || serviceFilter!=='all' ? 'No bookings match these filters.' : 'No bookings have synced yet. Calendly polling imports meetings from the last 3 hours through the next 60 days; older meetings are not backfilled.'}</p> : <div className="grid gap-4 lg:grid-cols-2">{filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map((booking) => <article key={booking.id} className="min-w-0 rounded-2xl border border-white/[0.12] bg-white/[0.045] p-5">
       <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="font-medium text-zinc-100">{booking.full_name || 'Name not provided'}</h3><a href={`mailto:${booking.email}`} className="mt-1 block break-all text-sm text-zinc-400 underline-offset-4 hover:underline">{booking.email}</a></div><span className={`rounded border px-2 py-1 text-[10px] uppercase tracking-wider ${['canceled','cancelled'].includes(booking.status) ? 'border-red-400/25 text-red-300' : 'border-white/15 text-zinc-300'}`}>{booking.status}</span></div>
       <p className="mt-5 text-lg font-medium tracking-tight">{booking.start_time ? formatDate(booking.start_time) : 'Time not recorded'}</p><p className="mt-1 text-xs text-zinc-400">Displayed in your device timezone · Invitee timezone: {booking.timezone || 'Not recorded'}</p>
       <dl className="mt-5 space-y-2 text-xs text-zinc-400"><div><dt className="inline text-zinc-400">Meeting: </dt><dd className="inline">{booking.event_name || 'Strategy call'}</dd></div><div><dt className="inline text-zinc-400">Source: </dt><dd className="inline">{booking.source === 'lead' ? 'Brand review' : booking.source === 'team' ? 'Team inquiry' : booking.source === 'service' ? `Services${booking.service_id ? ` / ${booking.service_id}` : ''}` : booking.source === 'legacy' ? 'Legacy onsite booking' : 'Direct Calendly'}</dd></div><div><dt className="inline text-zinc-400">Last synced: </dt><dd className="inline">{formatDate(booking.last_synced_at)}</dd></div></dl>
@@ -1042,7 +1042,7 @@ function StandaloneSessionRow({ session, accessToken, onAuthLost, onVisitorChang
       else showToast('error', result.error || 'Could not update the visitor flag.');
     } finally { setSaving(false); }
   };
-  return <article className="overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.025]">
+  return <article className="overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.045]">
     <div className="flex flex-wrap items-start justify-between gap-4 p-4 sm:p-5">
       <button type="button" aria-expanded={expanded} aria-controls={`transcript-${session.id}`} onClick={() => setExpanded((value) => !value)} className="flex min-w-0 flex-1 items-start gap-3 text-left">
         <span className="mt-1 text-zinc-500"><ChevronRightIcon expanded={expanded} /></span>
@@ -1060,7 +1060,7 @@ function StandaloneSessionRow({ session, accessToken, onAuthLost, onVisitorChang
 }
 
 function QueueCard({title,value,detail,onClick}) {
-  return <button type="button" onClick={onClick} className="min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5 text-left transition-colors hover:bg-white/[0.05] focus-visible:outline-2 focus-visible:outline-zinc-400"><span className="block text-xs text-zinc-400">{title}</span><strong className="my-3 block text-3xl font-medium tracking-tight tabular-nums text-zinc-100">{value}</strong><span className="block text-[11px] leading-relaxed text-zinc-500">{detail}</span></button>;
+  return <button type="button" onClick={onClick} className="min-w-0 rounded-2xl border border-white/[0.12] bg-white/[0.045] p-5 text-left transition-colors hover:bg-white/[0.05] focus-visible:outline-2 focus-visible:outline-zinc-400"><span className="block text-xs text-zinc-400">{title}</span><strong className="my-3 block text-3xl font-medium tracking-tight tabular-nums text-zinc-100">{value}</strong><span className="block text-[11px] leading-relaxed text-zinc-500">{detail}</span></button>;
 }
 function exportInquiryCsv(sessions) {
   const fields=['id','linked_name','linked_brand','review_id','inquiry_status','inquiry_owner','inquiry_next_followup_on','inquiry_notes','flag_status','created_at','updated_at'];
@@ -1080,7 +1080,7 @@ function SessionsPanel({ scope, sessions, error, accessToken, onAuthLost, onVisi
   const currentPage = Math.min(page, pages);
   const label = scope === 'team' ? 'Team Inquiries' : scope === 'support' ? 'Support Chats' : 'Service Chats';
   return <section aria-label={label} className="space-y-4">
-    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4 sm:p-5">
+    <div className="rounded-2xl border border-white/[0.12] bg-white/[0.045] p-4 sm:p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">{label}</h2><p className="text-xs text-zinc-500">{filtered.length} shown / {sessions.length} loaded · newest 500 maximum</p></div>
       <p className="mb-4 text-xs leading-relaxed text-zinc-500">{scope==='team' ? 'Conversations started through Talk to Our Team. Assign an owner, set the next action and keep the original transcript together.' : 'Support and service conversations retain their linked lead where available. Talk to Our Team has its own Team Inquiries tab.'}</p>
       <div className="mb-4 flex flex-wrap items-center gap-3">{scope==='team' && <><select aria-label="Filter inquiry status" value={stage} onChange={event=>{setStage(event.target.value);setPage(1);}} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs"><option value="all">All inquiry statuses</option>{INQUIRY_STATUSES.map(status=><option key={status} value={status}>{status}</option>)}</select><label className="flex items-center gap-2 text-xs text-zinc-400"><input type="checkbox" checked={dueOnly} onChange={event=>{setDueOnly(event.target.checked);setPage(1);}} />Follow-up due</label><button type="button" onClick={()=>exportInquiryCsv(filtered)} className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-300">Export inquiries CSV</button></>}<select aria-label="Filter access flag" value={flag} onChange={event=>{setFlag(event.target.value);setPage(1);}} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs"><option value="all">All access flags</option><option value="white">White</option><option value="yellow">Yellow</option><option value="red">Red</option></select></div>
@@ -1441,7 +1441,7 @@ export default function AdminDashboard() {
         {flagEmailError && <p role="alert" className="mb-4 text-xs leading-relaxed text-amber-300">{flagEmailError}</p>}
         {chatErrors.linked && <p role="alert" className="mb-4 text-xs text-amber-300">{chatErrors.linked}</p>}
         {linkedSessionsTruncated && <p role="alert" className="mb-4 text-xs text-amber-300">The linked conversation index reached 5,000 entries. Older linked chats require a server export.</p>}
-        <section className="mb-4 grid gap-2 sm:gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4 grid-cols-2 md:grid-cols-4">
+        <section className="mb-4 grid gap-2 sm:gap-3 rounded-2xl border border-white/[0.12] bg-white/[0.045] p-4 grid-cols-2 md:grid-cols-4">
           <select
             value={filters.temperature}
             onChange={(e) => setFilters((f) => ({ ...f, temperature: e.target.value }))}
@@ -1479,9 +1479,9 @@ export default function AdminDashboard() {
         </section>
 
         {/* Desktop table */}
-        <section aria-label="Leads table" tabIndex={0} className="hidden w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-2xl border border-white/[0.08] bg-white/[0.025] 2xl:block">
+        <section aria-label="Leads table" tabIndex={0} className="hidden w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-2xl border border-white/[0.12] bg-white/[0.045] 2xl:block">
           <table className="w-full min-w-[1380px] text-left text-sm [&_td]:p-4 [&_td]:align-top [&_td]:[overflow-wrap:anywhere] [&_th]:p-4">
-            <thead className="border-b border-white/[0.08] bg-white/[0.015] text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+            <thead className="border-b border-white/[0.12] bg-white/[0.015] text-[10px] font-medium uppercase tracking-wider text-zinc-500">
               <tr>
                 <th className="w-8 p-2"></th>
                 <th className="p-2">Shot</th>

@@ -311,19 +311,19 @@ export default function ReviewForm({ onClose, onSubmitForm, onLaunchHaven }) {
 
             {/* Step 3 CTA */}
             {form.platformType === 'none' ? (
-              <motion.button type="submit"
-                className="relative w-full py-4 sm:py-5 rounded-xl font-semibold text-sm sm:text-base tracking-wide uppercase border border-blue-500/50 transition-all duration-300 flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 hover:shadow-[0_0_40px_rgba(37,99,235,0.35)] active:scale-[0.98]"
-                whileTap={{ scale: 0.98 }}>
+              <button type="submit"
+                className="relative w-full py-4 sm:py-5 rounded-xl font-semibold text-sm sm:text-base tracking-wide uppercase border border-blue-500/50 transition-all duration-300 flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 hover:shadow-[0_0_40px_rgba(37,99,235,0.35)]"
+                >
                 <MessageCircle className="w-5 h-5 text-white" />
                 <span className="text-white">Talk to Haven - Start from Scratch</span>
-              </motion.button>
+              </button>
             ) : (
-              <motion.button type="submit"
-                className="relative w-full py-4 sm:py-5 rounded-xl font-semibold text-sm sm:text-base tracking-wide uppercase border border-blue-500/50 transition-all duration-300 flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 hover:shadow-[0_0_40px_rgba(37,99,235,0.35)] active:scale-[0.98]"
-                whileTap={{ scale: 0.98 }}>
+              <button type="submit"
+                className="relative w-full py-4 sm:py-5 rounded-xl font-semibold text-sm sm:text-base tracking-wide uppercase border border-blue-500/50 transition-all duration-300 flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 hover:shadow-[0_0_40px_rgba(37,99,235,0.35)]"
+                >
                 <Send className="w-5 h-5 text-white" />
                 <span className="text-white">Request Free Brand Review</span>
-              </motion.button>
+              </button>
             )}
           </form>
         </div>

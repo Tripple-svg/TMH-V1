@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion,useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { getCookieConsent, setCookieConsent } from '../lib/cookieService';
 
 export default function CookieBanner() {
   const [visible, setVisible] = useState(false);
-  const reduceMotion=useReducedMotion();
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setVisible(getCookieConsent() === null), 1500);
@@ -32,8 +31,8 @@ export default function CookieBanner() {
           <div className="flex items-start gap-3 pr-8"><img src="/Tmhh.jpeg" alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
           <p className="leading-6">Want to help us improve? Allow optional analytics. You can still use all our tools without it.</p></div>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <motion.button whileTap={reduceMotion?undefined:{scale:0.98}} type="button" aria-label="Decline optional analytics" onClick={() => choose(false)} className="min-h-11 rounded-xl border border-white/20 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/10">Decline</motion.button>
-            <motion.button whileTap={reduceMotion?undefined:{scale:0.98}} type="button" aria-label="Accept optional analytics" onClick={() => choose(true)} className="min-h-11 rounded-xl bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-white">Accept</motion.button>
+            <button  type="button" aria-label="Decline optional analytics" onClick={() => choose(false)} className="min-h-11 rounded-xl border border-white/20 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/10">Decline</button>
+            <button  type="button" aria-label="Accept optional analytics" onClick={() => choose(true)} className="min-h-11 rounded-xl bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-white">Accept</button>
           </div>
           <button type="button" onClick={() => choose(false)} aria-label="Decline optional analytics and dismiss notice" className="absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-lg text-zinc-300 transition hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
         </motion.aside>

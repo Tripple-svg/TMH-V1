@@ -700,3 +700,12 @@ test('durable AI controls: full 5 MiB chat and social images fit default daily c
     assert.equal(parts.find(p=>p.inline_data).inline_data.data.length,image.toString('base64').length);
   }
 });
+
+test('website directions return real navigation chips in every scope without paid provider calls',async()=>{
+  for(const scope of ['support','service','audit']){
+    for(const [content,chip] of [['How do I download my data?','__DATA_ACCESS__'],['How do I delete my data?','__DELETE_DATA__'],['Where is the footer?','__FOOTER__'],['How do I edit my review details?','__REVIEW_DETAILS__'],['Where can I meet Team Haven?','__TEAM__']]){
+      const app=load('haven-chat');const response=await app.handler(app.request({...chatBody(),scope,context:scope==='audit'?ACCESS:PUBLIC_ACCESS,messages:[{role:'user',content}]}));
+      assert.equal(response.status,200,scope+': '+content);const result=await response.json();assert.ok(result.chips.includes(chip),scope+': '+content);assert.equal(app.requests.length,0);
+    }
+  }
+});

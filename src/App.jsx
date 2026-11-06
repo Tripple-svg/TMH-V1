@@ -4,7 +4,6 @@ import { AnimatePresence } from 'framer-motion';
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 
 import Header from './components/layout/Header';
-import PageProgress from './components/layout/PageProgress';
 import HeroSection from './components/HeroSection';
 import AboutSection from './components/AboutSection';
 import ServiceGrid from './components/services/ServiceGrid';
@@ -72,6 +71,31 @@ function AppInner() {
     window.addEventListener('open-legal-modal', handler);
     return () => window.removeEventListener('open-legal-modal', handler);
   }, [navigate]);
+
+  useEffect(() => {
+    const openDeletion=()=>setShowDataDeletion(true);
+    window.addEventListener('open-data-deletion',openDeletion);
+    return ()=>window.removeEventListener('open-data-deletion',openDeletion);
+  },[]);
+
+  useEffect(()=>{
+    if(loading)return;
+    const url=new URL(window.location.href);
+    // Only known public sections are navigation targets. Wait for the full intro.
+    const id=url.hash.slice(1);
+    const frame=requestAnimationFrame(()=>{
+      if(url.searchParams.get('privacy')==='delete'){
+        setShowDataDeletion(true);
+        url.searchParams.delete('privacy');
+        window.history.replaceState(null,'',`${url.pathname}${url.search}${url.hash}`);
+      }
+      if(!['hero','about','services','free-class','shop','testimonials','footer'].includes(id))return;
+      const target=document.getElementById(id);
+      target?.scrollIntoView({block:'start',behavior:'instant'});
+      target?.focus({preventScroll:true});
+    });
+    return ()=>cancelAnimationFrame(frame);
+  },[loading]);
 
   const handleOpenReview = () => {
     if (hasExistingReview()) {
@@ -184,7 +208,6 @@ function AppInner() {
         )}
       </AnimatePresence>
 
-      <PageProgress />
       <Header
         onOpenReview={handleOpenReview}
       />
@@ -193,7 +216,7 @@ function AppInner() {
         <section id="hero">
           <HeroSection onOpenReview={handleOpenReview} />
         </section>
-        <section id="about">
+        <section id="about" tabIndex={-1}>
           <AboutSection />
         </section>
         <section id="services">
@@ -242,7 +265,7 @@ export default function App() {
         <Route path="/admin" element={<AdminRoute />} />
         <Route path="/admin/accept-invite" element={<AdminInvitePage />} />
         <Route path="/team-brief" element={<TeamBriefPage />} />
-        <Route path="/support" element={<SupportPage />} />
+        <Route path="/support" element={<HavenProvider><SupportPage /><HavenDrawer /></HavenProvider>} />
         <Route path="/data-access" element={<DataAccessPage />} />
         <Route path="/data-access/confirm" element={<DataAccessPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />

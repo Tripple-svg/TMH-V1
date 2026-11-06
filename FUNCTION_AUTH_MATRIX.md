@@ -48,7 +48,7 @@ Internal credentials have infrastructure authority and must stay server-only. Si
 | `site-presence` | Optional browser profile proof | 100/10s global; per-profile minimum update interval |
 | `support-request` | Public hCaptcha and consent; optional verified browser link | 3/15min/network |
 | `sync-haven-session` | Private review/session capability | Bounded snapshot and timestamp; no separate quota |
-| `update-review-source` | Private review capability and revision check | 10/hour/review; 20/hour/network; subsequent scoring budgets |
+| `update-review-source` | Private review capability and revision check; explicit restart confirmation; service-only correction/restart RPCs | 10/hour/review; 20/hour/network; subsequent scoring budgets |
 | `validate-hcaptcha` | Public bounded challenge validation; no review or admin authority | 5/10min/network; 4KB body; 10-second provider timeout |
 | `verify-paystack` | Server payment verification and checkout proof or device grant | 60/hour download/network; 5/hour checkout/network; invalid download 5/10min/network |
 | `verify-playbook-recovery` | Inbox OTP keyed hash and verified payment | Five challenge guesses; shared verification network/device cooldowns |

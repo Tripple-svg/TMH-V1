@@ -7,7 +7,9 @@ import { quickPrompts } from '../config/quick-prompts';
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link,useNavigate } from 'react-router-dom';
+import {PLATFORM_ACTIONS} from '../../../../supabase/functions/_shared/platform-navigation.js';
+import ReviewDetailsEditor from './ReviewDetailsEditor';
 import {
   X, Menu, Plus, MoreVertical, Pin, MessageSquare, Sparkles,
    Target,  Trash2, RotateCcw, Settings, ExternalLink,
@@ -264,6 +266,7 @@ function BookingModal({ isOpen, onClose }) {
 }
 
 export default function HavenDrawer() {
+  const navigate=useNavigate();
   const reduceMotion = useReducedMotion();
   const {
     isOpen, closeDrawer, openDrawer, activeScope, activeService, viewState,
@@ -273,11 +276,17 @@ export default function HavenDrawer() {
     updateUserProfile, recheckHavenAccess,
     showToast, toastMessage, clearChat, stopResponse, dismissFailedTurn,
     bookingNoticeOpen, setBookingNoticeOpen,
-    auditPreflight, proceedFromPreflight, reopenReviewSource, retryScrape, correctReviewSource,
+    auditPreflight, proceedFromPreflight, reopenReviewSource, retryScrape, correctReviewSource, reviseReviewDetails,
     sessionSaveState,
   } = useHaven();
 
   const [showHistorySidebar, setShowHistorySidebar] = useState(false);
+  const [showReviewDetails,setShowReviewDetails]=useState(false);
+  useEffect(()=>{
+    const open=()=>setShowReviewDetails(true);
+    window.addEventListener('edit-review-details',open);
+    return ()=>window.removeEventListener('edit-review-details',open);
+  },[]);
   const [checkingAccess, setCheckingAccess] = useState(false);
   const [accessError, setAccessError] = useState('');
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
@@ -311,9 +320,10 @@ export default function HavenDrawer() {
   const isRestricted = userProfile.flag_status === 'red';
   const needsReviewRecovery = activeScope === 'audit'
     && (!userProfile.reviewId || !userProfile.sessionId || !userProfile.accessToken);
+  const editingReview=showReviewDetails&&activeScope==='audit'&&!needsReviewRecovery&&!isRestricted;
   const scopeLabel     = getScopeLabel(activeScope, activeService);
 
-  const showPreflight = userProfile.businessDomain !== 'none' && activeScope === 'audit'
+  const showPreflight = !editingReview&&userProfile.businessDomain !== 'none' && activeScope === 'audit'
     && auditPreflight
     && !auditPreflight.dismissed
     && (auditPreflight.status === 'scraping'
@@ -325,7 +335,7 @@ export default function HavenDrawer() {
   const hasUserMessage = messages.some((m) => m.role === 'user');
   // A saved failed turn stays attached to its conversation while the source is open.
   // Only the chat view can display or retry it; scoring has its own loading state.
-  const showChat = !showPreflight && viewState !== 'landing';
+  const showChat = !editingReview&&!showPreflight && viewState !== 'landing';
   const showConsentLine = !hasUserMessage && !showPreflight;
 
   useDialogFocus(isOpen&&!modalType&&!showBookingModal&&!bookingNoticeOpen,dialogRef,closeDrawer);
@@ -333,6 +343,7 @@ export default function HavenDrawer() {
 
   useEffect(() => {
     if (!isOpen) { openedSessionRef.current = null; return; }
+    if(editingReview){scrollRef.current?.scrollTo({top:0,behavior:'instant'});return;}
     if (openedSessionRef.current === activeSessionId) return;
     openedSessionRef.current = activeSessionId;
     requestAnimationFrame(() => {
@@ -347,7 +358,7 @@ export default function HavenDrawer() {
       if (!hasOverflow) return;
       el.scrollTop = el.scrollHeight;
     });
-  }, [isOpen, activeSessionId, messages.length]);
+  }, [isOpen, activeSessionId, messages.length,editingReview]);
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
@@ -435,6 +446,15 @@ export default function HavenDrawer() {
 
   const handleChipSelect = useCallback((text) => {
     if (isRestricted) return;
+    const action=Object.hasOwn(PLATFORM_ACTIONS,text)?PLATFORM_ACTIONS[text]:null;
+    if(action){
+      if(action.dialog==='review-details'){if(userProfile.reviewId&&userProfile.accessToken){openDrawer('audit',{profileData:{...userProfile,isReturningUser:true},returning:true});window.dispatchEvent(new CustomEvent('edit-review-details'));}else{closeDrawer();navigate('/?review=continue');}return;}
+      closeDrawer();
+      if(action.path)navigate(action.path);
+      else if(action.section){const target=document.getElementById(action.section);if(target)requestAnimationFrame(()=>{target.scrollIntoView({behavior:reduceMotion?'auto':'smooth',block:'start'});target.focus?.({preventScroll:true});});else navigate('/#'+action.section);}
+      else if(action.dialog==='data-deletion'){if(document.getElementById('footer'))window.dispatchEvent(new CustomEvent('open-data-deletion'));else navigate('/?privacy=delete#footer');}
+      return;
+    }
     if (text === '__BOOK_CALL__') {
       updateUserProfile?.({ clickedBookingLink: true });
       openDrawer('booking',{source:currentSession?.serviceId==='team-inquiry'?'team':activeScope==='service'?'services':activeScope==='audit'?'review':'team',serviceId:activeService?.id||(['web','growth','content'].includes(currentSession?.serviceId)?currentSession.serviceId:null)});
@@ -461,7 +481,7 @@ export default function HavenDrawer() {
 
     armForceScroll();
     sendMessage(text);
-  }, [sendMessage, closeDrawer, openDrawer, armForceScroll, updateUserProfile, isRestricted,activeScope,activeService,currentSession]);
+  }, [sendMessage, closeDrawer, openDrawer, armForceScroll, updateUserProfile, isRestricted,activeScope,activeService,currentSession,navigate,reduceMotion,userProfile]);
 
   const handleNavChipSelect = useCallback((navChip) => {
     if (isRestricted) return;
@@ -499,7 +519,7 @@ export default function HavenDrawer() {
   const unpinned = sessions.filter(s => !s.isPinned);
 
   const SessionBtn = ({ s }) => (
-    <motion.button whileTap={{ scale: 0.98 }}
+    <button
       onClick={() => { switchSession(s.id, 'support'); setShowHistorySidebar(false); }}
       className={`w-full text-left p-2.5 rounded-xl text-xs flex items-center gap-2.5 cursor-pointer transition-colors ${
         s.id === activeSessionId
@@ -508,7 +528,7 @@ export default function HavenDrawer() {
       }`}>
       <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 ${s.id === activeSessionId ? 'text-zinc-300' : 'text-zinc-500'}`} />
       <span className="truncate flex-1">{s.title}</span>
-    </motion.button>
+    </button>
   );
 
   useEffect(() => {
@@ -554,13 +574,13 @@ export default function HavenDrawer() {
               <div className="relative flex items-center justify-between px-4 py-3.5 border-b border-white/[0.08] bg-zinc-900/80 z-20 flex-shrink-0">
                 <div className="flex items-center gap-2.5">
                   {isSupportScope && (
-                    <motion.button whileTap={{ scale: 0.92 }} id="haven-menu-btn"
+                    <button  id="haven-menu-btn"
                       onClick={() => setShowHistorySidebar(p => !p)}
                       aria-label="Chat history"
                       aria-expanded={showHistorySidebar}
                       className="p-2 rounded-xl text-zinc-400 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] transition-colors cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                       <Menu className="w-5 h-5" />
-                    </motion.button>
+                    </button>
                   )}
                   <div className="flex items-center gap-2.5">
                     <div className="relative">
@@ -583,20 +603,20 @@ export default function HavenDrawer() {
                 <div className="flex items-center gap-0.5">
                   {isSupportScope && (
                     <>
-                      <motion.button whileTap={{ scale: 0.92 }}
+                      <button
                         onClick={() => { createNewSession(); setShowHistorySidebar(false); }}
                         aria-label="Start a new support chat"
                         className="p-2 rounded-xl text-zinc-400 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] transition-colors cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                         <Plus className="w-5 h-5" />
-                      </motion.button>
+                      </button>
                       <div className="relative">
-                        <motion.button ref={optsBtnRef} whileTap={{ scale: 0.92 }}
+                        <button ref={optsBtnRef}
                           onClick={() => setShowOptionsMenu(p => !p)}
                           aria-label="Chat options"
                           aria-expanded={showOptionsMenu}
                           className="p-2 rounded-xl text-zinc-400 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] transition-colors cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                           <MoreVertical className="w-4 h-4" />
-                        </motion.button>
+                        </button>
                         <AnimatePresence>
                           {showOptionsMenu && (
                             <motion.div ref={menuRef}
@@ -626,12 +646,12 @@ export default function HavenDrawer() {
                       </div>
                     </>
                   )}
-                  <motion.button whileTap={{ scale: 0.92 }}
+                  <button
                     onClick={() => { setShowHistorySidebar(false); setShowOptionsMenu(false); closeDrawer(); }}
                     aria-label="Close Haven chat"
                     className="p-2 rounded-xl text-zinc-400 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] transition-colors cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                     <X className="w-5 h-5" />
-                  </motion.button>
+                  </button>
                 </div>
               </div>
 
@@ -651,6 +671,7 @@ export default function HavenDrawer() {
                     className="px-5 py-2.5 bg-zinc-900/60 border-b border-white/[0.04] flex items-center gap-2 flex-wrap overflow-hidden flex-shrink-0">
                     {userProfile.name && <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-zinc-300">{userProfile.name}</span>}
                     {userProfile.businessDomain && <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-zinc-300">{userProfile.businessDomain}</span>}
+                    {activeScope==='audit'&&!needsReviewRecovery&&<button type="button" disabled={isThinking||isRestricted} onClick={()=>{setShowReviewDetails(true);requestAnimationFrame(()=>scrollRef.current?.scrollTo({top:0,behavior:'instant'}));}} className="min-h-9 rounded-md border border-white/15 px-2 text-[11px] text-zinc-300 hover:bg-white/5 disabled:opacity-40">Edit review details</button>}
                     {activeScope === 'audit' && userProfile.businessDomain !== 'none' && !showPreflight && !needsReviewRecovery && <button type="button" onClick={() => { reopenReviewSource(); requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' })); }} disabled={isThinking || isRestricted} className="rounded-md border border-white/10 px-2 py-0.5 text-[11px] text-zinc-400 hover:text-white disabled:opacity-40">Review source</button>}
                     {userProfile.auditScore != null && (
                       <span className={`text-[11px] px-2 py-0.5 rounded-md border font-medium ${
@@ -676,11 +697,11 @@ export default function HavenDrawer() {
                       className="absolute top-[3.25rem] left-0 bottom-0 w-3/4 max-w-[280px] z-40 bg-zinc-950 border-r border-white/[0.08] p-4 flex flex-col space-y-4 shadow-2xl shadow-black/60">
                       <div className="flex items-center justify-between pb-2 border-b border-white/[0.05]">
                         <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">Chat History</span>
-                        <motion.button whileTap={{ scale: 0.95 }}
+                        <button
                           onClick={() => { createNewSession(); setShowHistorySidebar(false); }}
                           className="p-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-zinc-300 hover:bg-white/[0.08] text-[11px] font-medium flex items-center gap-1 px-2.5 cursor-pointer">
                           <Plus className="w-3 h-3" /> New
-                        </motion.button>
+                        </button>
                       </div>
                       <div className="flex-1 overflow-y-auto space-y-4 pr-1">
                         {pinned.length > 0 && (
@@ -708,7 +729,7 @@ export default function HavenDrawer() {
                 className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5"
               >
                 <div ref={scrollContentRef} className="space-y-5">
-                  {showPreflight ? (
+                  {editingReview?<ReviewDetailsEditor profile={userProfile} onSave={reviseReviewDetails} onClose={()=>setShowReviewDetails(false)}/>:showPreflight ? (
                     <HavenScoreCard
                       preflight={auditPreflight}
                       kind={userProfile?.businessDomain === 'social' || userProfile?.businessDomain === 'website_and_social' ? 'social' : 'website'}
@@ -762,7 +783,7 @@ export default function HavenDrawer() {
                 )}
               </AnimatePresence>
 
-              {!showPreflight && (
+              {!editingReview&&!showPreflight && (
                 <div className="relative px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-white/[0.08] bg-zinc-950 flex-shrink-0">
                   {showConsentLine && (
                     <div className="mb-3 text-[11px] leading-relaxed text-zinc-400">
@@ -780,7 +801,7 @@ export default function HavenDrawer() {
                     onSend={handleSend}
                     onStop={stopResponse}
                     isThinking={isThinking}
-                    disabled={needsReviewRecovery || isRestricted}
+                    disabled={editingReview || needsReviewRecovery || isRestricted}
                     size="full"
                   />
                   {isRestricted && (

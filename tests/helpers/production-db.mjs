@@ -18,7 +18,10 @@ export async function productionDb({baselineOnly=false}={}){
       create function storage.foldername(text) returns text[] language sql as $$select string_to_array($1,'/')$$;
       grant usage on schema public,auth,storage to anon,authenticated,service_role;
       select set_config('request.jwt.claim.role','service_role',false);`);
-    if(baselineOnly)await db.exec(await readFile('supabase/migrations/20261105000001_consolidated_baseline.sql','utf8'));
+    if(baselineOnly){
+      await db.exec(await readFile('supabase/migrations/20261105000001_consolidated_baseline.sql','utf8'));
+      for(const name of (await readdir('supabase/migrations')).filter(name=>name.endsWith('.sql')&&name>'20261105000002'&&!/cron/.test(name)).sort())await db.exec(await readFile('supabase/migrations/'+name,'utf8'));
+    }
     else {
     await db.exec(await readFile('supabase/schema.sql','utf8'));
     for(const name of (await readdir('supabase/migrations')).filter(name=>name.endsWith('.sql')&&!/cron/.test(name)).sort()){

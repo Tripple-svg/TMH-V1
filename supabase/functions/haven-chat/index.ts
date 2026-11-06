@@ -16,6 +16,7 @@ import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiTex
 import { applyAutomaticFlag, ModerationError, detectHavenAbuse, moderationReply } from '../_shared/haven-moderation.ts';
 import { verifyPlaybookAccess } from '../_shared/playbook-access.js';
 import {havenPlatformState,bookingQuestionReply} from '../_shared/haven-platform-state.js';
+import {platformNavigationHelp} from '../_shared/platform-navigation.js';
 import {
   HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson, screenshotPart,
   textValue, validateChatBody, savedStep,
@@ -177,7 +178,8 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
       promptContext = {
         userName: textValue(conversation.review?.full_name, 120, 'there'), brandName: textValue(conversation.review?.brand_name, 200, 'your business'),
         serviceName, entryPoint: scope === 'service' ? 'SERVICE_GRID' : session.service_id === 'team-inquiry' ? 'TEAM_INQUIRY' : 'CUSTOMER_SUPPORT',
-        auditData: { ...qualification, routingState: session.routing_state || null, currentStep: allowedPublicSteps.includes(session.current_step as string) ? session.current_step : defaultStep },
+        auditData: { ...qualification, mainGoal:textValue(conversation.review?.main_goal,500), presenceType:conversation.review?.platform_type||null,
+          scoringRevision:conversation.review?.scoring_revision||0,routingState: session.routing_state || null, currentStep: allowedPublicSteps.includes(session.current_step as string) ? session.current_step : defaultStep },
       };
     }
     const systemPrompt = buildHavenSystemPrompt({ ...promptContext, playbookVerified, platformState, latestMessage:latest });
@@ -228,6 +230,7 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     if (warned) rawText += '\n\nPlease keep this conversation respectful and follow our terms. This is your warning. Another abusive message will restrict your access.';
     if (flagStatus === 'red') rawText = RESTRICTED_MESSAGE;
     const parsed = parseChips(rawText);
+    if(!flag&&flagStatus!=='red')parsed.chips=[...new Set([...parsed.chips,...(platformNavigationHelp(latest)?.chips||[])])];
     const stepMatch = [...rawText.matchAll(/\[\[STEP:([A-Z0-9_]+)\]\]/g)].at(-1)?.[1];
     const leadMatch = [...rawText.matchAll(/\[\[LEAD:([A-Z]+)\]\]/g)].at(-1)?.[1];
     const currentStep = Object.values(STEPS).includes(stepMatch || '') && stepMatch !== STEPS.GREETING ? stepMatch : promptContext.auditData.currentStep;

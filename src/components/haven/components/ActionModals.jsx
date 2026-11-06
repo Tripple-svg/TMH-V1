@@ -65,15 +65,15 @@ const DeleteConfirmModal = memo(function DeleteConfirmModal({ onClose, onConfirm
           </div>
 
           <div className="flex items-center gap-3 pt-1">
-            <motion.button
-              whileTap={{ scale: 0.96 }}
+            <button
+
               onClick={onClose}
               className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-slate-300 bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.07] hover:text-slate-100 transition-all cursor-pointer"
             >
               Cancel
-            </motion.button>
-            <motion.button
-              whileTap={{ scale: 0.96 }}
+            </button>
+            <button
+
               onClick={() => {
                 onConfirm();
                 onClose();
@@ -84,7 +84,7 @@ const DeleteConfirmModal = memo(function DeleteConfirmModal({ onClose, onConfirm
                 <Trash2 className="w-4 h-4" />
                 Delete
               </span>
-            </motion.button>
+            </button>
           </div>
         </div>
       </motion.div>
@@ -121,15 +121,15 @@ const ClearConfirmModal = memo(function ClearConfirmModal({ onClose, onConfirm }
           </div>
 
           <div className="flex items-center gap-3 pt-1">
-            <motion.button
-              whileTap={{ scale: 0.96 }}
+            <button
+
               onClick={onClose}
               className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-slate-300 bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.07] hover:text-slate-100 transition-all cursor-pointer"
             >
               Cancel
-            </motion.button>
-            <motion.button
-              whileTap={{ scale: 0.96 }}
+            </button>
+            <button
+
               onClick={() => {
                 onConfirm();
                 onClose();
@@ -140,7 +140,7 @@ const ClearConfirmModal = memo(function ClearConfirmModal({ onClose, onConfirm }
                 <RotateCcw className="w-4 h-4" />
                 Clear Messages
               </span>
-            </motion.button>
+            </button>
           </div>
         </div>
       </motion.div>
@@ -223,13 +223,13 @@ const SettingsModal = memo(function SettingsModal({ onClose, currentSession, use
                 <p className="text-xs text-slate-500">Current chat details & context</p>
               </div>
             </div>
-            <motion.button aria-label="Close chat settings"
-              whileTap={{ scale: 0.9 }}
+            <button aria-label="Close chat settings"
+
               onClick={onClose}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/[0.05] transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
-            </motion.button>
+            </button>
           </div>
 
           {/* Session Title */}
@@ -270,13 +270,13 @@ const SettingsModal = memo(function SettingsModal({ onClose, currentSession, use
             </div>
           )}
 
-          <motion.button
-            whileTap={{ scale: 0.97 }}
+          <button
+
             onClick={onClose}
             className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-slate-300 bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.07] hover:text-slate-100 transition-all cursor-pointer"
           >
             Close
-          </motion.button>
+          </button>
         </div>
       </motion.div>
     </ModalOverlay>

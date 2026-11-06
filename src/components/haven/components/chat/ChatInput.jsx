@@ -225,15 +225,15 @@ const ChatInput = forwardRef(function ChatInput(
               <img src={imagePreview} alt="Upload preview" className="w-full h-full object-cover" />
             )}
           </div>
-          <motion.button
-            whileTap={{ scale: 0.85 }}
+          <button
+
             onClick={handleRemoveImage}
             type="button"
             aria-label="Remove attached image"
             className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-zinc-950 text-zinc-400 hover:text-white border border-white/[0.08] flex items-center justify-center cursor-pointer shadow-lg"
           >
             <X className="w-3 h-3" />
-          </motion.button>
+          </button>
         </motion.div>
       )}
 
@@ -271,9 +271,9 @@ const ChatInput = forwardRef(function ChatInput(
           />
           <div className={`absolute flex items-center gap-1.5 ${isCompact ? 'right-2.5' : 'right-3'}`}>
             {SpeechRecognitionAPI && (
-              <motion.button
+              <button
                 type="button"
-                whileTap={{ scale: 0.9 }}
+
                 onClick={handleMicClick}
                 className={isRecording
                   ? 'text-red-400 transition-colors cursor-pointer p-0.5 animate-pulse'
@@ -286,11 +286,11 @@ const ChatInput = forwardRef(function ChatInput(
                 {isRecording
                   ? <MicOff className={isCompact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
                   : <Mic className={isCompact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />}
-              </motion.button>
+              </button>
             )}
-            <motion.button
+            <button
               type="button"
-              whileTap={{ scale: 0.9 }}
+
               onClick={() => fileInputRef.current?.click()}
               className="text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer"
               title="Attach PNG, JPEG or WebP · up to 5 MB"
@@ -298,13 +298,13 @@ const ChatInput = forwardRef(function ChatInput(
               disabled={isThinking || disabled}
             >
               <Paperclip className={isCompact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-            </motion.button>
+            </button>
           </div>
         </div>
 
         {isThinking ? (
-          <motion.button
-            whileTap={{ scale: 0.88 }}
+          <button
+
             type="button"
             onClick={onStop}
             className={`flex items-center justify-center ${buttonSize} rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-white/[0.08] text-zinc-200 transition-all cursor-pointer`}
@@ -312,17 +312,17 @@ const ChatInput = forwardRef(function ChatInput(
             aria-label="Stop response"
           >
             <Square className={`${stopIconSize} fill-current`} />
-          </motion.button>
+          </button>
         ) : (
-          <motion.button
-            whileTap={{ scale: 0.88 }}
+          <button
+
             type="submit"
             disabled={(!inputValue.trim() && !imagePreview) || disabled || imageLoading}
             aria-label="Send message"
             className={`flex items-center justify-center ${buttonSize} rounded-xl bg-zinc-100 hover:bg-white disabled:bg-zinc-900 disabled:text-zinc-600 text-zinc-950 transition-colors cursor-pointer disabled:cursor-not-allowed`}
           >
             <Send className={sendIconSize} />
-          </motion.button>
+          </button>
         )}
       </form>
       <div className={`${inputError || imagePreview || inputValue.length > 3500 ? "mt-2 flex items-start justify-between gap-3" : "sr-only"} text-[11px] leading-relaxed text-zinc-500`}>

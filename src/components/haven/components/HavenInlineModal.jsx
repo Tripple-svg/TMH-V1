@@ -71,16 +71,16 @@ const InlineQuickPrompts = React.memo(function InlineQuickPrompts({ onSelect, hi
         {prompts.map((p, idx) => {
           const Icon = p.icon;
           return (
-            <motion.button
+            <button
               key={idx}
-              whileTap={{ scale: 0.97 }}
+
               onClick={() => onSelect(p.desc)}
               className="group flex flex-col items-start p-2.5 text-left rounded-lg bg-slate-900/50 border border-white/[0.04] hover:border-violet-500/20 hover:bg-slate-800/50 transition-all cursor-pointer"
             >
               <Icon className="w-3.5 h-3.5 text-violet-400 mb-1.5 group-hover:scale-110 transition-transform" />
               <span className="text-[11px] font-medium text-slate-300 line-clamp-1">{p.title}</span>
               <span className="text-[9px] text-slate-500 line-clamp-1 mt-0.5">{p.desc}</span>
-            </motion.button>
+            </button>
           );
         })}
       </div>
@@ -228,22 +228,22 @@ export default function HavenInlineModal({
                 </div>
 
                 <div className="flex items-center gap-0.5">
-                  <motion.button
-                    whileTap={{ scale: 0.9 }}
+                  <button
+
                     onClick={() => setIsExpanded((p) => !p)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/[0.05] transition-colors cursor-pointer"
                     title={isExpanded ? 'Collapse' : 'Expand'} aria-label={isExpanded?'Collapse Haven dialog':'Expand Haven dialog'}
                   >
                     {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                  </motion.button>
-                  <motion.button
-                    whileTap={{ scale: 0.9 }}
+                  </button>
+                  <button
+
                     onClick={onClose}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/[0.05] transition-colors cursor-pointer"
                     aria-label="Close"
                   >
                     <X className="w-4 h-4" />
-                  </motion.button>
+                  </button>
                 </div>
               </div>
 

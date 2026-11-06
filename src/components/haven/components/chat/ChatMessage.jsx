@@ -6,6 +6,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { User, Sparkles, Calendar, ArrowRight, BookOpen, Music2 } from 'lucide-react';
 
 import useTypingReveal from '../../hooks/useTypingReveal';
+import {PLATFORM_ACTIONS} from '../../../../../supabase/functions/_shared/platform-navigation.js';
 
 const LOGO_SRC = "/Tmhh.jpeg";
 
@@ -70,6 +71,7 @@ function ChipBar({ chips, onChipSelect }) {
       className="mt-2 flex flex-wrap gap-2 overflow-x-auto pb-1"
     >
       {chips.map((chip, idx) => {
+        if(Object.hasOwn(PLATFORM_ACTIONS,chip))return <button key={chip+'-'+idx} type="button" onClick={()=>onChipSelect?.(chip)} className="min-h-11 rounded-lg border border-white/15 bg-white/[0.04] px-4 py-2 text-xs text-zinc-100 transition-colors hover:bg-white/10">{PLATFORM_ACTIONS[chip].label}</button>;
           if(chip==='__CONTACT_SUPPORT__')return <a key={`contact-${idx}`} href="/support" target="_blank" rel="noopener noreferrer" className="inline-flex rounded-lg border border-zinc-600 px-4 py-2 text-xs font-medium text-zinc-100">Contact Team Haven<span className="sr-only"> (opens a new tab)</span></a>;
         if (chip === '__BOOK_CALL__') {
           return (

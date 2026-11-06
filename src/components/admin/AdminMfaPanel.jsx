@@ -1,12 +1,12 @@
 import {useEffect,useRef,useState} from 'react';
 import {adminSupabase} from '../../lib/adminAuth';
-import {AdminMfaError,adminMfaFailure,enrollAdminTotp,listAdminTotp,removeAdminTotp,verifyAdminTotp,verifiedTotpFactors} from '../../lib/adminMfa';
+import {AdminMfaError,adminMfaErrorText,enrollAdminTotp,listAdminTotp,removeAdminTotp,verifyAdminTotp,verifiedTotpFactors} from '../../lib/adminMfa';
 export default function AdminMfaPanel(){
   const operationLock=useRef(false);
   const [backupCodes,setBackupCodes]=useState([]);
   const [factors,setFactors]=useState([]),[enrollment,setEnrollment]=useState(null),[removal,setRemoval]=useState(null),[verifier,setVerifier]=useState(''),[code,setCode]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
-  useEffect(()=>{let live=true;void listAdminTotp(adminSupabase.auth).then(data=>{if(live)setFactors(data);}).catch(failure=>{if(live)setError(adminMfaFailure(failure).message);});return()=>{live=false;};},[]);
-  const perform=async action=>{if(operationLock.current)return;operationLock.current=true;setBusy(true);setError('');setNotice('');try{await action();}catch(failure){setError(adminMfaFailure(failure).message);}finally{setCode('');operationLock.current=false;setBusy(false);}};
+  useEffect(()=>{let live=true;void listAdminTotp(adminSupabase.auth).then(data=>{if(live)setFactors(data);}).catch(failure=>{if(live)setError(adminMfaErrorText(failure));});return()=>{live=false;};},[]);
+  const perform=async action=>{if(operationLock.current)return;operationLock.current=true;setBusy(true);setError('');setNotice('');try{await action();}catch(failure){setError(adminMfaErrorText(failure));}finally{setCode('');operationLock.current=false;setBusy(false);}};
   const start=()=>void perform(async()=>{setEnrollment(await enrollAdminTotp(adminSupabase.auth));setRemoval(null);});
   const generateBackupCodes=async()=>{setBackupCodes([]);const result=await adminSupabase.functions.invoke('admin-operations',{body:{action:'generateBackupCodes'}});if(result.error||!Array.isArray(result.data?.codes)||result.data.codes.length!==10)throw new AdminMfaError('Your authenticator remains enabled, but backup codes could not be confirmed. Reload settings, then generate a new set when the connection returns.');setBackupCodes(result.data.codes);setNotice('Authenticator enabled. Save these ten backup codes privately. They are shown once.');};
   const enable=event=>{event.preventDefault();void perform(async()=>{await verifyAdminTotp(adminSupabase.auth,enrollment.id,code);setEnrollment(null);setFactors(await listAdminTotp(adminSupabase.auth));setNotice('Authenticator enabled. Generate backup codes below if they do not appear.');await generateBackupCodes();});};

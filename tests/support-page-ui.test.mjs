@@ -6,19 +6,20 @@ import vm from 'node:vm';
 import { transformSync } from 'esbuild';
 
 function supportPage({ issue = '', invoke = async () => ({ data: { ok: true, reference: 'support-reference' } }) } = {}) {
-  const slots = [], calls = [],effects=[],scrolls=[];
+  const slots = [], calls = [],effects=[],scrolls=[],opened=[];
   let cursor = 0, resets = 0,headingFocus=0;
   const react = {
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     useState(initial) { const index = cursor++; if (!(index in slots)) slots[index] = initial; return [slots[index], value => { slots[index] = value; }]; },
     useRef(initial) { const index = cursor++; return slots[index] ||= { current: initial }; },
-    useEffect(effect){const index=cursor++;if(!(index in slots)){slots[index]=true;effects.push(effect);}},
+    useLayoutEffect(effect){const index=cursor++;if(!(index in slots)){slots[index]=true;effects.push(effect);}},
   };
   const context = {
     module: { exports: {} }, React: react, window: { scrollTo:options=>scrolls.push(options),location: { search: issue ? `?issue=${encodeURIComponent(issue)}` : '' } }, URLSearchParams, Response,
     require(name) {
       if (name === 'react') return react;
       if (name === 'react-router-dom') return { Link: 'Link',useLocation:()=>({search:issue?'?issue='+encodeURIComponent(issue):''}) };
+      if(name.includes('HavenContext'))return {useHaven:()=>({openDrawer:scope=>opened.push(scope)})};
       if(name.includes('supportPrefill'))return {supportPrefill};
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => key });
       if (name.includes('react-hcaptcha')) return { __esModule: true, default: 'HCaptcha' };
@@ -42,7 +43,7 @@ function supportPage({ issue = '', invoke = async () => ({ data: { ok: true, ref
     }
     walk(context.module.exports.default());while(effects.length)effects.shift()();return nodes;
   }
-  return { render, calls,scrolls,get headingFocus(){return headingFocus;}, get resets() { return resets; } };
+  return { render, calls,scrolls,opened,get headingFocus(){return headingFocus;}, get resets() { return resets; } };
 }
 test('support entry resets retained footer scroll and focuses the heading once without disturbing form edits',()=>{
   const ui=supportPage();ui.render();assert.equal(ui.scrolls[0].top,0);assert.equal(ui.headingFocus,1);
@@ -136,4 +137,10 @@ test('failed support submission preserves the message and email fallback, requir
   assert.equal(submitButton(tree).props.disabled, true); assert.equal(ui.resets, 1);
   assert.equal(tree.some(node => node.props.role === 'status'), false);
   assert.ok(tree.some(node => node.type === 'a' && node.props.href === 'mailto:info@themarketinghaven.xyz'));
+});
+
+test('Haven help opens without sending the form or blocking direct team contact',()=>{
+  const ui=supportPage();fill(ui);let nodes=ui.render();nodes.find(node=>node.type==='button'&&text(node)==='Ask Haven').props.onClick();
+  assert.deepEqual(ui.opened,['support']);assert.equal(ui.calls.length,0);
+  nodes=ui.render();assert.ok(nodes.find(node=>node.type==='form'));assert.equal(nodes.find(node=>node.type==='textarea').props.value,'  My saved review cannot be opened.  ');
 });

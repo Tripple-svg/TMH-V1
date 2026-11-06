@@ -72,7 +72,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
 
   return (
     <>
-      <footer className="relative w-full border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 transition-colors duration-300">
+      <footer id="footer" tabIndex={-1} className="relative w-full border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
           <div className="grid grid-cols-2 md:grid-cols-12 gap-8 md:gap-8">
 

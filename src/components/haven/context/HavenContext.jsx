@@ -542,6 +542,34 @@ export function HavenProvider({ children }) {
     setAuditPreflight(prev => ({ ...prev, dismissed: true }));
   }, []);
 
+  const reviseReviewDetails=useCallback(async(details,{restart=false}={})=>{
+    if(!userProfile.reviewId||!userProfile.sessionId||!userProfile.accessToken)throw new Error(REVIEW_RECOVERY_MESSAGE);
+    let result;
+    try{result=await callCorrectSource({...details,action:restart?'restart':'details',confirmRestart:restart},reviewAccess(userProfile),userProfile.scoringRevision||0);}
+    catch(error){
+      if(error.code==='source_changed'&&Number.isSafeInteger(error.currentRevision)){
+        setUserProfile(previous=>({...previous,scoringRevision:error.currentRevision}));
+        throw new Error('Another tab changed this review. Check the details you entered before choosing Save again.',{cause:error});
+      }
+      throw error;
+    }
+    scoringRequestRef.current+=1;
+    const access={...userProfile,name:result.review.full_name,brandName:result.review.brand_name,whatsapp:result.review.whatsapp,
+      mainGoal:result.review.main_goal,scoringRevision:result.revision,auditScore:null,scoreBreakdown:null,scoreEvidence:null,rubricVersion:null,
+      biggestIssue:null,assessmentSummary:null,biggestLeak:null,biggestProblems:[],leadTemperature:null,
+      scrapedWebSummary:null,scrapeState:null,scrapeFailed:false};
+    setUserProfile(access);
+    pendingTurnsRef.current.delete(`audit/${userProfile.sessionId}`);
+    setSessionsForScope('audit',previous=>previous.map(session=>session.id===userProfile.sessionId?{
+      ...session,failedTurn:null,currentStep:STEPS.AWAITING_DIAGNOSTIC_Q1,
+      ...(restart?{messages:[{id:'restart-'+Date.now(),role:'agent',timestamp:Date.now(),isSeedGreeting:true,reveal:true,
+        content:'Your review conversation is ready to begin again with your saved details. What would you most like help with now?'}]}:{}),
+    }:session));
+    if(access.businessDomain==='website')await runScraper(access.websiteUrl,{force:true,access});
+    else if(access.businessDomain==='social')await runSocialScorer(access.screenshot,{force:true,access});
+    else setAuditPreflight({...DEFAULT_PREFLIGHT});
+  },[userProfile,runScraper,runSocialScorer,setSessionsForScope]);
+
   const reopenReviewSource = useCallback(() => {
     if (auditPreflight.status === 'idle') retryScrape();
     else setAuditPreflight(previous => ({ ...previous, dismissed: false }));
@@ -688,7 +716,8 @@ export function HavenProvider({ children }) {
             const greeting = {
               id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
               isSeedGreeting: true, reveal: true,
-              content: `Hi, I'm Haven, your digital marketing assistant at TMH. I help individual creators and business owners work through their marketing, and I can help you find your way around this website.\n\nWhat are you building, and where are you getting stuck?`,
+              content: `Hi, I'm Haven, your digital marketing assistant at TMH. I help individual creators and business owners work through their marketing, and I can help you find your way around this website.\n\nDo you need help with your marketing or finding something on this website?`,
+              chips: ['Show website help','I have a marketing question'],
             };
             setSessionsForScope('support', prev =>
               prev.map(s => s.id === target.id ? { ...s, messages: [greeting], hasGreeted: true } : s)
@@ -970,6 +999,7 @@ export function HavenProvider({ children }) {
     reviewId:       userProfile.reviewId,
     sessionId:      userProfile.sessionId,
     accessToken:    userProfile.accessToken,
+    scoringRevision: userProfile.scoringRevision || 0,
   }), [userProfile]);
 
   const clearExistingReview = useCallback(() => {
@@ -1010,7 +1040,7 @@ export function HavenProvider({ children }) {
     showToast, toastMessage, triggerToast,
     activeMenuSessionId, setActiveMenuSessionId,
     hasExistingReview, getSavedReviewFormData, clearExistingReview,
-    auditPreflight, proceedFromPreflight, reopenReviewSource, resetPreflight, runScraper, runSocialScorer, retryScrape, correctReviewSource, sessionSaveState,
+    auditPreflight, proceedFromPreflight, reopenReviewSource, resetPreflight, runScraper, runSocialScorer, retryScrape, correctReviewSource, reviseReviewDetails, sessionSaveState,
   };
 
   return <HavenContext.Provider value={value}>{children}</HavenContext.Provider>;

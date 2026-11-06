@@ -443,7 +443,7 @@ export default function ShopSection() {
         >
           <div className="grid grid-cols-1 md:grid-cols-2">
             <div style={{perspective:900}} className="relative aspect-square md:aspect-auto flex items-center justify-center p-8 bg-zinc-100 dark:bg-zinc-900 transition-colors duration-300">
-              <motion.div initial={false} whileHover={reduceMotion ? undefined : { y: -6, rotate: 0, rotateX: -3, rotateY: 7 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }} transition={{ duration: 0.25 }} className={`relative w-48 h-64 sm:w-56 sm:h-72 rounded-lg shadow-2xl overflow-hidden ${reduceMotion ? '' : 'rotate-[-2deg] hover:rotate-0 transition-transform duration-300'}`}>
+              <motion.div initial={false} whileHover={reduceMotion ? undefined : { y: -6, rotate: 0, rotateX: -3, rotateY: 7 }}  transition={{ duration: 0.25 }} className={`relative w-48 h-64 sm:w-56 sm:h-72 rounded-lg shadow-2xl overflow-hidden ${reduceMotion ? '' : 'rotate-[-2deg] hover:rotate-0 transition-transform duration-300'}`}>
                 <img
                   src="/Playbook.jpeg"
                   alt="The Unseen Playbook"
@@ -478,12 +478,12 @@ export default function ShopSection() {
               </ul>
 
               <p className="mb-5 text-2xl font-medium tracking-tight text-zinc-900 dark:text-white">₦9,639 <del className="ml-2 text-sm font-normal text-zinc-500">₦15,000</del> <span className="ml-2 text-xs font-normal tracking-normal text-zinc-500">Playbook price</span></p>
-              <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
+              <button
                 onClick={() => setIsPreviewOpen(true)}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold text-sm hover:bg-zinc-700 dark:hover:bg-white transition-colors active:scale-[0.98]"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold text-sm hover:bg-zinc-700 dark:hover:bg-white transition-colors"
               >
                 Get The Unseen Playbook <ArrowRight className="w-4 h-4" />
-              </motion.button>
+              </button>
               <p className="mt-3 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                 Your next step, ready to put into practice. Get the complete Playbook as a PDF as soon as your payment is confirmed.
               </p>
@@ -540,20 +540,20 @@ export default function ShopSection() {
                     </p>
                   </div>
                 </div>
-                <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
+                <button
                   onClick={handleCloseModal}
                   aria-label="Close Playbook checkout"
                   className="w-11 h-11 shrink-0 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 flex items-center justify-center transition-colors focus-visible:outline-2 focus-visible:outline-zinc-400"
                 >
                   <X className="w-4 h-4" />
-                </motion.button>
+                </button>
               </div>
 
               {!paymentSuccess && !verificationPending && <div role="tablist" aria-label="Playbook purchase options" className="grid grid-cols-2 gap-1 border-b border-white/10 px-6 py-3 sm:px-8">
-                {[{recover:false,label:'Buy a copy',id:'buy'},{recover:true,label:'Already purchased',id:'recover'}].map(tab=><motion.button whileTap={reduceMotion?undefined:{scale:0.98}} key={tab.id} type="button" role="tab" id={`playbook-${tab.id}-tab`} aria-selected={recoveryOpen===tab.recover} aria-controls={`playbook-${tab.id}-panel`} tabIndex={recoveryOpen===tab.recover?0:-1} disabled={loading||verifying}
+                {[{recover:false,label:'Buy a copy',id:'buy'},{recover:true,label:'Already purchased',id:'recover'}].map(tab=><button  key={tab.id} type="button" role="tab" id={`playbook-${tab.id}-tab`} aria-selected={recoveryOpen===tab.recover} aria-controls={`playbook-${tab.id}-panel`} tabIndex={recoveryOpen===tab.recover?0:-1} disabled={loading||verifying}
                   onClick={()=>{setRecoveryOpen(tab.recover);setVerificationError('');}}
                   onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const recover=event.key==='Home'?false:event.key==='End'?true:!recoveryOpen;setRecoveryOpen(recover);document.getElementById(`playbook-${recover?'recover':'buy'}-tab`)?.focus();}}
-                  className={`rounded-lg px-3 py-3 text-sm font-medium transition-colors disabled:opacity-50 ${recoveryOpen===tab.recover?'bg-white/10 text-white':'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}>{tab.label}</motion.button>)}
+                  className={`rounded-lg px-3 py-3 text-sm font-medium transition-colors disabled:opacity-50 ${recoveryOpen===tab.recover?'bg-white/10 text-white':'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}>{tab.label}</button>)}
               </div>}
 
               {paymentSuccess || verificationPending ? (
@@ -591,15 +591,15 @@ export default function ShopSection() {
                     )}
                   </div>
 
-                  {downloadUrl && !verifying && <motion.a whileTap={reduceMotion?undefined:{scale:0.98}} href={downloadUrl} download={PLAYBOOK_FILENAME} target="_blank" rel="noopener noreferrer" onClick={handleRedownloadPlaybook} className="w-full inline-flex items-center justify-center gap-3 px-6 py-4 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-base transition-colors">
+                  {downloadUrl && !verifying && <a  href={downloadUrl} download={PLAYBOOK_FILENAME} target="_blank" rel="noopener noreferrer" onClick={handleRedownloadPlaybook} className="w-full inline-flex items-center justify-center gap-3 px-6 py-4 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-base transition-colors">
                     <Download className="w-5 h-5" />{alreadyDownloaded?'Open my copy again':'Download The Unseen Playbook'}
-                  </motion.a>}
+                  </a>}
                   {verifying && <p role="status" className="text-sm text-zinc-400">Verifying your payment...</p>}
                   {alreadyDownloaded && <p className="text-xs leading-relaxed text-zinc-400">Download requested. Check Downloads or Files on your device. If it did not save, open your copy again here. On another device, use Already purchased.</p>}
 
-                  {!downloadUrl && <motion.button whileTap={reduceMotion?undefined:{scale:0.98}} type="button" disabled={verifying} onClick={handleRedownloadPlaybook} className="w-full rounded-lg bg-zinc-100 px-5 py-3 text-sm text-zinc-950">{verifying ? 'Opening your copy…' : 'Retry opening my copy'}</motion.button>}
+                  {!downloadUrl && <button  type="button" disabled={verifying} onClick={handleRedownloadPlaybook} className="w-full rounded-lg bg-zinc-100 px-5 py-3 text-sm text-zinc-950">{verifying ? 'Opening your copy…' : 'Retry opening my copy'}</button>}
                   {verificationError && <p role="status" className="text-sm text-zinc-300">{verificationError}</p>}
-                  {canRestartCheckout && <motion.button whileTap={reduceMotion?undefined:{scale:0.98}} type="button" onClick={handleRestartCheckout} className="min-h-11 text-sm text-zinc-200 underline underline-offset-4">No debit on my statement. Return to checkout</motion.button>}
+                  {canRestartCheckout && <button  type="button" onClick={handleRestartCheckout} className="min-h-11 text-sm text-zinc-200 underline underline-offset-4">No debit on my statement. Return to checkout</button>}
                   <a href="/support?issue=purchase" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-sm text-zinc-300 underline underline-offset-4">Get help with this purchase</a>
                   {paymentSuccess && <div className="pt-6 mt-2 border-t border-white/10 text-left">
                     <div className="flex items-center gap-2">
@@ -613,12 +613,12 @@ export default function ShopSection() {
                     </p>
                   </div>}
 
-                  <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
+                  <button
                     onClick={handleCloseModal}
-                    className="w-full px-4 py-3 rounded-lg text-sm font-medium text-zinc-300 hover:text-white hover:bg-white/5 transition-colors active:scale-[0.98]"
+                    className="w-full px-4 py-3 rounded-lg text-sm font-medium text-zinc-300 hover:text-white hover:bg-white/5 transition-colors"
                   >
                     Close
-                  </motion.button>
+                  </button>
                 </div>
               ) : (
                 <>
@@ -655,14 +655,14 @@ export default function ShopSection() {
                         <p role="status" className="text-sm leading-relaxed text-zinc-300">{otpMessage}</p>
                         <label className="block text-xs text-zinc-400">Six-digit email code<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={otpCode} onChange={event => setOtpCode(event.target.value.replace(/\D/g, ''))} className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-3 text-lg tracking-[0.3em] text-white" /></label>
                         <p className="text-xs text-zinc-400">Valid for 10 minutes. Never share this code.</p>
-                        <motion.button whileTap={reduceMotion?undefined:{scale:0.98}} disabled={verifying} className="rounded-lg bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-950 disabled:opacity-50">{verifying ? 'Checking code…' : 'Confirm code & access your copy'}</motion.button>
-                        <motion.button whileTap={reduceMotion?undefined:{scale:0.98}} type="button" disabled={verifying} onClick={() => { if (Date.now() < resendAt) setVerificationError('Please wait a minute before requesting another code.'); else void requestPurchaseCode(recoveryReference.trim(), recoveryEmail.trim()); }} className="ml-3 text-xs text-zinc-300 underline underline-offset-4">Send a new code</motion.button>
-                        <motion.button whileTap={reduceMotion?undefined:{scale:0.98}} type="button" disabled={verifying} onClick={() => { setOtpChallenge(''); setOtpCode(''); setVerificationError(''); }} className="block text-xs text-zinc-400 underline underline-offset-4">Use different purchase details</motion.button>
+                        <button  disabled={verifying} className="rounded-lg bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-950 disabled:opacity-50">{verifying ? 'Checking code…' : 'Confirm code & access your copy'}</button>
+                        <button  type="button" disabled={verifying} onClick={() => { if (Date.now() < resendAt) setVerificationError('Please wait a minute before requesting another code.'); else void requestPurchaseCode(recoveryReference.trim(), recoveryEmail.trim()); }} className="ml-3 text-xs text-zinc-300 underline underline-offset-4">Send a new code</button>
+                        <button  type="button" disabled={verifying} onClick={() => { setOtpChallenge(''); setOtpCode(''); setVerificationError(''); }} className="block text-xs text-zinc-400 underline underline-offset-4">Use different purchase details</button>
                       </form> : <form onSubmit={async event => { event.preventDefault(); await requestPurchaseCode(recoveryReference.trim(), recoveryEmail.trim()); }} className="mt-4 space-y-3">
                         <p className="text-sm leading-relaxed text-zinc-400">Enter your receipt details. We will send a one-time code to the checkout email before opening your download.</p>
                         <label className="block text-xs text-zinc-400">Checkout email<input required disabled={verifying} type="email" value={recoveryEmail} onChange={event => setRecoveryEmail(event.target.value)} className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-3 text-base text-white" autoComplete="email" /></label>
                         <label className="block text-xs text-zinc-400">Paystack reference<input required disabled={verifying} value={recoveryReference} onChange={event => setRecoveryReference(event.target.value)} placeholder="UNSEEN_…" className="mt-2 w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-3 text-base text-white" autoCapitalize="none" spellCheck={false} /></label>
-                        <motion.button whileTap={reduceMotion?undefined:{scale:0.98}} disabled={verifying} className="rounded-lg bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-950 disabled:opacity-50">{verifying ? 'Sending code…' : 'Send my access code'}</motion.button>
+                        <button  disabled={verifying} className="rounded-lg bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-950 disabled:opacity-50">{verifying ? 'Sending code…' : 'Send my access code'}</button>
                       </form>)}
                       {verificationError && <p role="alert" className="mt-3 text-xs leading-relaxed text-red-300">{verificationError} <a href="/support?issue=purchase" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">Contact support</a></p>}
                       {verifying && !recoveryOpen && <p role="status" className="mt-3 text-xs text-zinc-400">Checking your saved purchase…</p>}
@@ -714,14 +714,14 @@ export default function ShopSection() {
                       </div>
                     </div>}
 
-                    <motion.button whileTap={reduceMotion?undefined:{scale:0.98}}
+                    <button
                       type="button"
                       onClick={handlePaystackCheckout}
                       disabled={loading || verifying}
-                      className="w-full sm:w-auto px-8 py-3.5 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-sm transition-colors active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full sm:w-auto px-8 py-3.5 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Opening Checkout...' : 'Confirm & Pay via Paystack'}
-                    </motion.button>
+                    </button>
                   </div>}
                 </>
               )}

@@ -20,7 +20,7 @@ function fixture({enrolled=true,current='aal1',codeValid=true}={}){
     onAuthStateChange(fn){event=fn;return{data:{subscription:{unsubscribe(){}}}};},
     updateUser:async payload=>{calls.push(['password',payload]);return{error:null};},
     signInWithPassword:async()=>{calls.push(['password-sign-in']);level='aal1';return{data:{user,session:{access_token:'token-aal1'}}};},
-    refreshSession:async()=>{calls.push(['refresh']);return{error:null};},
+    refreshSession:async()=>{calls.push(['refresh']);return{data:{session:{access_token:'refreshed'}},error:null};},
     mfa:{
       getAuthenticatorAssuranceLevel:async()=>({data:{currentLevel:level,nextLevel:user.factors.some(item=>item.status==='verified')?'aal2':'aal1'}}),
       listFactors:async()=>({data:{all:user.factors}}),
@@ -58,7 +58,7 @@ test('enrollment QR is an image data URI and rejects remote/script sources; secr
   assert.match(mfa.authenticatorQrImage('<svg xmlns="http://www.w3.org/2000/svg"></svg>'),/^data:image\/svg\+xml;charset=utf-8,%3Csvg/);
   for(const value of ['javascript:alert(1)','https://evil.example/qr.svg','data:text/html,<script>'])assert.throws(()=>mfa.authenticatorQrImage(value));
   const f=fixture({enrolled:false});const value=await mfa.enrollAdminTotp(f.auth);assert.match(value.qr,/^data:image\/svg/);assert.equal(value.secret,'private-enrollment-key');
-  assert.equal(f.calls[0][0],'enroll');assert.equal(f.calls[0][1].factorType,'totp');
+  assert.equal(f.calls[0][0],'refresh');assert.equal(f.calls[1][0],'enroll');assert.equal(f.calls[1][1].factorType,'totp');
 });
 test('resumed AAL1 session cannot open the workspace; verification event supplies the AAL2 session',async()=>{
   const f=fixture(),sessions=[],stop=observeAdminSession(f.auth,(value,details)=>sessions.push({value,details}));await tick();assert.equal(sessions.at(-1).value,null);assert.equal(sessions.at(-1).details.mfaRequired,true);
@@ -204,4 +204,28 @@ test('a removed last factor restores optional access despite stale cached assura
   const f=fixture({enrolled:false,current:'aal2'});
   f.auth.mfa.getAuthenticatorAssuranceLevel=async()=>({data:{currentLevel:'aal2',nextLevel:'aal2'}});
   const state=await mfa.readAdminMfa(f.auth,{...f.user,factors:[factor]});assert.equal(state.enrolled,false);assert.equal(state.required,false);assert.deepEqual(state.factors,[]);
+});
+
+test('enrollment refreshes first, removes only unverified TOTP factors, then creates one new factor',async()=>{
+  const f=fixture({enrolled:false});f.user.factors=[{...factor,status:'unverified'},{...factor,id:'other',factor_type:'phone',status:'unverified'}];
+  await mfa.enrollAdminTotp(f.auth);
+  assert.deepEqual(f.calls.map(([action])=>action),['refresh','unenroll','enroll']);
+  assert.equal(f.calls[1][1].factorId,factor.id);assert.equal(f.user.factors.length,1);assert.equal(f.user.factors[0].id,'other');
+  const verified=fixture({current:'aal2'});await mfa.enrollAdminTotp(verified.auth);
+  assert.deepEqual(verified.calls.map(([action])=>action),['refresh','enroll']);assert.equal(verified.user.factors[0].status,'verified');
+});
+test('a failed refresh, missing session, changed account or failed cleanup cannot continue enrollment',async()=>{
+  for(const mode of ['refresh-failure','missing-session','changed-user','cleanup-failure','verified-aal1']){
+    const f=fixture({enrolled:mode==='verified-aal1'});let reads=0;
+    if(mode==='refresh-failure')f.auth.refreshSession=async()=>({error:{code:'session_expired'}});
+    if(mode==='missing-session')f.auth.refreshSession=async()=>({data:{session:null}});
+    if(mode==='changed-user')f.auth.getUser=async()=>({data:{user:{...f.user,id:++reads===1?actor:'different-admin'}}});
+    if(mode==='cleanup-failure'){f.user.factors=[{...factor,status:'unverified'}];f.auth.mfa.unenroll=async()=>({error:{code:'unexpected_failure',message:'PRIVATE-SECRET'}});}
+    await assert.rejects(mfa.enrollAdminTotp(f.auth),error=>error.name==='AdminMfaError'&&!error.message.includes('PRIVATE'));
+    assert.equal(f.calls.some(([action])=>action==='enroll'),false,mode);
+  }
+});
+test('MFA diagnostics preserve safe provider codes and operation while dropping secret provider text',()=>{
+  const safe=mfa.adminMfaFailure({code:'mfa_ip_address_mismatch',status:400,message:'token=SECRET'},'cleanup');
+  assert.equal(safe.code,'mfa_ip_address_mismatch');assert.match(mfa.adminMfaErrorText(safe),/mfa_ip_address_mismatch \(cleanup\)/);assert.doesNotMatch(mfa.adminMfaErrorText(safe),/SECRET/);
 });

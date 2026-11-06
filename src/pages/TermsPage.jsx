@@ -229,7 +229,7 @@ export default function TermsPage() {
                 <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl dark:text-white">14. Data Deletion</h2>
                 <div className="mt-4 space-y-4 text-[15px] leading-7 text-zinc-600 sm:text-base sm:leading-8 dark:text-zinc-300">
                   <p>
-                    You may request access, correction, deletion or restriction of personal data, subject to applicable conditions. Use the footer Data Deletion link for an email-associated saved review, or email info@themarketinghaven.xyz with the subject &quot;Privacy Request&quot;.
+                    You may request access, correction, deletion or restriction of personal data, subject to applicable conditions. You can correct saved review details or explicitly restart the Brand Review conversation through its editor. A restart does not cancel a booking, refund a payment or reset usage limits. Use the footer Data Deletion link for an email-associated saved review, or email info@themarketinghaven.xyz with the subject &quot;Privacy Request&quot;.
                   </p>
                   <p>
                     The automated email-confirmed flow targets the matching saved brand review, its linked chat sessions and stored screenshots. It does not automatically delete purchase or booking records, unlinked guest chats, deletion-request records or every security, operational and email-delivery record. Contact the team about those categories and any lawful need to retain them. For guest chats without an associated email, provide the session ID and ask for a secure ownership-verification method; the ID or a typed email alone is not sufficient proof. Do not email private access keys.

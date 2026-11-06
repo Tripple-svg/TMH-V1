@@ -8,7 +8,7 @@ import {readInitialTheme,saveTheme} from '../src/lib/themePreference.js';
 
 test('MFA keeps actionable codes and stages without exposing provider text or secrets',async()=>{
   for(const code of ['mfa_factor_name_conflict','session_expired','mfa_disabled','mfa_totp_enroll_not_enabled']){
-    const auth={getUser:async()=>({data:{user:{app_metadata:{role:'admin'}}}}),mfa:{listFactors:async()=>({data:{all:[]}}),getAuthenticatorAssuranceLevel:async()=>({data:{currentLevel:'aal1',nextLevel:'aal1'}}),enroll:async()=>({error:{code,message:'SECRET-SEED-AND-TOKEN'}})}};
+    const auth={getUser:async()=>({data:{user:{id:'admin-a',app_metadata:{role:'admin'}}}}),refreshSession:async()=>({data:{session:{access_token:'test'}}}),mfa:{listFactors:async()=>({data:{all:[]}}),getAuthenticatorAssuranceLevel:async()=>({data:{currentLevel:'aal1',nextLevel:'aal1'}}),enroll:async()=>({error:{code,message:'SECRET-SEED-AND-TOKEN'}})}};
     await assert.rejects(enrollAdminTotp(auth),error=>error.code===code&&error.operation==='enroll'&&!error.message.includes('SECRET'));
   }
   assert.match(adminMfaFailure({name:'TimeoutError'}).message,/connection/);

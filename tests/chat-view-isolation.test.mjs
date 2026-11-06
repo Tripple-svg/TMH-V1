@@ -35,7 +35,7 @@ function drawer() {
       if (name === 'react') return react;
       if (name === 'react-dom') return { createPortal: node => node };
       if (name === 'framer-motion') return { motion: new Proxy({}, { get: (_, key) => key }), AnimatePresence: 'presence', useReducedMotion: () => false };
-      if (name === 'react-router-dom') return { Link: 'Link' };
+      if (name === 'react-router-dom') return { Link: 'Link',useNavigate:()=>()=>{} };
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => key });
       if (name.includes('useDialogFocus')) return { useDialogFocus() {} };
       if (name.includes('/useHaven')) return { useHaven: () => state };

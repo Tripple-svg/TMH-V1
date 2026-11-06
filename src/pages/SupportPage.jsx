@@ -1,22 +1,24 @@
-import {useEffect,useRef,useState} from 'react';
+import {useLayoutEffect,useRef,useState} from 'react';
 import {Link,useLocation} from 'react-router-dom';
 import {supportPrefill} from '../lib/supportPrefill';
 import HCaptcha from '@hcaptcha/react-hcaptcha';
 import {supabase} from '../lib/supabase';
 import {getHavenIdentity} from '../lib/havenIdentity';
 import {TMH_CONTACT} from '../lib/tmhPublicInfo';
+import {useHaven} from '../components/haven/context/HavenContext';
 import {ArrowLeft, ArrowUpRight, BookOpen, CalendarDays, CheckCircle2, FileSearch, LifeBuoy, LockKeyhole, Mail, MessageSquare, ShieldCheck} from 'lucide-react';
 
 const CATEGORIES=[
   ['review_access','My saved review','I cannot open my review, or something needs correcting.',FileSearch],
-  ['rate_limit','A limit or blocked attempt','I see a limit, cooldown or restriction message.',ShieldCheck],
+  ['rate_limit','I cannot continue','I see a waiting time, usage limit or access message.',ShieldCheck],
   ['purchase','My playbook purchase','I need help with a payment, receipt or download.',BookOpen],
   ['booking','My meeting or booking','I need help with an invitation or meeting time.',CalendarDays],
   ['other','Something else','My question does not fit the choices above.',MessageSquare],
 ];
 export default function SupportPage(){
+  const {openDrawer}=useHaven();
   const heading=useRef(null);
-  useEffect(()=>{window.scrollTo({top:0,behavior:'instant'});heading.current?.focus({preventScroll:true});},[]);
+  useLayoutEffect(()=>{window.scrollTo({top:0,behavior:'instant'});heading.current?.focus({preventScroll:true});},[]);
   const location=useLocation();
   const initial=supportPrefill(location.search);
   const [category,setCategory]=useState(initial.category);
@@ -48,8 +50,14 @@ export default function SupportPage(){
         <div className="mb-5 inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white bg-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur-lg dark:border-white/15 dark:bg-white/[0.04] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"><LifeBuoy aria-hidden="true" className="h-5 w-5 text-zinc-600 dark:text-zinc-300"/></div>
         <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-zinc-500">Team Haven · Support</p>
         <h1 ref={heading} tabIndex={-1} className="mt-3 font-serif text-4xl leading-tight tracking-tight sm:text-5xl">How can we help?</h1>
-        <p className="mt-4 max-w-lg text-sm leading-7 text-zinc-600 dark:text-zinc-400">Choose an issue, tell us what happened, then send your request. You’ll receive a reference to keep, and the team can reply by email.</p>
+        <p className="mt-4 max-w-lg text-sm leading-7 text-zinc-600 dark:text-zinc-400">Need help? Ask Haven for directions, or use the form below to send a message to the team. Keep the reference you receive so we can follow up by email.</p>
       </header>
+      {!reference&&<section aria-label="Help from Haven" className="mb-6 rounded-2xl border border-zinc-200 bg-white/70 p-5 dark:border-white/15 dark:bg-white/[0.04]">
+        <h2 className="text-base font-medium">Need a quick answer?</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">Haven can explain how to open your review, find your Playbook copy or use the website. It can also help with marketing questions. For payment checks, refunds or account access, send the team a request below.</p>
+        <button type="button" onClick={()=>openDrawer('support')} className="mt-4 min-h-11 rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 focus-visible:outline focus-visible:outline-offset-4 dark:border-white/25 dark:hover:bg-white/10">Ask Haven</button>
+        <p className="mt-3 text-xs leading-5 text-zinc-500">Opening Haven does not send your form. You can contact the team directly at any time.</p>
+      </section>}
       {reference?<section role="status" className="rounded-3xl border border-zinc-200 bg-white/70 p-6 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.025] sm:p-8">
         <CheckCircle2 aria-hidden="true" className="mb-5 h-7 w-7 text-zinc-700 dark:text-zinc-300"/>
         <h2 className="text-xl font-medium tracking-tight">Your request is saved.</h2>

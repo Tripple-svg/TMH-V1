@@ -1,5 +1,6 @@
 // One routing policy for primary and fallback models. User permission and
 // evidence are server-owned; generated tags never authorize privileged actions.
+import {platformNavigationHelp} from './platform-navigation.js';
 const NEEDS = ['learning', 'implementation', 'research', 'support', 'unknown'];
 const COMPLEXITIES = ['simple', 'complex', 'unknown'];
 const PREFERENCES = ['learn', 'delegate', 'unsure', 'none'];
@@ -121,6 +122,7 @@ export function acceptedCallInvitation(latest, messages = []) {
 }
 
 function platformHelpReply(text) {
+  const navigation=platformNavigationHelp(text);if(navigation)return navigation.text;
   const value = String(text || '').toLowerCase();
   // Specific platform operations are useful in any Haven conversation. These
   // factual answers do not change the marketing route or authorize an action.
