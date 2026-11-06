@@ -49,7 +49,7 @@ export default function SupportPage(){
       <header className="pb-8 pt-10 sm:pb-10 sm:pt-12">
         <div className="mb-5 inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white bg-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur-lg dark:border-white/15 dark:bg-white/[0.04] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"><LifeBuoy aria-hidden="true" className="h-5 w-5 text-zinc-600 dark:text-zinc-300"/></div>
         <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-zinc-500">Team Haven · Support</p>
-        <h1 ref={heading} tabIndex={-1} className="mt-3 font-serif text-4xl leading-tight tracking-tight sm:text-5xl">How can we help?</h1>
+        <h1 ref={heading} tabIndex={-1} style={{outline:'none'}} className="mt-3 font-serif text-4xl leading-tight tracking-tight sm:text-5xl">How can we help?</h1>
         <p className="mt-4 max-w-lg text-sm leading-7 text-zinc-600 dark:text-zinc-400">Need help? Ask Haven for directions, or use the form below to send a message to the team. Keep the reference you receive so we can follow up by email.</p>
       </header>
       {!reference&&<section aria-label="Help from Haven" className="mb-6 rounded-2xl border border-zinc-200 bg-white/70 p-5 dark:border-white/15 dark:bg-white/[0.04]">
