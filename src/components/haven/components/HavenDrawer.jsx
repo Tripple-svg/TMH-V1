@@ -9,7 +9,6 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Link,useNavigate } from 'react-router-dom';
 import {PLATFORM_ACTIONS} from '../../../../supabase/functions/_shared/platform-navigation.js';
-import ReviewDetailsEditor from './ReviewDetailsEditor';
 import {
   X, Menu, Plus, MoreVertical, Pin, MessageSquare, Sparkles,
    Target,  Trash2, RotateCcw, Settings, ExternalLink,
@@ -276,17 +275,11 @@ export default function HavenDrawer() {
     updateUserProfile, recheckHavenAccess,
     showToast, toastMessage, clearChat, stopResponse, dismissFailedTurn,
     bookingNoticeOpen, setBookingNoticeOpen,
-    auditPreflight, proceedFromPreflight, reopenReviewSource, retryScrape, correctReviewSource, reviseReviewDetails,
-    sessionSaveState,
+    auditPreflight, proceedFromPreflight, retryScrape, correctReviewSource,
+    sessionSaveState, playbookHandoff, consumePlaybookHandoff,
   } = useHaven();
 
   const [showHistorySidebar, setShowHistorySidebar] = useState(false);
-  const [showReviewDetails,setShowReviewDetails]=useState(false);
-  useEffect(()=>{
-    const open=()=>setShowReviewDetails(true);
-    window.addEventListener('edit-review-details',open);
-    return ()=>window.removeEventListener('edit-review-details',open);
-  },[]);
   const [checkingAccess, setCheckingAccess] = useState(false);
   const [accessError, setAccessError] = useState('');
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
@@ -320,10 +313,10 @@ export default function HavenDrawer() {
   const isRestricted = userProfile.flag_status === 'red';
   const needsReviewRecovery = activeScope === 'audit'
     && (!userProfile.reviewId || !userProfile.sessionId || !userProfile.accessToken);
-  const editingReview=showReviewDetails&&activeScope==='audit'&&!needsReviewRecovery&&!isRestricted;
   const scopeLabel     = getScopeLabel(activeScope, activeService);
 
-  const showPreflight = !editingReview&&userProfile.businessDomain !== 'none' && activeScope === 'audit'
+  const hasUserMessage = messages.some((m) => m.role === 'user');
+  const showPreflight = !hasUserMessage && userProfile.businessDomain !== 'none' && activeScope === 'audit'
     && auditPreflight
     && !auditPreflight.dismissed
     && (auditPreflight.status === 'scraping'
@@ -332,10 +325,9 @@ export default function HavenDrawer() {
      || auditPreflight.status === 'insufficient_evidence'
      || auditPreflight.status === 'failed');
 
-  const hasUserMessage = messages.some((m) => m.role === 'user');
   // A saved failed turn stays attached to its conversation while the source is open.
   // Only the chat view can display or retry it; scoring has its own loading state.
-  const showChat = !editingReview&&!showPreflight && viewState !== 'landing';
+  const showChat = !showPreflight && viewState !== 'landing';
   const showConsentLine = !hasUserMessage && !showPreflight;
 
   useDialogFocus(isOpen&&!modalType&&!showBookingModal&&!bookingNoticeOpen,dialogRef,closeDrawer);
@@ -343,7 +335,6 @@ export default function HavenDrawer() {
 
   useEffect(() => {
     if (!isOpen) { openedSessionRef.current = null; return; }
-    if(editingReview){scrollRef.current?.scrollTo({top:0,behavior:'instant'});return;}
     if (openedSessionRef.current === activeSessionId) return;
     openedSessionRef.current = activeSessionId;
     requestAnimationFrame(() => {
@@ -358,7 +349,7 @@ export default function HavenDrawer() {
       if (!hasOverflow) return;
       el.scrollTop = el.scrollHeight;
     });
-  }, [isOpen, activeSessionId, messages.length,editingReview]);
+  }, [isOpen, activeSessionId, messages.length]);
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
@@ -448,7 +439,6 @@ export default function HavenDrawer() {
     if (isRestricted) return;
     const action=Object.hasOwn(PLATFORM_ACTIONS,text)?PLATFORM_ACTIONS[text]:null;
     if(action){
-      if(action.dialog==='review-details'){if(userProfile.reviewId&&userProfile.accessToken){openDrawer('audit',{profileData:{...userProfile,isReturningUser:true},returning:true});window.dispatchEvent(new CustomEvent('edit-review-details'));}else{closeDrawer();navigate('/?review=continue');}return;}
       closeDrawer();
       if(action.path)navigate(action.path);
       else if(action.section){const target=document.getElementById(action.section);if(target)requestAnimationFrame(()=>{target.scrollIntoView({behavior:reduceMotion?'auto':'smooth',block:'start'});target.focus?.({preventScroll:true});});else navigate('/#'+action.section);}
@@ -465,6 +455,10 @@ export default function HavenDrawer() {
     if (text === '__PLAYBOOK__') {
       updateUserProfile?.({ clickedPlaybookLink: true });
       closeDrawer();
+      if (!document.getElementById('shop')) {
+        navigate('/?playbook=open#shop');
+        return;
+      }
       setTimeout(() => {
         document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         setTimeout(() => {
@@ -481,7 +475,18 @@ export default function HavenDrawer() {
 
     armForceScroll();
     sendMessage(text);
-  }, [sendMessage, closeDrawer, openDrawer, armForceScroll, updateUserProfile, isRestricted,activeScope,activeService,currentSession,navigate,reduceMotion,userProfile]);
+  }, [sendMessage, closeDrawer, openDrawer, armForceScroll, updateUserProfile, isRestricted,activeScope,activeService,currentSession,navigate,reduceMotion]);
+
+  useEffect(() => {
+    if (!playbookHandoff) return;
+    const frame = requestAnimationFrame(() => {
+      consumePlaybookHandoff();
+      if (isOpen && activeScope === playbookHandoff.scope && activeSessionId === playbookHandoff.sessionId) {
+        handleChipSelect('__SHOP__');
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [playbookHandoff, consumePlaybookHandoff, isOpen, activeScope, activeSessionId, handleChipSelect]);
 
   const handleNavChipSelect = useCallback((navChip) => {
     if (isRestricted) return;
@@ -666,13 +671,11 @@ export default function HavenDrawer() {
               )}
 
               <AnimatePresence>
-                {(userProfile.name || userProfile.businessDomain || userProfile.auditScore != null) && (
+                {currentSession?.serviceId !== 'site-support' && (userProfile.name || userProfile.businessDomain || userProfile.auditScore != null) && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
                     className="px-5 py-2.5 bg-zinc-900/60 border-b border-white/[0.04] flex items-center gap-2 flex-wrap overflow-hidden flex-shrink-0">
                     {userProfile.name && <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-zinc-300">{userProfile.name}</span>}
                     {userProfile.businessDomain && <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-zinc-300">{userProfile.businessDomain}</span>}
-                    {activeScope==='audit'&&!needsReviewRecovery&&<button type="button" disabled={isThinking||isRestricted} onClick={()=>{setShowReviewDetails(true);requestAnimationFrame(()=>scrollRef.current?.scrollTo({top:0,behavior:'instant'}));}} className="min-h-9 rounded-md border border-white/15 px-2 text-[11px] text-zinc-300 hover:bg-white/5 disabled:opacity-40">Edit review details</button>}
-                    {activeScope === 'audit' && userProfile.businessDomain !== 'none' && !showPreflight && !needsReviewRecovery && <button type="button" onClick={() => { reopenReviewSource(); requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' })); }} disabled={isThinking || isRestricted} className="rounded-md border border-white/10 px-2 py-0.5 text-[11px] text-zinc-400 hover:text-white disabled:opacity-40">Review source</button>}
                     {userProfile.auditScore != null && (
                       <span className={`text-[11px] px-2 py-0.5 rounded-md border font-medium ${
                         userProfile.auditScore >= 80 ? 'bg-white/[0.06] border-white/[0.12] text-zinc-100'
@@ -729,7 +732,7 @@ export default function HavenDrawer() {
                 className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5"
               >
                 <div ref={scrollContentRef} className="space-y-5">
-                  {editingReview?<ReviewDetailsEditor profile={userProfile} onSave={reviseReviewDetails} onClose={()=>setShowReviewDetails(false)}/>:showPreflight ? (
+                  {showPreflight ? (
                     <HavenScoreCard
                       preflight={auditPreflight}
                       kind={userProfile?.businessDomain === 'social' || userProfile?.businessDomain === 'website_and_social' ? 'social' : 'website'}
@@ -758,7 +761,10 @@ export default function HavenDrawer() {
                     <div role="alert" className="relative rounded-xl border border-amber-200/15 bg-amber-200/[0.04] p-4 pr-10 text-xs leading-relaxed text-zinc-300">
                       <button type="button" onClick={dismissFailedTurn} aria-label="Dismiss saved message retry" className="absolute right-2 top-2 rounded p-1 text-zinc-400 hover:text-white"><X className="h-4 w-4" /></button>
                       <p>{currentSession.failedTurn.error}</p>
-                      <a href={`/support?issue=rate_limit&message=${encodeURIComponent('I could not continue in Haven.\n\nVisible error: '+String(currentSession.failedTurn.error||'').slice(0,800)+'\n\nWhat I was trying to do: ')}`} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block underline underline-offset-4">Contact support</a>
+                      <a href={`/support?${new URLSearchParams({
+                        issue: currentSession.failedTurn.supportIssue || 'other',
+                        message: 'I could not continue in Haven.\n\nVisible error: ' + String(currentSession.failedTurn.error || '').slice(0, 800) + '\n\nWhat I was trying to do: ',
+                      })}`} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block underline underline-offset-4">Contact support</a>
                       <button type="button" disabled={isRestricted || needsReviewRecovery || currentSession.failedTurn.retryAt > retryNow} className="mt-2 rounded-lg border border-white/15 px-3 py-2 text-zinc-100 disabled:opacity-50"
                         onClick={() => sendMessage(currentSession.failedTurn.content, currentSession.failedTurn.image)}>{currentSession.failedTurn.retryAt > retryNow ? `Retry in ${Math.ceil((currentSession.failedTurn.retryAt - retryNow) / 1000)}s` : 'Retry saved message'}</button>
                     </div>
@@ -783,7 +789,7 @@ export default function HavenDrawer() {
                 )}
               </AnimatePresence>
 
-              {!editingReview&&!showPreflight && (
+              {!showPreflight && (
                 <div className="relative px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-white/[0.08] bg-zinc-950 flex-shrink-0">
                   {showConsentLine && (
                     <div className="mb-3 text-[11px] leading-relaxed text-zinc-400">
@@ -801,7 +807,7 @@ export default function HavenDrawer() {
                     onSend={handleSend}
                     onStop={stopResponse}
                     isThinking={isThinking}
-                    disabled={editingReview || needsReviewRecovery || isRestricted}
+                    disabled={needsReviewRecovery || isRestricted}
                     size="full"
                   />
                   {isRestricted && (

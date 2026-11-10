@@ -19,7 +19,7 @@ function supportPage({ issue = '', invoke = async () => ({ data: { ok: true, ref
     require(name) {
       if (name === 'react') return react;
       if (name === 'react-router-dom') return { Link: 'Link',useLocation:()=>({search:issue?'?issue='+encodeURIComponent(issue):''}) };
-      if(name.includes('HavenContext'))return {useHaven:()=>({createNewSession:scope=>opened.push(scope),toggleDrawer:()=>opened.push('resume'),isOpen:false})};
+      if(name.includes('HavenContext'))return {useHaven:()=>({openDrawer:scope=>opened.push(scope)})};
       if(name.includes('supportPrefill'))return {supportPrefill};
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => key });
       if (name.includes('react-hcaptcha')) return { __esModule: true, default: 'HCaptcha' };
@@ -143,7 +143,7 @@ test('Haven help opens without sending the form or blocking direct team contact'
   const ui=supportPage();fill(ui);let nodes=ui.render();nodes.find(node=>node.type==='button'&&text(node)==='Ask Haven').props.onClick();
   assert.deepEqual(ui.opened,['support']);assert.equal(ui.calls.length,0);
   nodes=ui.render();assert.ok(nodes.find(node=>node.type==='form'));assert.equal(nodes.find(node=>node.type==='textarea').props.value,'  My saved review cannot be opened.  ');
-  nodes.find(node=>node.type==='button'&&text(node)==='Resume Haven chat').props.onClick();
   nodes.find(node=>node.type==='button'&&text(node)==='Ask Haven').props.onClick();
-  assert.deepEqual(ui.opened,['support','resume','support']);
+  assert.deepEqual(ui.opened,['support','support']);
+  assert.doesNotMatch(text(nodes.find(node=>node.props['aria-label']==='Help from Haven')),/marketing questions/);
 });

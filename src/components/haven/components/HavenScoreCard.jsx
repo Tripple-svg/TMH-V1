@@ -51,6 +51,15 @@ function SourceCorrection({ kind, url, onCorrect }) {
 }
 
 export default function HavenScoreCard({ preflight, kind = 'website', onProceed, onRetry, onCorrect }) {
+  const [continuing, setContinuing] = useState(false);
+  const [continueError, setContinueError] = useState('');
+  const continueToChat = async () => {
+    setContinuing(true);
+    setContinueError('');
+    try { await onProceed(); }
+    catch (error) { setContinueError(error.message || 'Could not start the review chat. Please try again.'); }
+    finally { setContinuing(false); }
+  };
   const { status, score, breakdown, biggestIssue, url, error, reason, rubricVersion, evidence } = preflight || {};
   const needsRecovery = /access recovery/.test(error || '');
   const currentRubric = rubricVersion === RUBRIC_VERSION;
@@ -78,8 +87,10 @@ export default function HavenScoreCard({ preflight, kind = 'website', onProceed,
     </details>}
     {!loading && <div className="mt-auto space-y-3">
       {!needsRecovery && status === 'failed' && <button type="button" onClick={onRetry} className={`${buttonClass} w-full`}><RotateCcw className="h-4 w-4" />Retry this source</button>}
-      <button type="button" onClick={onProceed} className={`${buttonClass} w-full`}>Continue to Chat <ArrowRight className="h-4 w-4" /></button>
-      {!needsRecovery && <SourceCorrection key={`${kind}/${url || ''}`} kind={kind} url={url} onCorrect={onCorrect} />}
+      <button type="button" onClick={continueToChat} disabled={continuing || needsRecovery} className={`${buttonClass} w-full`}>{continuing ? 'Starting chat…' : 'Continue to Chat'} <ArrowRight className="h-4 w-4" /></button>
+      {!needsRecovery && <p className="text-center text-xs text-zinc-400">Check the website or screenshot before continuing. Once the chat starts, the review source is locked.</p>}
+      {continueError && <p role="alert" className="text-center text-xs text-amber-200">{continueError}</p>}
+      {!needsRecovery && !continuing && <SourceCorrection key={`${kind}/${url || ''}`} kind={kind} url={url} onCorrect={onCorrect} />}
     </div>}
   </div>;
 }

@@ -10,8 +10,8 @@ import { enforceHavenLimits } from '../_shared/haven-limits.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { buildHavenSystemPrompt, STEPS, LEADS } from '../_shared/haven-prompts.js';
 import { ReviewAccessError, hashReviewToken } from '../_shared/review-access.ts';
-import { prepareConversation, substantiveAnswer, explicitCallRequest, RESTRICTED_MESSAGE } from '../_shared/haven-conversation.ts';
-import { resolveHavenRouting, supportHelpReply, acceptedCallInvitation, inferHavenNeed, isAffirmative } from '../_shared/haven-routing.js';
+import { prepareConversation, substantiveAnswer, explicitCallRequest, RESTRICTED_MESSAGE, REVIEW_CONTEXT_QUESTION, REVIEW_CONTEXT_MARKER, loadLinkedReviewContext } from '../_shared/haven-conversation.ts';
+import { resolveHavenRouting, supportHelpReply, acceptedCallInvitation, inferHavenNeed, isAffirmative, isPlainDecline, directPlaybookReply, CALL_HANDOFF, PLAYBOOK_CHOICES } from '../_shared/haven-routing.js';
 import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiText } from '../_shared/haven-model.ts';
 import { applyAutomaticFlag, ModerationError, detectHavenAbuse, moderationReply } from '../_shared/haven-moderation.ts';
 import { verifyPlaybookAccess } from '../_shared/playbook-access.js';
@@ -129,18 +129,33 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     const playbookVerified = await verifyPlaybookAccess(context.playbookAccessToken, key);
     const platformState=havenPlatformState({review:conversation.review,playbookVerified,bookingStatus,serviceId:conversation.session.service_id});
     const previousRoute = conversation.session.routing_state;
-    const acceptedCall = isAffirmative(latest) && (previousRoute?.version === 2
+    const siteSupport = scope === 'support' && conversation.session.service_id === 'site-support';
+    const directAbuse = detectHavenAbuse(latest);
+    const awaitingReviewContext = scope !== 'audit'
+      && conversation.session.messages?.findLast((message: HavenMessage) => message.role === 'agent')?.content === REVIEW_CONTEXT_QUESTION;
+    const reviewIntent = latest.replaceAll('’', "'");
+    const explicitlyRequestsReview = /^(?:(?:yes|sure|please)[,. ]+)*(?:use|refer (?:back )?to|look at)\s+(?:my|our) (?:saved )?brand review\b/i.test(reviewIntent);
+    const confirmsPriorReview = /^(?:yes[,. ]+)?(?:it(?:'s| is)|this is) based (?:on|off) (?:my|our|the) (?:(?:saved|previous) )?(?:brand )?review\b/i.test(reviewIntent);
+    const optsOutOfReview = /\b(?:don't|do not|rather not)\s+(?:use|read|access|refer|look)\b/i.test(reviewIntent);
+    const useLinkedReview = scope !== 'audit' && !siteSupport && Boolean(conversation.review) && !optsOutOfReview
+      && (explicitlyRequestsReview || (awaitingReviewContext && (isAffirmative(latest) || confirmsPriorReview)));
+    const acceptedCall = !siteSupport && !awaitingReviewContext && !useLinkedReview && isAffirmative(latest) && (previousRoute?.version === 2
       ? (previousRoute.pendingAction === 'call' && previousRoute.permission === 'asked')
         || (previousRoute.lastAction === 'offer_call' && previousRoute.permission === 'granted')
       : acceptedCallInvitation(latest, conversation.session.messages));
-    const acceptedResource = isAffirmative(latest) && previousRoute?.pendingAction === 'playbook' && previousRoute?.permission === 'asked';
-    const supportContext = { teamInquiry: conversation.session.service_id === 'team-inquiry' };
+    const pendingResource = !awaitingReviewContext && !useLinkedReview
+      && ['playbook', 'playbook_preview'].includes(previousRoute?.pendingAction) && previousRoute?.permission === 'asked';
+    const supportContext = { teamInquiry: conversation.session.service_id === 'team-inquiry', siteSupport };
     const supportReply = bookingQuestionReply(latest,platformState)||supportHelpReply(latest, scope, supportContext);
+    const playbookReply = supportReply ? null : directPlaybookReply(latest, previousRoute, playbookVerified);
     const directHelp = supportReply
-      || (acceptedCall ? 'Choose an available time using the button below. The team can discuss the scope and whether we can help. [[BOOK_CALL]]' : acceptedResource ? 'The Unseen Playbook offers practical exercises for the learning need we have discussed.' : null);
+      || playbookReply?.text
+      || (acceptedCall ? CALL_HANDOFF + ' [[BOOK_CALL]]' : null)
+      || (pendingResource && isAffirmative(latest) ? 'I’ll take you to the Playbook section.' : null)
+      || (pendingResource && isPlainDecline(latest) ? 'Of course.' : null);
     const { data: turn, error: turnError } = await supabase.rpc('begin_haven_turn', {
       p_session_id: conversation.session.id, p_turn_id: requestId, p_content: latest,
-      p_has_image: Boolean(screenshot), p_substantive: !directHelp && substantiveAnswer(latest), p_explicit_call: explicitCallRequest(latest) || acceptedCall,
+      p_has_image: Boolean(screenshot), p_substantive: !siteSupport && !directHelp && substantiveAnswer(latest), p_explicit_call: !siteSupport && (explicitCallRequest(latest) || acceptedCall),
       p_request_hash: await hashReviewToken(JSON.stringify({ content: latest, screenshot })),
     });
     if (turnError || !turn) throw new HavenRequestError('Could not save your message. Please try again.', 500);
@@ -171,30 +186,29 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
         },
       };
     } else {
-      // Linked users retain their verified brand identity in every entry point.
+      // A linked review can answer platform questions without becoming this chat's topic.
       const services: Record<string, string> = { web: 'Brand & Web Engineering', growth: 'Strategic Growth', content: 'Content & Social' };
       const serviceName = services[String(session.service_id)] || null;
       const allowedPublicSteps = [STEPS.AWAITING_PERMISSION, STEPS.ROUTING_TO_CALL, STEPS.ROUTING_TO_PLAYBOOK, STEPS.ROUTING_TO_CONTENT, STEPS.CLEAN_EXIT];
       const defaultStep = scope === 'service' ? STEPS.SERVICE_GRID_OPEN
         : session.service_id === 'team-inquiry' ? STEPS.TEAM_INQUIRY : STEPS.CUSTOMER_SUPPORT_OPEN;
       promptContext = {
-        userName: textValue(conversation.review?.full_name, 120, 'there'), brandName: textValue(conversation.review?.brand_name, 200, 'your business'),
-        serviceName, entryPoint: scope === 'service' ? 'SERVICE_GRID' : session.service_id === 'team-inquiry' ? 'TEAM_INQUIRY' : 'CUSTOMER_SUPPORT',
-        auditData: { ...qualification, mainGoal:textValue(conversation.review?.main_goal,500), presenceType:conversation.review?.platform_type||null,
-          scoringRevision:conversation.review?.scoring_revision||0,routingState: session.routing_state || null, currentStep: allowedPublicSteps.includes(session.current_step as string) ? session.current_step : defaultStep },
+        linkedReviewContext: useLinkedReview && !directHelp && !directAbuse ? await loadLinkedReviewContext(supabase, conversation.review) : null,
+        serviceName, entryPoint: scope === 'service' ? 'SERVICE_GRID' : siteSupport ? 'SITE_SUPPORT' : session.service_id === 'team-inquiry' ? 'TEAM_INQUIRY' : 'CUSTOMER_SUPPORT',
+        auditData: { ...qualification, routingState: session.routing_state || null,
+          currentStep: allowedPublicSteps.includes(session.current_step as string) ? session.current_step : defaultStep },
       };
     }
-    const systemPrompt = buildHavenSystemPrompt({ ...promptContext, playbookVerified, platformState, latestMessage:latest });
+    const systemPrompt = buildHavenSystemPrompt({ ...promptContext, playbookVerified: !siteSupport && playbookVerified, platformState, latestMessage:latest });
     // Client history is only validated input; provider context comes from saved turns.
     const history: HavenMessage[] = [];
     let chars = 0;
     for (const message of [...(session.messages || [])].reverse()) {
-      if (!['user','agent'].includes(message.role) || typeof message.content !== 'string') continue;
+      if (!['user','agent'].includes(message.role) || typeof message.content !== 'string' || (siteSupport && message.isSeedGreeting)) continue;
       const content = message.content.slice(0,4000);
       if (history.length >= 40 || chars+content.length > 24000) break;
       history.unshift({ role: message.role, content }); chars += content.length;
     }
-    const directAbuse = detectHavenAbuse(latest);
     const modelMessages = history.length ? history : [{ role:'user', content:latest }];
     const generateReply = async () => {
       const budget = await reserveAIBudget(supabase,request,key,'chat',{
@@ -210,7 +224,9 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
       ? { text: directHelp, model: null, diagnostics:[] }
       : await generateReply();
     const captured = captureConversationMemory(modelText, session.conversation_memory, latest, requestId);
-    let rawText = captured.text;
+    const askToUseReview = !siteSupport && !directHelp && !directAbuse && !useLinkedReview && !awaitingReviewContext && scope !== 'audit'
+      && platformState.reviewLinked && captured.text.includes(REVIEW_CONTEXT_MARKER) && !captured.text.includes('[[FLAG:');
+    let rawText = askToUseReview ? REVIEW_CONTEXT_QUESTION : captured.text.replace(/\[\[REVIEW_CONTEXT:[^\r\n]*?(?:\]\]|$)/g, '').trim();
     if (!rawText.trim()) throw new Error('Empty model response');
     let flagStatus = conversation.flagStatus;
     let warned = false;
@@ -224,22 +240,39 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
       flagStatus = moderation.flagStatus;
       warned = moderation.changed && flagStatus === 'yellow';
     }
-    const routed = directAbuse || supportReply ? { text: rawText, routingState: session.routing_state || { problemType: 'unknown', permission: 'none' } } : resolveHavenRouting(rawText, { scope, ...qualification, bookingStatus, teamInquiry: session.service_id === 'team-inquiry', acceptedCall, playbookVerified, routingState: session.routing_state, serviceId: session.service_id, latestUserText: latest, messages:session.messages||[] });
+    const siteSupportReply = siteSupport && !directHelp && !flag;
+    const routed = siteSupportReply ? {
+      text: /\[\[(?:BOOK_CALL|PLAYBOOK|TIKTOK_CONTENT)\]\]|"nextAction"\s*:\s*"offer_(?:call|playbook)"/i.test(rawText)
+        ? 'This chat is for help using the TMH site. For marketing advice or help with a project, open Need Help on the homepage.' : rawText,
+      routingState: { problemType: 'support', permission: 'none', pendingAction: null },
+    } : directAbuse || supportReply ? { text: rawText, routingState: session.routing_state || { problemType: 'unknown', permission: 'none' } }
+      : askToUseReview ? { text: rawText, routingState: { ...(session.routing_state || {}), problemType: session.routing_state?.problemType || 'unknown', permission: 'none', pendingAction: null, lastAction: 'clarify' } }
+      : playbookReply || resolveHavenRouting(rawText, { scope, ...qualification, bookingStatus, teamInquiry: session.service_id === 'team-inquiry', acceptedCall, playbookVerified, routingState: session.routing_state, serviceId: session.service_id, latestUserText: latest, messages:session.messages||[] });
     rawText = routed.text;
-    const askedQuestion = !directHelp && !flag && rawText.includes('?') && !/\[\[(?:BOOK_CALL|PLAYBOOK|STEP:AWAITING_PERMISSION)/.test(rawText);
+    const askedQuestion = !siteSupport && !directHelp && !flag && rawText.includes('?') && !/\[\[(?:BOOK_CALL|PLAYBOOK|STEP:AWAITING_PERMISSION)/.test(rawText);
     rawText = rawText.replace(/\[\[(?:FLAG:[A-Z_]+|NEED:[A-Z_]+|DIAGNOSTIC_QUESTION)\]\]/g,'').trim();
     if (!rawText.replace(/\[\[[\s\S]*?\]\]/g,'').trim()) throw new Error('empty_filtered_response');
     if (warned) rawText += '\n\nPlease keep this conversation respectful and follow our terms. This is your warning. Another abusive message will restrict your access.';
     if (flagStatus === 'red') rawText = RESTRICTED_MESSAGE;
     const parsed = parseChips(rawText);
-    if(!flag&&flagStatus!=='red')parsed.chips=[...new Set([...parsed.chips,...(platformNavigationHelp(latest)?.chips||[])])];
     const stepMatch = [...rawText.matchAll(/\[\[STEP:([A-Z0-9_]+)\]\]/g)].at(-1)?.[1];
+    const openPlaybookSection = !flag && flagStatus !== 'red'
+      && 'openPlaybookSection' in routed && routed.openPlaybookSection === true;
+    if (!flag && flagStatus !== 'red') {
+      const route = routed.routingState;
+      const askingAboutPlaybook = stepMatch === STEPS.AWAITING_PERMISSION && route.permission === 'asked'
+        && ['playbook', 'playbook_preview'].includes(route.pendingAction);
+      parsed.chips = [...new Set([
+        ...(askingAboutPlaybook ? PLAYBOOK_CHOICES : openPlaybookSection ? ['__SHOP__'] : siteSupportReply ? [] : parsed.chips),
+        ...(platformNavigationHelp(latest)?.chips || []),
+      ])];
+    }
     const leadMatch = [...rawText.matchAll(/\[\[LEAD:([A-Z]+)\]\]/g)].at(-1)?.[1];
-    const currentStep = Object.values(STEPS).includes(stepMatch || '') && stepMatch !== STEPS.GREETING ? stepMatch : promptContext.auditData.currentStep;
-    const leadTemperature = Object.values(LEADS).includes(leadMatch || '') ? leadMatch : null;
+    const currentStep = siteSupportReply ? STEPS.CUSTOMER_SUPPORT_OPEN : Object.values(STEPS).includes(stepMatch || '') && stepMatch !== STEPS.GREETING ? stepMatch : promptContext.auditData.currentStep;
+    const leadTemperature = !siteSupport && Object.values(LEADS).includes(leadMatch || '') ? leadMatch : null;
     parsed.text=parsed.text.replace(/\[\[(?:STEP:[A-Z0-9_]+|LEAD:[A-Z_]+|DECISION:[\s\S]*?|MEMORY:[\s\S]*?)\]\]/g,'').replace(/\s*\u2014\s*/g,'; ').trim();
     if(/info@themarketinghaven\.xyz/i.test(parsed.text))parsed.chips=[...parsed.chips,'__CONTACT_SUPPORT__'];
-    const response = { ok: true, ...parsed, model, currentStep, leadTemperature, flagStatus, sessionId: session.id, routingState: routed.routingState, platformState, providerDiagnostics:diagnostics };
+    const response = { ok: true, ...parsed, ...(openPlaybookSection ? { openPlaybookSection } : {}), model, currentStep, leadTemperature, flagStatus, sessionId: session.id, routingState: routed.routingState, platformState, providerDiagnostics:diagnostics };
     const { error: completionError } = await supabase.rpc('finish_haven_turn', {
       p_session_id: session.id, p_turn_id: requestId, p_attempt_id:activeTurn.attemptId, p_response: { ...response, conversationMemory: captured.memory }, p_question: askedQuestion, p_step: currentStep,
     });
@@ -247,8 +280,10 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     activeTurn = null;
     return json(response);
   } catch (error) {
+    const diagnostics = (error as { diagnostics?: ProviderDiagnostic[] })?.diagnostics || [];
+    for (const diagnostic of diagnostics) logEvent('warn', 'haven-chat.provider.' + diagnostic.code, traceId);
     if (activeTurn && supabase) {
-      try { await supabase.rpc('fail_haven_turn',{p_session_id:activeTurn.sessionId,p_turn_id:activeTurn.requestId,p_attempt_id:activeTurn.attemptId,p_error_code:(error as any)?.code||'request_failed',p_diagnostics:(error as any)?.diagnostics||[],p_retry_seconds:(error as any)?.retryAfter||0}); }
+      try { await supabase.rpc('fail_haven_turn',{p_session_id:activeTurn.sessionId,p_turn_id:activeTurn.requestId,p_attempt_id:activeTurn.attemptId,p_error_code:(error as any)?.code||'request_failed',p_diagnostics:diagnostics,p_retry_seconds:(error as any)?.retryAfter||0}); }
       catch { logEvent('error','haven-chat.diagnostic_2',traceId); }
     }
     const known = error instanceof HavenRequestError || error instanceof ReviewAccessError || error instanceof ModerationError;

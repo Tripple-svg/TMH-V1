@@ -13,7 +13,7 @@ import { verifyReviewAccess, ReviewAccessError } from '../_shared/review-access.
 import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson } from '../_shared/haven-request.ts';
 import { SCORING_COPY } from '../_shared/haven-prompts.js';
 import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiText } from '../_shared/haven-model.ts';
-import { normalizeWebsiteUrl, extractWebsiteText, hasMeaningfulBusinessText, websiteContentReason, parseScoringResult, persistScoring, cachedScoring } from '../_shared/haven-scoring.ts';
+import { normalizeWebsiteUrl, extractWebsiteText, hasMeaningfulBusinessText, websiteContentReason, parseScoringResult, persistScoring, cachedScoring, lockedScoring } from '../_shared/haven-scoring.ts';
 
 const SCORING_PROMPT = scoringInstructions('website');
 
@@ -120,6 +120,7 @@ Deno.serve(observe('scrape-website',async (request,requestId) => {
     if (review.platform_type !== 'website') throw new HavenRequestError('This review does not have a website to score.');
     const targetUrl = normalizeWebsiteUrl(review.website_url);
     if (body.url && normalizeWebsiteUrl(body.url) !== targetUrl) throw new HavenRequestError('The website must match your saved review.');
+    if (review.source_locked_at) return json({ ok: true, ...lockedScoring(review), url: targetUrl });
     const cached = body.force === true ? null : cachedScoring(review, 'website');
     if (cached) return json({ ok: true, ...cached, summary: review.scraped_summary || '', url: targetUrl, cached: true });
     await enforceScoringLimits(supabase, request, key, review.id);

@@ -11,7 +11,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiText } from '../_shared/haven-model.ts';
 import { verifyReviewAccess, ReviewAccessError, storedReviewScreenshot } from '../_shared/review-access.ts';
 import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson, screenshotPart } from '../_shared/haven-request.ts';
-import { parseScoringResult, persistScoring, cachedScoring } from '../_shared/haven-scoring.ts';
+import { parseScoringResult, persistScoring, cachedScoring, lockedScoring } from '../_shared/haven-scoring.ts';
 
 const SOCIAL_SCORING_PROMPT = scoringInstructions('social');
 
@@ -50,6 +50,7 @@ Deno.serve(observe('score-social',async (request,requestId) => {
     ({ review } = await verifyReviewAccess(supabase, access.sessionId, access.reviewId, access.accessToken));
     if (review.flag_status === 'red') throw new HavenRequestError('Your access is currently restricted. Please contact info@themarketinghaven.xyz.', 403);
     if (review.platform_type !== 'social') throw new HavenRequestError('This review does not have a social profile to score.');
+    if (review.source_locked_at) return json({ ok: true, ...lockedScoring(review) });
     const cached = body.force === true ? null : cachedScoring(review, 'social');
     if (cached) return json({ ok: true, ...cached, revision: review.scoring_revision || 0, cached: true });
     await enforceScoringLimits(supabase, request, key, review.id);

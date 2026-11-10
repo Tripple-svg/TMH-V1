@@ -84,10 +84,18 @@ function AppInner() {
     // Only known public sections are navigation targets. Wait for the full intro.
     const id=url.hash.slice(1);
     const frame=requestAnimationFrame(()=>{
-      if(url.searchParams.get('privacy')==='delete'){
+      const openDeletion = url.searchParams.get('privacy') === 'delete';
+      const openPlaybook = url.searchParams.get('playbook') === 'open';
+      if (openDeletion) {
         setShowDataDeletion(true);
         url.searchParams.delete('privacy');
-        window.history.replaceState(null,'',`${url.pathname}${url.search}${url.hash}`);
+      }
+      if (openPlaybook) {
+        url.searchParams.delete('playbook');
+        if (!openDeletion) window.dispatchEvent(new CustomEvent('open-playbook-modal'));
+      }
+      if (openDeletion || openPlaybook) {
+        window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
       }
       if(!['hero','about','services','free-class','shop','testimonials','footer'].includes(id))return;
       const target=document.getElementById(id);
@@ -219,15 +227,11 @@ function AppInner() {
         <section id="about" tabIndex={-1}>
           <AboutSection />
         </section>
-        <section id="services">
-          <ServiceGrid />
-        </section>
+        <ServiceGrid />
         <section id="free-class">
           <MasterclassBanner />
         </section>
-        <section id="shop">
-          <ShopSection />
-        </section>
+        <ShopSection />
         <section id="testimonials">
           <TestimonialsSection />
         </section>
@@ -265,7 +269,7 @@ export default function App() {
         <Route path="/admin" element={<AdminRoute />} />
         <Route path="/admin/accept-invite" element={<AdminInvitePage />} />
         <Route path="/team-brief" element={<TeamBriefPage />} />
-        <Route path="/support" element={<HavenProvider><SupportPage /><HavenDrawer /></HavenProvider>} />
+        <Route path="/support" element={<HavenProvider siteSupport><SupportPage /><HavenDrawer /></HavenProvider>} />
         <Route path="/data-access" element={<DataAccessPage />} />
         <Route path="/data-access/confirm" element={<DataAccessPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />

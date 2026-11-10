@@ -47,35 +47,59 @@ test('routing: a small useful answer needs no offer or forced question',()=>{
   const raw='Show the delivery area beside the product price so someone can see the full cost before they enquire.';
   assert.equal(gateHavenRouting(raw,context('Where should I show the delivery charge?')),raw);
 });
-test('routing: evidence-backed learning invites the resource once, then accepted permission reveals the book and button',()=>{
+test('routing: a calendar request leaves room to clarify the message before a defined team engagement', () => {
+  const question = 'What should your ideal customers understand or do after seeing your posts?';
+  const first = resolveHavenRouting(question, context('I need a content calendar. Can you help?', {scope:'support'}));
+  assert.equal(first.text, question);
+  assert.equal(first.routingState.pendingAction, null);
+
+  const clarified = 'I want your team to build and manage a content calendar for our bakery. The goal is for local office managers to enquire about catering.';
+  const next = resolveHavenRouting('The team can talk through the calendar with you.', context(clarified, {
+    scope:'support', routingState:first.routingState,
+  }));
+  assert.match(next.text, /\[\[BOOK_CALL\]\]/);
+});
+test('routing: evidence-backed learning explains the book fit and waits for consent before opening it',()=>{
   const first=resolveHavenRouting(decision('Would you like an overview of the resource?',learningDecision),context(learning));
-  assert.doesNotMatch(first.text,/Playbook|₦|purchase/);assert.equal(first.routingState.pendingAction,'playbook');
+  assert.match(first.text,/The Unseen Playbook.*who your offer is for/);
+  assert.doesNotMatch(first.text,/\[\[PLAYBOOK\]\]|₦|purchase/);assert.equal(first.routingState.pendingAction,'playbook');
   const next=resolveHavenRouting('Before I recommend anything, what is the gap?',context('Please do!!!',{routingState:first.routingState,messages:[{role:'user',content:learning},{role:'user',content:'Please do!!!'}]}));
-  assert.match(next.text,/The Unseen Playbook/);assert.match(next.text,/\[\[PLAYBOOK\]\]/);assert.doesNotMatch(next.text,/overview|purchase|₦|Before I recommend/i);
+  assert.equal(next.openPlaybookSection,true);assert.match(next.text,/Playbook section/);assert.doesNotMatch(next.text,/\[\[PLAYBOOK\]\]|overview|purchase|₦|Before I recommend/i);
   assert.equal(next.routingState.permission,'granted');assert.equal(next.routingState.pendingAction,null);
 });
 test('routing: no raw purchase pitch or unsolicited price survives a resource acceptance',()=>{
   const first=resolveHavenRouting(decision('I recommend the Playbook.',learningDecision),context(learning));
   const next=resolveHavenRouting('The Unseen Playbook costs ₦9,639. Would you like to purchase it?',context('yes',{routingState:first.routingState}));
-  assert.match(next.text,/PLAYBOOK/);assert.doesNotMatch(next.text,/₦|purchase|costs|overview/i);
+  assert.equal(next.openPlaybookSection,true);assert.doesNotMatch(next.text,/\[\[PLAYBOOK\]\]|₦|purchase|costs|overview/i);
 });
 
-test('routing: a resource invitation without naming the book still saves the pending action',()=>{
+test('routing: a vague resource invitation is grounded in the identified gap',()=>{
   const first=resolveHavenRouting(decision('I can recommend a practical resource for this. Would you like to see what it covers?',learningDecision),context(learning));
-  assert.equal(first.routingState.pendingAction,'playbook');assert.doesNotMatch(first.text,/The Unseen Playbook/);
+  assert.equal(first.routingState.pendingAction,'playbook');assert.match(first.text,/The Unseen Playbook.*who your offer is for/);
   const next=resolveHavenRouting('What would you like to do?',context('Go ahead',{routingState:first.routingState}));
-  assert.match(next.text,/PLAYBOOK/);
+  assert.equal(next.openPlaybookSection,true);
 });
 
 test('routing: a strong website review can surface a foundational gap without a product menu',()=>{
   const latest='My website looks fine and gets enquiries. I do not know who the offer is for.';
   const first=resolveHavenRouting(decision('Would you prefer to work through this yourself, or discuss getting help from the team?',{...learningDecision,evidence:[latest],preference:'none',nextAction:'clarify'}),context(latest,{presenceType:'website',score:92}));
   assert.equal(first.routingState.pendingAction,'playbook');
+  assert.match(first.text,/The Unseen Playbook.*who your offer is for/);
   assert.doesNotMatch(first.text,/Would you prefer|BOOK_CALL|\[\[PLAYBOOK/);
 });
-test('routing: an explicit request to view the book opens the real Shop without pretending it is paid',()=>{
-  const result=resolveHavenRouting('Would you like to purchase the Playbook for ₦9,639?',context('Show me The Unseen Playbook'));
-  assert.match(result.text,/\[\[PLAYBOOK\]\]/);assert.doesNotMatch(result.text,/₦|purchase|paid|sent/i);
+test('routing: preview asks once before opening the Playbook, while purchase intent opens it directly',()=>{
+  const preview=resolveHavenRouting('Would you like to purchase the Playbook for ₦9,639?',context('Show me The Unseen Playbook'));
+  assert.doesNotMatch(preview.text,/\[\[PLAYBOOK\]\]/);
+  assert.equal(preview.routingState.pendingAction,'playbook_preview');
+  const accepted=resolveHavenRouting('',context('Yes, show me',{routingState:preview.routingState}));
+  assert.equal(accepted.openPlaybookSection,true);
+  assert.doesNotMatch(accepted.text,/\[\[PLAYBOOK\]\]/);
+  assert.doesNotMatch(accepted.text,/₦|purchase|paid|sent/i);
+  const buy=resolveHavenRouting('',context('I want to buy The Unseen Playbook.'));
+  assert.match(buy.text,/Glad you’re interested/);
+  assert.match(buy.text,/\[\[PLAYBOOK\]\]/);
+  assert.equal(buy.openPlaybookSection,undefined);
+  assert.doesNotMatch(buy.text,/₦|examines?|exercises|already paid|sent/i);
 });
 test('routing: direct book prices are answered, while a website quote is not mistaken for a book price',()=>{
   const price=resolveHavenRouting('Let us diagnose first.',context('How much is the Playbook?'));
@@ -169,10 +193,10 @@ test('support: public business contact is available, and human handoff is truthf
 test('support: reopening or correcting a review uses the existing source controls without creating a fresh review',()=>{
   for(const latest of ['How can I reopen or correct my saved brand review?','I uploaded the wrong screenshot for my review','Can I do another brand review?']){
     const reply=supportHelpReply(latest,'support');
-    assert.match(reply,/Review source/);assert.match(reply,/Wrong website\/screenshot\? Try Again/);
-    assert.match(reply,/same review/);assert.match(reply,/None yet/);assert.match(reply,/https:\/\/themarketinghaven.xyz\/support/);
+    assert.match(reply,/scorecard before choosing Continue to Chat/);
+    assert.match(reply,/keep chatting and see any saved score/);assert.match(reply,/support form/);
     const result=resolveHavenRouting('Clear your browser cache or use incognito, then submit a new review.',context(latest,{scope:'support'}));
-    assert.match(result.text,/Do not clear storage or use a private window/);
+    assert.match(result.text,/before choosing Continue to Chat/);
     assert.doesNotMatch(result.text,/Clear your browser cache|then submit a new review|BOOK_CALL|\[\[PLAYBOOK/);
   }
 });
@@ -241,7 +265,8 @@ test('routing: an operational detour preserves marketing evidence and a pending 
           assert.deepEqual(detour.routingState[key], state[key], `${scope}/${pendingAction}: ${key}`);
         }
         const continued = resolveHavenRouting('What is your goal?', context('Yes please', {scope, routingState:detour.routingState}));
-        assert.match(continued.text, pendingAction === 'call' ? /\[\[BOOK_CALL\]\]/ : /\[\[PLAYBOOK\]\]/);
+        if (pendingAction === 'call') assert.match(continued.text,/\[\[BOOK_CALL\]\]/);
+        else assert.equal(continued.openPlaybookSection,true);
       }
     }
   }
@@ -267,7 +292,8 @@ test('prompt: scopes, practical persona, action honesty and manual improvement a
     if(phrase==='manual')continue;assert.ok(prompt.toLowerCase().includes(phrase.toLowerCase()),phrase);
   }
   assert.doesNotMatch(prompt,/at least TWO diagnostic|Pass mark is|framework is the whole value|vendor mindset|No mini-consultation|Never write a price as plain text/);
-  assert.match(prompt,/not commissioned execution/);assert.match(prompt,/explicit.*marketing\/service need/s);
+  assert.match(prompt,/free; any later agency execution\s+has a separately agreed scope and price/);
+  assert.match(prompt,/explicit.*marketing\/service need/s);
 });
 test('rubrics: public categories match the scoped four-part v2 contract',()=>{
   assert.deepEqual(WEBSITE_SCORING_CATEGORIES.map(row=>row.key),['clarity','trust','positioning','conversion']);

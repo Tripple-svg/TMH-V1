@@ -414,6 +414,7 @@ export default function ShopSection() {
   return (
     <section
       id="shop"
+      tabIndex={-1}
      className="relative w-full pt-24 pb-12 sm:py-32 px-4 sm:px-6 lg:px-8 bg-white text-zinc-900 dark:bg-zinc-950 dark:text-white transition-colors duration-300"
     >
       <div className="absolute top-0 left-0 right-0 h-32 pointer-events-none bg-gradient-to-b from-zinc-100 to-transparent dark:from-zinc-900 dark:to-transparent transition-colors duration-300" />

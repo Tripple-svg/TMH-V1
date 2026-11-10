@@ -15,6 +15,8 @@ function extract(start, end) {
 }
 const code = [
   source.match(/const REVIEW_RECOVERY_MESSAGE = [^\n]+/)[0],
+  source.match(/const SITE_SUPPORT_ID = [^\n]+/)[0],
+  extract('function supportEntryContext(', 'function loadSessionsForScope('),
   extract('function classifyChipAction(', 'function makeDefaultSupportSession('),
   extract('function reviewAccess(', 'export function HavenProvider(')
     .replaceAll('import.meta.env.VITE_SUPABASE_URL', "'https://project.supabase.co'")
@@ -39,7 +41,7 @@ function harness({ scoring = VALID, profile = {}, scope = 'audit', history = [],
     getHavenIdentity: () => ({ ...IDENTITY }),
     console: { log() {}, warn() {}, error() {} }, navigator: { onLine: true },
     STEPS: { AWAITING_DIAGNOSTIC_Q2: 'AWAITING_DIAGNOSTIC_Q2' }, LEADS: { WARM: 'WARM' }, NAV_ACTION_RULES: [],
-    useCallback: (fn) => fn, userProfile: currentProfile,
+    useCallback: (fn) => fn, userProfile: currentProfile, siteSupport: false, setPlaybookHandoff() {},
     setUserProfile: (updater) => { currentProfile = updater(currentProfile); },
     setAuditPreflight: (updater) => { currentPreflight = updater(currentPreflight); },
     setIsThinking: (value) => thinking.push(value), setViewState() {}, triggerToast() {},

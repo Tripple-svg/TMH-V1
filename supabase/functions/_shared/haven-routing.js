@@ -20,6 +20,15 @@ const BARE_BOOKING = /\b(?:book|schedule|arrange|want|need|discuss)\b[^.!?\n]{0,
 const HUMAN = /\b(?:human|real person|speak (?:to|with) (?:a person|someone|the team)|talk (?:to|with) (?:a person|someone|the team)|member of (?:your|the) team)\b/i;
 const PRICE = /\b(?:price|cost|how much|amount|naira)\b|₦/i;
 const DIAGNOSTIC = '[[DIAGNOSTIC_QUESTION]]';
+export const CALL_HANDOFF = 'Pick a time that works for you for a free 25-minute strategy call. We’ll talk through what you need and see how the team can help.';
+export const PLAYBOOK_CHOICES = ['Yes, I’m interested', 'No, I’m not interested'];
+const WEBSITE_REQUEST = /(?:^|[.!?]\s+)(?:please\s+)?(?:(?:i|we)(?:\s+(?:want|need|would like)|'d like)\s+(?:you(?:r team)? to (?:build|design|make|create|rebuild)\s+(?:(?:me|us)\s+)?)?|(?:could|can|would) you (?:build|design|make|create|rebuild)\s+(?:(?:me|us)\s+)?)(?:(?:a|the|my|our|new|business|template|same|exactly)\s+){0,4}(?:website|site|web\s*page)\b/i;
+const CURRENT_SITE_REFERENCE = /^\s+(?:(?:to (?:be|look|work|feel)|that (?:looks|works|feels))\s+)?(?:(?:exactly|just)\s+)?like\s+(?:this(?:\s+(?:one|website|site|page|web\s*page)|(?=\s*(?:[.!?,]|$)))|yours|your\s+(?:website|site|web\s*page)|the\s+(?:one|website|site|web\s*page)\s+(?:i'm|i am)\s+(?:currently\s+)?on)\b/i;
+const SITE_CLARIFICATION = /^(?:no[,.]?\s+)?(?:i mean|i'm referring to|i am referring to)\s+(?:this\s+(?:one|(?:template\s+)?(?:website|site|page|web\s*page))|yours|your\s+(?:website|site|page|web\s*page)|the\s+(?:one|website|site|web\s*page)\s+(?:i'm|i am)\s+(?:currently\s+)?on)\b/i;
+const REFERENCED_BUILD = /\b(?:this|your)\s+(?:website|site|web\s*page)\b[^\n]{0,100}\b(?:can|could|would)\s+you(?:r team)?\s+(?:build|make|design|create)\s+(?:me |us )?something\s+like\s+(?:this(?: one)?|yours)\b/i;
+const WEBSITE_INTAKE = /\b(?:share|send|provide|paste)\b[^.!?\n]{0,60}\b(?:url|link)\b|\b(?:which|what|choose|prefer)\b[^.!?\n]{0,65}\b(?:colou?rs?|layout|navigation|fonts?)\b|\b(?:i|we)(?: (?:can|will)|['’]ll)\b[^.!?\n]{0,28}\b(?:copy|clone|replicate|match|rebuild|build|design)\b/i;
+const PLATFORM_INTAKE = /\b(?:which|what)\s+(?:(?:cms|website|ecommerce|site)\s+)?platform\b|\b(?:do|are) you (?:use|using) (?:wordpress|wix|shopify)\b/i;
+const AUDIENCE_GAP = /\b(?:audience|customers?|buyers?|anybody|who (?:my|our|the|this) (?:offer|product|service) is for|who to (?:reach|target|speak to))\b/i;
 
 function wantsDelegation(text) {
   return DELEGATE.test(text) && !/\b(?:do not|don['’]?t|rather not|no need|not want)\b.{0,60}\b(?:team|hire|handle|do it)/i.test(text);
@@ -36,7 +45,7 @@ function humanRequest(text) {
 }
 function hasBusinessNeed(text) {
   return RESEARCH.test(text) || (WORK.test(text) || learningSubject(text))
-    && /\b(?:need|want|struggl\w*|problem|stuck|not|don['’]?t|nobody|no sales|no orders|declin\w*|drop\w*|missing|unclear|wrong|confus\w*|can['’]?t|cannot|los\w*|disappear\w*|improv\w*|rebuild|research|interview\w*|audience|why|how|manually|by hand|too long|bottleneck)\b/i.test(text);
+    && /\b(?:needs?|wants?|struggl\w*|problem|stuck|not|don['’]?t|nobody|no sales|no orders|declin\w*|drop\w*|missing|unclear|wrong|confus\w*|can['’]?t|cannot|los\w*|disappear\w*|improv\w*|rebuild|research|interview\w*|audience|why|how|manually|by hand|too long|bottleneck)\b/i.test(text);
 }
 
 function userTexts(context = {}) {
@@ -64,8 +73,11 @@ function cleanReply(text) {
   return cleanMetadata(text).replace(ROUTES, '').replace(/\[\[STEP:ROUTING_TO_(?:CALL|PLAYBOOK|CONTENT)\]\]/g, '')
     .replace(CALL_URL, '').replace(SHOP_URL, '').trim();
 }
+export function isPlainDecline(text) {
+  return /^(?:no(?:,?\s+(?:thanks|i(?:['’]m| am) not interested))?|not now|not yet|not ready)[.!\s]*$/i.test(text);
+}
 function isDecline(text) {
-  return /^(?:no|no thanks|not now|not yet|not ready)[.!\s]*$/i.test(text)
+  return isPlainDecline(text)
     || /\b(?:let me think|not ready|rather not|not right now)\b/i.test(text)
     || /\b(?:don['’]?t|do not)\s+(?:(?:want|need)(?:\s+to)?\s+)?(?:book|buy|purchase|schedule|arrange|call|(?:the )?playbook|(?:a )?resource)\b/i.test(text);
 }
@@ -96,7 +108,7 @@ function normalizeState(previous = {}) {
     evidence: Array.isArray(previous.evidence) ? previous.evidence.filter(quote => typeof quote === 'string').slice(0, 4).map(quote => quote.slice(0, 300)) : [],
     missing: Array.isArray(previous.missing) ? previous.missing.filter(key => ['goal', 'scope', 'evidence', 'preference', 'problem'].includes(key)) : [],
     permission: ['none', 'asked', 'granted', 'declined'].includes(previous.permission) ? previous.permission : 'none',
-    pendingAction: ['call', 'playbook', 'service', 'preference'].includes(previous.pendingAction) ? previous.pendingAction : null,
+    pendingAction: ['call', 'playbook', 'playbook_preview', 'service', 'preference'].includes(previous.pendingAction) ? previous.pendingAction : null,
     lastAction: ACTIONS.includes(previous.lastAction) ? previous.lastAction : 'answer',
     // Legacy clients may still render this field; it no longer decides a route.
     problemType: previous.problemType === 'foundational' || previous.problemType === 'operational' ? previous.problemType : 'unknown',
@@ -120,8 +132,8 @@ export function inferHavenNeed(messages = []) {
 }
 
 export function isAffirmative(text) {
-  return /^(?:yes(?: (?:please|sure|of course))?|please do(?: it)?(?: again)?|go ahead|show me|sure|okay|ok|continue|i am interested)$/.test(
-    String(text || '').toLowerCase().replace(/[!.,?]/g, ' ').replace(/\s+/g, ' ').trim());
+  return /^(?:yes(?: (?:please|sure|of course|show me|open it))?|please do(?: it)?(?: again)?|go ahead|show me|sure|okay|ok|continue|(?:yes )?i(?:'m| am) interested)$/.test(
+    String(text || '').toLowerCase().replaceAll('’', "'").replace(/[!.,?]/g, ' ').replace(/\s+/g, ' ').trim());
 }
 export function acceptedCallInvitation(latest, messages = []) {
   const previous = [...messages].reverse().find(message => message.role === 'agent');
@@ -166,10 +178,13 @@ export function supportHelpReply(text, scope, context = {}) {
   const platformHelp = platformHelpReply(value);
   if (platformHelp) return platformHelp;
   if (scope !== 'support') return null;
+  if (directPlaybookIntent(value)) return null;
+  if (context.siteSupport && /\b(?:are you|is this)\b.{0,25}\b(?:human|real person|ai|bot)\b/.test(value)) return 'I’m Haven, TMH’s AI support assistant. I can help you use the site. If you need a person, send the team a request on this page.';
   if (/already purchased|recovery (?:page|panel|form|option)/.test(value) && /not|isn.t|missing|where|visible|show|find/.test(value)) return 'Open Get The Unseen Playbook in Digital Products on the homepage (#shop). Already purchased is a tab inside that panel, not a link below the product card. If this device already has valid purchase access, the panel shows your saved download instead. If recovery still is not available, email info@themarketinghaven.xyz with what you see. Do not clear your saved access or pay again.';
   if (humanRequest(value) && (!context.teamInquiry || SUPPORT_ISSUE.test(value))) return `Open the support form at https://themarketinghaven.xyz/support and describe what happened. A successful submission gives you a request reference so Team Haven can follow up. You can also email ${CONTACT} or use WhatsApp in the footer. I have not created a support ticket or booked a strategy call from this chat.`;
   if (/\b(?:are you|is this)\b.{0,25}\b(?:human|real person|ai|bot)\b/.test(value)) return 'I am Haven, TMH’s AI marketing guide. I can help with marketing and questions about this platform. If you need a person, Team Haven is available through the contact details in the footer.';
-  if (/\b(?:reopen|open|correct(?:ing)?|edit(?:ing)?|change|replace|wrong|another|new|second|redo|again)\b/.test(value) && /\b(?:brand review|review)\b/.test(value)) return 'Request a Free Brand Review reopens your saved review on this browser. For a website or screenshot review, choose Review source in its chat, then Wrong website/screenshot? Try Again. That replaces the source and score for the same review while keeping its conversation. If you chose None yet, cannot see those controls, or need a review for a different brand, use the support form at https://themarketinghaven.xyz/support or contact info@themarketinghaven.xyz. Do not clear storage or use a private window to bypass saved access.';
+  const asksForReviewAccess = /\b(?:reopen|open|correct(?:ing)?|edit(?:ing)?|change|replace|wrong|redo|again)\b/.test(value) && /\breview\b/.test(value);
+  if (asksForReviewAccess || /\b(?:another|new|second)\s+(?:brand )?review\b/.test(value)) return 'Request a Free Brand Review reopens your saved review on this browser. You can correct a wrong website or screenshot from the scorecard before choosing Continue to Chat. After that, you can keep chatting and see any saved score. If you cannot open your review or need a different review, contact info@themarketinghaven.xyz or use the support form.';
   if (/\b(?:rate limit|rate limited|too many|attempt limit|cooldown|locked out|blocked from trying)\b/.test(value)) return 'Follow the waiting time shown before trying again; changing email or clearing storage will not reset a network limit. A rate limit is separate from a behaviour restriction. If you remain blocked after that time, submit the support form at https://themarketinghaven.xyz/support with the error and any support reference shown. Team Haven can review eligible locks after checking the request. I cannot clear them from chat; you can also contact info@themarketinghaven.xyz.';
   if (/\b(?:lost|missing|recover|recovery|restore|disappeared)\b/.test(value) && /\b(?:chat|review|access)\b/.test(value) && !/\b(?:playbook|purchase|download)\b/.test(value)) return 'A visible older chat does not restore the secure review access key. Contact info@themarketinghaven.xyz to verify ownership and recover that review. Please do not share an access token in chat. Clearing storage again will not restore the key.';
   if (/\b(?:otp|code)\b/.test(value) && /arriv|receiv|inbox|spam|delay|sent|email/.test(value)) return 'Check the inbox and spam folder for the checkout email you entered. If the code has not arrived, wait for the resend timer in Already purchased, then request a fresh code there. Avoid requesting several codes at once. If it is still missing, contact info@themarketinghaven.xyz; I cannot resend it from chat, and you should not share a code here.';
@@ -195,29 +210,52 @@ const SERVICE_QUESTIONS = {
   growth: 'What result are you trying to improve, and where is progress getting stuck?',
   content: 'Who are you trying to reach, and what do you want your content to help them do?',
 };
+function playbookHint(state) {
+  const evidence = state.evidence.join(' ');
+  return /\b(?:trust|proof|testimonials?)\b/i.test(evidence)
+    ? 'Think about the one piece of proof a hesitant buyer would want to see.'
+    : AUDIENCE_GAP.test(evidence)
+      ? 'Start with one kind of buyer and one reason your offer matters to them.'
+      : 'Start with one thing you want customers to understand better about your offer.';
+}
 function bookExplanation(raw, state) {
   const candidate = cleanReply(raw).replace(/\[\[(?:STEP:[A-Z0-9_]+|DIAGNOSTIC_QUESTION|CHIPS:.*?)\]\]/gs, '').trim();
   if (/The Unseen Playbook/.test(candidate) && candidate.length <= 550 && !PRICE.test(candidate) && !/learning need|gap we have discussed|practical exercises for/i.test(candidate)
     && !/\?|\b(?:buy|purchase|guarantee|will fix|exact blueprint|guaranteed fix|losing money|bleeding money)\b/i.test(candidate)) return candidate;
-  const customer = /\b(?:audience|customer|buyer|anybody)\b/i.test(state.evidence.join(' '));
-  return customer
-    ? 'The Unseen Playbook can help you choose who your offer is for and give that buyer a clear reason to care. You can use its questions to sharpen one offer for one audience. The button below opens the details.'
-    : /\btrust|proof|testimonial/i.test(state.evidence.join(' '))
-      ? 'The Unseen Playbook explains how clarity, positioning and trust affect a buying decision. For the proof gap you described, it can help you work out what would give a buyer a concrete reason to believe your offer. Open the details below to see whether it fits.'
-      : 'The Unseen Playbook offers a way to examine your offer and the obstacles a buyer faces. The button below opens the details so you can decide whether it suits what you want to work on.';
+  return `Here’s The Unseen Playbook. ${playbookHint(state)} Open the details below if you’d like to work through it.`;
 }
-function bookInvitation(raw) {
+function bookInvitation(raw, state) {
   const candidate = cleanReply(raw).replace(/\[\[(?:STEP:[A-Z0-9_]+|DIAGNOSTIC_QUESTION|CHIPS:.*?)\]\]/gs, '').trim();
-  const invitesResource = /\b(?:would you like|may i|can i)\b/i.test(candidate) && /\b(?:resource|guide)\b/i.test(candidate);
-  const prematureOffer = PRICE.test(candidate) || /\b(?:playbook|call|buy|purchase|chapters?|guarantee)\b/i.test(candidate);
-  if (candidate.length <= 450 && invitesResource && !prematureOffer && candidate.match(/\?/g)?.length === 1) return candidate;
-  return 'I can point you to a resource for that part of your marketing. Would you like to see it?';
+  const invitation = /\b(?:would you like|want me to|may i|can i)\b/i.exec(candidate);
+  const prematureOffer = PRICE.test(candidate) || /\b(?:call|buy|purchase|chapters?|guarantee)\b/i.test(candidate);
+  if (candidate.length <= 450 && invitation?.index > 0 && !prematureOffer && candidate.match(/\?/g)?.length === 1) {
+    if (/\bThe Unseen Playbook\b/i.test(candidate)) return candidate;
+    const observation = candidate.slice(0, invitation.index).trim();
+    if (observation && !/\b(?:resource|guide|playbook)\b/i.test(observation)) {
+      return `${observation} The Unseen Playbook can help you work through that. Would you like to see the Playbook section?`;
+    }
+  }
+  const evidence = state.evidence.join(' ');
+  const nextStep = /\b(?:trust|proof|testimonials?)\b/i.test(evidence)
+    ? 'give buyers a clearer reason to trust your offer'
+    : AUDIENCE_GAP.test(evidence)
+      ? 'get clearer on who your offer is for'
+      : 'work through what makes your offer worth choosing';
+  return `The Unseen Playbook can help you ${nextStep}. Would you like to see the Playbook section?`;
 }
 function callExplanation(raw) {
   const candidate = cleanReply(raw).replace(/\[\[(?:STEP:[A-Z0-9_]+|DIAGNOSTIC_QUESTION|CHIPS:.*?)\]\]/gs, '').trim();
   if (candidate && candidate.length <= 550 && /\b(?:call|scope|team can discuss)\b/i.test(candidate)
-    && !/\?|\b(?:playbook|booked|scheduled|guarantee|losing money|bleeding money|before i recommend|tell me your goal|qualif(?:y|ication))\b/i.test(candidate)) return /\bstrategy call\b/i.test(candidate)?candidate:candidate.replace(/\b(?:free\s+)?call\b/i,'free strategy call');
-  return 'The team can discuss the scope of the work you have described on a free 25-minute strategy call. Choose an available time using the button below; the call helps establish fit and does not commission a project.';
+    && !/\?|\b(?:playbook|booked|scheduled|guarantee|losing money|bleeding money|before i recommend|tell me your goal|qualif(?:y|ication)|does not commission)\b/i.test(candidate)) return /\bstrategy call\b/i.test(candidate)?candidate:candidate.replace(/\b(?:free\s+)?call\b/i,'free strategy call');
+  return CALL_HANDOFF;
+}
+function callInvitation(raw) {
+  const candidate = cleanReply(raw).replace(/\[\[(?:STEP:[A-Z0-9_]+|DIAGNOSTIC_QUESTION|CHIPS:.*?)\]\]/gs, '').trim();
+  if (candidate.length <= 550 && /\b(?:would you like|do you want|shall we)\b[^?\n]{0,120}\bstrategy call\b[^?\n]{0,60}\?$/i.test(candidate)
+    && !/\b(?:playbook|booked|scheduled|guarantee|losing money|bleeding money|i can build|i'll build)\b/i.test(candidate)) {
+    return candidate.replace(/\b(?:free\s+)?(?:\d+[ -]minute\s+)?strategy call\b/gi, 'free 25-minute strategy call');
+  }
+  return 'Would you like to talk it through with the team on a free 25-minute strategy call?';
 }
 function result(text, state, action) {
   state.lastAction = action;
@@ -226,10 +264,51 @@ function result(text, state, action) {
   return { text: visible, routingState: state };
 }
 
+function directPlaybookIntent(text) {
+  if (isDecline(text) || asksForBookContents(text) || PRICE.test(text)
+    || /\b(?:paid|purchased|bought|download|recover|receipt|refund|failed|broken)\b/i.test(text)) return null;
+  if (/\b(?:i (?:want|would like|need) to|i['’]d like to|i(?:['’]m| am) ready to|(?:can|could|may|how can|how do) i|please(?: help me)?)\s+(?:buy|purchase)\s+(?:a copy of\s+)?(?:(?:the|your|unseen)\s+){0,3}playbook[.!?\s]*$/i.test(text)) return 'buy';
+  if (/\b(?:show me|(?:can|could|may) i (?:see|preview)|(?:let me|i want to) (?:see|preview))\s+(?:(?:the|your|same|unseen)\s+){0,4}playbook[.!?\s]*$/i.test(text)) return 'preview';
+  return null;
+}
+
+export function directPlaybookReply(latest, previous, playbookVerified) {
+  const intent = directPlaybookIntent(latest);
+  if (!intent) return null;
+  const state = normalizeState(previous || {});
+  if (playbookVerified || intent === 'buy') {
+    state.permission = 'granted';
+    state.pendingAction = null;
+    const text = playbookVerified
+      ? 'You already have access to The Unseen Playbook. Use the button below to open the panel and get your copy.'
+      : 'Glad you’re interested in The Unseen Playbook. Use the button below to open it and check out when you’re ready.';
+    return result(text + '\n[[PLAYBOOK]]\n[[STEP:ROUTING_TO_PLAYBOOK]]', state, 'offer_playbook');
+  }
+  state.permission = 'asked';
+  state.pendingAction = 'playbook_preview';
+  const foundations = /\b(?:foundations?|fundamentals?|basics)\b/i.test(latest);
+  const text = foundations
+    ? 'The Unseen Playbook could be a good fit if you want to work on your marketing foundations at your own pace. Want me to open the page where you can get it?'
+    : 'I can take you to the page for The Unseen Playbook so you can see what it covers and how to get it. Want me to open it?';
+  return result(text + '\n[[STEP:AWAITING_PERMISSION]]', state, 'offer_playbook');
+}
+
+function afterWebsiteReference(text) {
+  const normalized = text.replaceAll('’', "'");
+  const indirect = REFERENCED_BUILD.exec(normalized);
+  if (indirect) return text.slice(indirect.index + indirect[0].length);
+  const request = WEBSITE_REQUEST.exec(normalized);
+  if (!request) return null;
+  const afterSite = text.slice(request.index + request[0].length);
+  const reference = CURRENT_SITE_REFERENCE.exec(afterSite.replaceAll('’', "'"))
+    || (/\bsame\b/i.test(request[0]) ? /^\s+(?:that\s+)?you(?: guys|r team)?\s+(?:have\s+)?built\b/i.exec(afterSite) : null);
+  return reference ? afterSite.slice(reference[0].length) : null;
+}
+
 export function resolveHavenRouting(rawText, context = {}) {
   const raw = typeof rawText === 'string' ? rawText : '';
   const latest = String(context.latestUserText || '').trim();
-  const previous = normalizeState(context.routingState);
+  const previous = normalizeState(context.routingState || {});
   const state = { ...previous, evidence: [...previous.evidence], missing: [...previous.missing] };
   const platformHelp = platformHelpReply(latest);
   if (platformHelp) {
@@ -241,13 +320,16 @@ export function resolveHavenRouting(rawText, context = {}) {
     }
     return result(platformHelp, state, 'answer');
   }
+  const playbookReply = directPlaybookReply(latest, previous, context.playbookVerified === true);
+  if (playbookReply) return playbookReply;
   if ((context.bookingStatus?.confirmed || context.bookingStatus?.pending) && (/\[\[BOOK_CALL\]\]/.test(raw) || BARE_BOOKING.test(latest) || wantsDelegation(latest))) {
     state.pendingAction=null;state.permission='none';
     return result(context.bookingStatus.confirmed
       ? 'You already have an upcoming call. Bring this issue to that meeting; your Calendly confirmation has the details and options to manage it.'
       : 'A booking page was opened recently. Complete that booking first; if you left without booking, you can try again after the reservation expires (up to 30 minutes).',state,'answer');
   }
-  const sources = userTexts(context);
+  const sources = userTexts({ messages: context.messages });
+  if (latest && sources.at(-1) !== latest) sources.push(latest);
   const inferred = inferHavenNeed([...sources.map(content => ({ role: 'user', content }))]);
   const marker = [...raw.matchAll(/\[\[DECISION:(\{[^\r\n]*\})\]\]/g)].at(-1);
   let proposed = null;
@@ -268,7 +350,8 @@ export function resolveHavenRouting(rawText, context = {}) {
   }
   const currentDelegation = requestsImplementation(latest) || wantsDelegation(latest) && RESEARCH.test(latest);
   const currentResearch = RESEARCH.test(latest);
-  if (proposed?.need !== 'out_of_scope' && inferred.need !== 'unknown' && (currentDelegation || currentResearch || (!proposed && ['unknown','support'].includes(state.need)))) {
+  if ((!proposed || proposed.need === 'unknown') && inferred.need !== 'unknown'
+    && (currentDelegation || currentResearch || (!proposed && ['unknown','support'].includes(state.need)))) {
     state.need = inferred.need;
     state.complexity = inferred.complexity === 'unknown' ? state.complexity : inferred.complexity;
     state.evidence = inferred.evidence.length ? inferred.evidence : state.evidence;
@@ -304,13 +387,21 @@ export function resolveHavenRouting(rawText, context = {}) {
   const asksCall = !declines && BARE_BOOKING.test(latest);
   const asksResource = !declines && RESOURCE_REQUEST.test(latest);
   const knowsNeed = state.evidence.length > 0 && state.need !== 'unknown' && state.need !== 'support';
-  const explicitDelegation = currentDelegation;
+  const siteClarification = SITE_CLARIFICATION.test(latest.replaceAll('’', "'"))
+    && WEBSITE_REQUEST.test((sources.at(-2) || '').replaceAll('’', "'"));
+  const siteReference = afterWebsiteReference(latest) !== null || siteClarification;
+  const referenceOnly = siteReference && sources.every(source => {
+    const remainder = afterWebsiteReference(source);
+    return remainder !== null ? /^(?:\s+for\s+(?:my|our)\s+[\w -]{1,50})?[\s.!?]*$/i.test(remainder)
+      : source === latest && siteClarification && !/[.!?]\s+\S/.test(source);
+  });
+  const explicitDelegation = currentDelegation && !siteReference;
   const missingWork = state.missing.some(key => ['goal', 'scope', 'evidence', 'problem'].includes(key));
   const operationalFits = knowsNeed && !missingWork && ['implementation', 'research'].includes(state.need)
     && state.evidence.some(quote => WORK.test(quote) || RESEARCH.test(quote));
   const learningFits = knowsNeed && !missingWork && state.need === 'learning' && state.bookFit
     && !['delegate', 'unsure'].includes(state.preference);
-  const wasOffered = previous.permission === 'asked' && ['playbook', 'call', 'service'].includes(previous.pendingAction);
+  const wasOffered = previous.permission === 'asked' && ['playbook', 'playbook_preview', 'call', 'service'].includes(previous.pendingAction);
   if (declines && (offersBook || offersCall || wasOffered)) {
     state.permission = 'declined'; state.pendingAction = null;
     return result('Of course. Take your time. You can return to this conversation if you want to continue.\n[[STEP:CLEAN_EXIT]]', state, 'close');
@@ -321,8 +412,10 @@ export function resolveHavenRouting(rawText, context = {}) {
   if (bookPrice && !asksResource) {
     return result('The Unseen Playbook costs ₦9,639. Its contents and checkout are in the Shop section.\n[[STEP:CUSTOMER_SUPPORT_OPEN]]', state, 'answer');
   }
-  if (context.playbookVerified === true && !asksCall && !explicitDelegation) {
-    return result(cleanReply(raw), state, 'answer');
+  if (affirmative && previous.pendingAction === 'playbook_preview' && previous.permission === 'asked') {
+    state.permission = 'granted';
+    state.pendingAction = null;
+    return { ...result('I’ll take you to the Playbook section so you can see what it covers.\n[[STEP:ROUTING_TO_PLAYBOOK]]', state, 'offer_playbook'), openPlaybookSection: true };
   }
   // Prior invitations survive short replies without re-running a question ritual.
   if (affirmative && (previous.pendingAction === 'call' && previous.permission === 'asked' || context.acceptedCall === true)) {
@@ -331,12 +424,23 @@ export function resolveHavenRouting(rawText, context = {}) {
   }
   if (affirmative && previous.pendingAction === 'playbook' && previous.permission === 'asked' && context.playbookVerified !== true) {
     state.permission = 'granted'; state.pendingAction = null; state.preference = 'learn';
-    return result(bookExplanation(raw, state) + '\n[[PLAYBOOK]]\n[[STEP:ROUTING_TO_PLAYBOOK]]', state, 'offer_playbook');
+    return { ...result(`${playbookHint(state)} I’ll take you to the Playbook section.\n[[STEP:ROUTING_TO_PLAYBOOK]]`, state, 'offer_playbook'), openPlaybookSection: true };
   }
   if (state.need === 'out_of_scope') {
     state.permission = 'none'; state.pendingAction = null; state.bookFit = false;
     const answer = cleanReply(raw);
     return result(!offersBook && !offersCall && answer ? answer : 'That work falls outside TMH’s services. A specialist who handles that specific task can help you assess your options.', state, 'answer');
+  }
+  // The model does the diagnosis. If it slips into a design intake or tries to
+  // pitch on the strength of the reference alone, keep the discussion on fit.
+  const prematurePitch = (referenceOnly || !proposed) && (offersCall || offersBook);
+  const prematureIntake = siteReference && (WEBSITE_INTAKE.test(cleanReply(raw)) || referenceOnly && PLATFORM_INTAKE.test(raw));
+  if (siteReference && !asksCall && (prematurePitch || prematureIntake)) {
+    state.need = 'unknown'; state.permission = 'none'; state.pendingAction = null; state.missing = ['goal'];
+    return result('The Marketing Haven site can be a reference. What would you need a website to do for your business that is hard to do today?\n[[STEP:AWAITING_DIAGNOSTIC_Q2]]', state, 'clarify');
+  }
+  if (context.playbookVerified === true && !asksCall && !explicitDelegation) {
+    return result(cleanReply(raw), state, 'answer');
   }
   if (operationalFits && (explicitDelegation || asksCall) && context.scope !== undefined) {
     state.permission = 'granted'; state.pendingAction = null; state.preference = 'delegate';
@@ -358,11 +462,12 @@ export function resolveHavenRouting(rawText, context = {}) {
   if (offersBook || offersCall || preferenceQuestion) {
     if (operationalFits && offersCall && !['learn', 'unsure'].includes(state.preference)) {
       state.permission = 'asked'; state.pendingAction = 'call';
-      return result('The work you have described can be discussed with the team. Would you like to explore its scope on a free 25-minute strategy call?\n[[STEP:AWAITING_PERMISSION]]', state, 'offer_call');
+      const invitation = proposed?.nextAction === 'offer_call' ? callInvitation(raw) : callInvitation('');
+      return result(invitation + '\n[[STEP:AWAITING_PERMISSION]]', state, 'offer_call');
     }
     if (learningFits) {
       state.permission = 'asked'; state.pendingAction = 'playbook';
-      return result(bookInvitation(raw) + '\n[[STEP:AWAITING_PERMISSION]]', state, 'offer_playbook');
+      return result(bookInvitation(raw, state) + '\n[[STEP:AWAITING_PERMISSION]]', state, 'offer_playbook');
     }
     if (knowsNeed && state.preference === 'learn') {
       return result('The Playbook does not carry out research or technical implementation. I can help you understand a bounded next step for doing this yourself. Which part would you like to work through?\n[[STEP:AWAITING_DIAGNOSTIC_Q2]]', state, 'clarify');

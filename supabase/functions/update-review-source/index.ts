@@ -22,22 +22,18 @@ Deno.serve(observe('update-review-source',async (request,requestId) => {
     const {review}=await verifyReviewAccess(db,access.sessionId,access.reviewId,access.accessToken);
     if(review.flag_status==='red') throw new HavenRequestError('Your access is restricted. Contact info@themarketinghaven.xyz.',403);
     if(!Number.isSafeInteger(body.revision)||body.revision<0) throw new HavenRequestError('Refresh the review details before making this correction.',409);
+    if(body.action==='lock'){
+      const {data,error}=await db.rpc('lock_haven_review_source',{p_review_id:review.id,p_revision:body.revision});
+      if(error?.code==='42501')throw new HavenRequestError('Your review access could not be verified.',403);
+      if(error||!data)throw new HavenRequestError('Could not start the review chat. Please try again.',503);
+      if(data.conflict)return json({ok:false,code:'source_changed',revision:data.revision,error:'This source changed in another tab. Continue the review in that tab, or refresh here.'},409);
+      return json({ok:true,locked:data.locked===true,revision:data.revision});
+    }
+    if(body.action!==undefined&&body.action!=='source')throw new HavenRequestError('Only the website or screenshot can be corrected before starting the review chat.');
+    const sourceLocked=()=>json({ok:false,code:'source_locked',error:'The review chat has started, so its source is locked.'},409);
+    if(review.source_locked_at)return sourceLocked();
     await limitRecovery(db,'review-source:'+review.id,10);
     await limitRecovery(db,'review-source-ip:'+await requestBucket(request,key),20);
-    if(body.action==='details'||body.action==='restart'){
-      if(body.action==='restart'&&body.confirmRestart!==true)throw new HavenRequestError('Confirm that you want to restart this review.');
-      const fields=[['name',120],['brandName',200],['whatsapp',40],['mainGoal',500]] as const;
-      for(const [field,max] of fields){
-        if(typeof body[field]!=='string'||String(body[field]).length>max||(field!=='mainGoal'&&!String(body[field]).trim()))throw new HavenRequestError('Check your name, brand, phone and goal, then try again.');
-      }
-      const {data,error}=await db.rpc('revise_haven_review',{p_review_id:review.id,p_revision:body.revision,p_name:body.name,
-        p_brand:body.brandName,p_phone:body.whatsapp,p_goal:body.mainGoal,p_restart:body.action==='restart'});
-      if(error)throw new HavenRequestError(error.code==='55000'?'Wait for the current reply to finish, then save your changes.':'Your review changes could not be saved. Try again or contact Support.',error.code==='55000'?409:503);
-      if(data?.conflict)return json({ok:false,code:'source_changed',revision:data.revision,error:'This review changed in another tab. Reopen it and check the latest details before saving.'},409);
-      if(!data?.review||!Number.isSafeInteger(data.revision))throw new HavenRequestError('The saved changes could not be confirmed.',503);
-      return json({ok:true,revision:data.revision,review:data.review});
-    }
-    if(body.action!==undefined&&body.action!=='source')throw new HavenRequestError('Choose a valid review action.');
     let website: string | null=null, sourceHash: string | null=null;
     if(review.platform_type==='website') {
       website=normalizeWebsiteUrl(body.url); sourceHash=await hashReviewToken(website);
@@ -53,6 +49,7 @@ Deno.serve(observe('update-review-source',async (request,requestId) => {
     const {data,error}=await db.rpc('correct_haven_review_source',{
       p_review_id:review.id,p_revision:body.revision,p_url:website,p_screenshot_path:uploaded,p_source_hash:sourceHash,
     });
+    if(error?.code==='P0003')return sourceLocked();
     if(error) throw new HavenRequestError(error.code==='55000'?'Wait for the current response to finish or stop it, then try this correction.':'The correction could not be saved. Please try again.',error.code==='55000'?409:503);
     if(data?.conflict) return json({ok:false,code:'source_changed',revision:data.revision,error:'This source was changed in another tab. Reopen your review before correcting it again.'},409);
     if(!data?.review) throw new HavenRequestError('The saved correction could not be confirmed.',503);

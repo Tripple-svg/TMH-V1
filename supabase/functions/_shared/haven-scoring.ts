@@ -92,6 +92,17 @@ export function cachedScoring(review: Record<string, any>, kind: 'website' | 'so
     breakdown: review.score_breakdown, biggestIssue: review.biggest_leak, rubricVersion: review.rubric_version, evidence: review.score_evidence }), kind, kind === 'website' ? review.scraped_summary : undefined);
 }
 
+export function lockedScoring(review: Record<string, any>) {
+  const valid = review.scrape_state === 'valid' && Number.isInteger(review.haven_score);
+  return {
+    locked: true, cached: true, revision: review.scoring_revision || 0,
+    state: valid ? 'valid' : 'insufficient_evidence',
+    score: valid ? review.haven_score : null, breakdown: valid ? review.score_breakdown : null,
+    biggestIssue: valid ? review.biggest_leak : null, rubricVersion: review.rubric_version,
+    evidence: valid ? review.score_evidence : null,
+  };
+}
+
 export function websiteContentReason(summary: string) {
   if (summary.length < 300 || (summary.match(/[\p{L}][\p{L}'’-]*/gu) || []).length < 45) return 'insufficient_text';
   if (/privacy|cookie|terms|all rights reserved/i.test(summary) && !hasMeaningfulBusinessText(summary)) return 'boilerplate_only';

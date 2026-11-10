@@ -115,6 +115,7 @@ export default function ServiceGrid() {
   return (
     <section
       id="services"
+      tabIndex={-1}
       className="relative w-full pt-0 sm:pt-16 pb-12 sm:pb-28 px-4 sm:px-6 lg:px-8 bg-zinc-50 dark:bg-zinc-950/50 transition-colors duration-300"
     >
       <div className="max-w-7xl mx-auto">
