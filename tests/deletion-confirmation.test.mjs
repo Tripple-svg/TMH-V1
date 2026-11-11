@@ -12,7 +12,7 @@ const request = (body = { token }, origin = 'https://themarketinghaven.xyz', met
   method, headers: { 'Content-Type': 'application/json', origin }, ...(!['GET', 'HEAD'].includes(method) ? { body: JSON.stringify(body) } : {}),
 });
 
-function fixture({ storageFails = false, denied = false, preparedError, sendStatus = 200 } = {}) {
+function fixture({ storageFails = false, denied = false, preparedError, sendStatus = 200, completed = true } = {}) {
   let handler; const calls = [], emails = [], logs = [];
   const db = {
     from: () => ({ select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: { email: 'owner@example.com' } }; } }),
@@ -20,7 +20,7 @@ function fixture({ storageFails = false, denied = false, preparedError, sendStat
       calls.push({ name, args });
       if (name === 'consume_playbook_limit') return { data: !denied };
       if (name === 'prepare_saved_review_deletion') return { data: preparedError ? { error: preparedError } : { requestId: 'request-id', email: 'owner@example.com', paths: ['review-id/screenshot.png'], deleted: 1 } };
-      if (name === 'complete_saved_review_deletion') return { data: true };
+      if (name === 'complete_saved_review_deletion') return { data: completed };
       throw Error('Unexpected RPC');
     },
     storage: { from: () => ({ remove: async paths => { calls.push({ remove: paths }); return { error: storageFails ? { message: 'private provider error' } : null }; } }) },
@@ -49,10 +49,20 @@ test('deletion applies a request budget and distinguishes expired/used links wit
   const denied = fixture({ denied: true }); const response = await denied.handler(request());
   assert.equal(response.status, 429); assert.equal(response.headers.get('Retry-After'), '600');
   assert.equal(denied.calls.length, 1);
-  for (const error of ['Link expired', 'Already used', 'Invalid token']) {
+  for (const error of ['Link expired', 'Invalid token']) {
     const f = fixture({ preparedError: error }); const result = await f.handler(request());
     assert.equal(result.status, 400); assert.equal((await result.json()).error, error);
     assert.equal(f.emails.length, 0); assert.ok(!f.calls.some(c => c.remove));
+  }
+});
+
+test('an already confirmed link and a concurrent confirmation both return the browser lock code', async () => {
+  for (const config of [{ preparedError: 'Already used' }, { completed: false }]) {
+    const f = fixture(config);
+    const response = await f.handler(request());
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code, 'deletion_already_processed');
+    assert.equal(f.emails.length, 0);
   }
 });
 
@@ -74,13 +84,14 @@ test('completion sends a scoped receipt; provider rejection logs exclude email b
 });
 
 test('opening the deletion page only renders confirmation; double clicking starts one request', async () => {
-  const effects = [], calls = [], removed = []; let release;
+  const effects = [], calls = [], removed = []; let release, remembered = false;
   const code = transformSync(read('src/pages/DataDeletionConfirmPage.jsx').replace(/^import[^\n]*\r?\n/gm, '').replace('export default function ', 'function ') + '\nmodule.exports=DataDeletionConfirmPage;', { loader: 'jsx', format: 'cjs' }).code;
   const context = {
     module: { exports: {} }, React: { Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) },
     useState: value => [value, () => {}], useRef: value => ({ current: value }), useEffect: fn => effects.push(fn),
     useSearchParams: () => [new URLSearchParams({ token })], Link: 'link', AlertTriangle: 'icon', CheckCircle2: 'icon', LoaderCircle: 'icon',
     clearReviewFormData: () => removed.push('review-draft'),
+    rememberDeletionRequest: () => { remembered = true; },
     window: { scrollTo() {}, localStorage: {
       getItem: key => ({ haven_review_id: 'review-1', haven_chat_identity_v1: '{"visitorId":"visitor-1"}' })[key],
       removeItem: key => removed.push(key),
@@ -93,6 +104,7 @@ test('opening the deletion page only renders confirmation; double clicking start
   assert.ok(button); assert.equal(calls.length, 0);
   const pending = button.props.onClick(); await button.props.onClick(); assert.equal(calls.length, 1);
   release({ data: { ok: true, reviewIds: ['review-1'], visitorIds: ['visitor-1'] }, error: null }); await pending;
+  assert.equal(remembered, true);
   for (const key of ['haven_review_id', 'tmh_haven_support_sessions', 'tmh_haven_service_sessions', 'haven_review_creation_pending-1']) {
     assert.ok(removed.includes(key));
   }

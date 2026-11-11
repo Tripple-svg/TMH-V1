@@ -1,8 +1,12 @@
+export const SCORING_PROVIDER_UNAVAILABLE = 'Our AI is currently experiencing high traffic. Please try again in a few minutes.';
+
 export function scoreFailureCopy(reason, kind = 'website') {
   if (reason === 'reader_blocked') return 'The website refused the automated reader, so Haven could not inspect its content. No score was created. You can continue in chat and describe the site.';
   if (reason === 'reader_too_large') return 'The extracted page exceeded the reader limit. No score was created. You can continue in chat and describe the business.';
   if (reason === 'reader_timeout') return 'The website reader timed out before returning content. No score was created. Try again, or continue in chat.';
-  if (reason === 'provider_unavailable') return 'The scoring service did not complete this review. No score was created. You can retry or continue in chat.';
+  if (reason === 'reader_unavailable') return 'Haven could not reach the website reader. No score was created. Try again, or continue in chat.';
+  if (reason === 'provider_unavailable') return SCORING_PROVIDER_UNAVAILABLE;
+  if (reason === 'request_failed') return 'The scoring service did not complete this review. No score was created. You can retry or continue in chat.';
   if (reason === 'empty_content') return 'I opened your website, but the reader found no usable text. I can learn about your business in chat instead.';
   if (reason === 'video_first') return 'The reader found video links and very little text. I need more context to give a fair score. Let’s talk about what the site offers.';
   if (reason === 'not_a_profile') return 'I could not identify a social profile in the screenshot. Let’s talk about the page and what you want it to do.';

@@ -17,7 +17,7 @@ import { applyAutomaticFlag, ModerationError, detectHavenAbuse, moderationReply,
 import { verifyPlaybookAccess } from '../_shared/playbook-access.js';
 import {havenPlatformState,bookingQuestionReply} from '../_shared/haven-platform-state.js';
 import {platformNavigationHelp, testimonialHelp} from '../_shared/platform-navigation.js';
-import {repeatsLastReply} from '../_shared/haven-repetition.ts';
+import {repeatsLastReply, repeatsRecentQuestion} from '../_shared/haven-repetition.ts';
 import {
   HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson, screenshotPart,
   textValue, validateChatBody, savedStep,
@@ -25,6 +25,9 @@ import {
 
 type HavenMessage = { role?: string; content?: string };
 type ModelUsed = 'gemini' | 'groq';
+const GROQ_UNAVAILABLE_REPLY = "I'm having trouble connecting to my brain right now. Let's try that again in a moment.";
+const LOOP_SUPPORT_REPLY = 'I apologize, I am repeating myself. Please contact support below.';
+const GROQ_SYSTEM_PROMPT = `Gemini is unavailable. Reply with exactly this sentence: ${GROQ_UNAVAILABLE_REPLY}`;
 
 function parseChips(rawText: string) {
   const match = rawText.match(/\[\[CHIPS:\s*(.*?)\]\]/s);
@@ -56,15 +59,15 @@ async function askGemini(db:any,budget:AIBudgetReservation,systemPrompt: string,
   if (!text) throw new Error('gemini_empty_response');
   return text;
 }
-async function askGroq(db:any,budget:AIBudgetReservation,systemPrompt: string, messages: HavenMessage[]) {
+async function askGroq(db:any,budget:AIBudgetReservation,messages: HavenMessage[]) {
   const key = Deno.env.get('GROQ_API_KEY')?.trim();
   if (!key) throw new Error('groq_unconfigured');
   const response = await budget.request('groq', 'https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
     body: JSON.stringify({ model: Deno.env.get('GROQ_MODEL')?.trim() || 'openai/gpt-oss-120b',
-      messages: [{ role: 'system', content: systemPrompt }, ...messages.map(message => ({
+      messages: [{ role: 'system', content: GROQ_SYSTEM_PROMPT }, ...messages.map(message => ({
         role: message.role === 'agent' ? 'assistant' : 'user', content: message.content || '' }))],
-      max_tokens: 2000, reasoning_effort: 'low', temperature: 0.5 }),
+      max_tokens: 512, reasoning_effort: 'low', temperature: 0 }),
   }, 12000, 0);
   if (!response.ok) throw new Error('groq_http_' + response.status);
   const data = await response.json();
@@ -79,9 +82,7 @@ async function callModel(db:any,budget:AIBudgetReservation,systemPrompt: string,
   const diagnostics: ProviderDiagnostic[]=[];
   try { return { text: await askGemini(db,budget,systemPrompt, messages, screenshot), model: 'gemini', diagnostics }; }
   catch (error) { diagnostics.push(safeProviderDiagnostic(error,'gemini')); logEvent('warn','haven-chat.diagnostic_1',requestId); await recordAIUsage(db,'gemini',usageGeminiModel(),{},diagnostics[0].code); }
-  const fallbackMessages = screenshot ? messages.map((message, index) => index === messages.length - 1
-    ? { ...message, content: '[The image reader is unavailable. You cannot see the image. Ask the user to describe it; never pretend to inspect it.] ' + (message.content || '') } : message) : messages;
-  try { return { text: await askGroq(db,budget,systemPrompt, fallbackMessages), model: 'groq', diagnostics }; }
+  try { return { text: await askGroq(db,budget,messages.slice(-5)), model: 'groq', diagnostics }; }
   catch(error) {
     diagnostics.push(safeProviderDiagnostic(error,'groq'));await recordAIUsage(db,'groq',Deno.env.get('GROQ_MODEL')||'openai/gpt-oss-120b',{},diagnostics.at(-1)!.code);
     const unavailable=new HavenRequestError('The AI services are temporarily unavailable. Your message is saved; please retry shortly.',503);
@@ -221,7 +222,7 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
         visitorId:conversation.visitor.id,reviewId:conversation.review?.id,
       },[
         ...(geminiProcessingEnabled() ? [aiBudgetPlan('gemini',{systemPrompt,messages:modelMessages,screenshot},4096,2,Boolean(screenshot))] : []),
-        ...(Deno.env.get('GROQ_API_KEY')?.trim() ? [aiBudgetPlan('groq',{systemPrompt,messages:modelMessages},2000,1)] : []),
+        ...(Deno.env.get('GROQ_API_KEY')?.trim() ? [aiBudgetPlan('groq',{systemPrompt:GROQ_SYSTEM_PROMPT,messages:modelMessages.slice(-5)},512,1)] : []),
       ]);
       try { return await callModel(supabase,budget,systemPrompt,modelMessages,screenshot,traceId); }
       finally { await budget.settle(); }
@@ -229,7 +230,15 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     const { text: modelText, model, diagnostics=[] } = directAbuse ? { text: moderationReply(directAbuse), model: null, diagnostics:[] } : directHelp
       ? { text: directHelp, model: null, diagnostics:[] }
       : await generateReply();
-    const captured = captureConversationMemory(modelText, session.conversation_memory, latest, requestId);
+    const groqFallback = model === 'groq';
+    const recentReplies = (session.messages || []).filter((message: HavenMessage & { isSeedGreeting?: boolean }) =>
+      message.role === 'agent' && !message.isSeedGreeting && typeof message.content === 'string').slice(-2)
+      .map((message: HavenMessage) => message.content || '');
+    const groqRepeated = groqFallback && (repeatsRecentQuestion(modelText, recentReplies)
+      || (![GROQ_UNAVAILABLE_REPLY, LOOP_SUPPORT_REPLY].includes(lastReply) && repeatsLastReply(modelText, lastReply)));
+    const captured = groqFallback
+      ? { text: groqRepeated ? LOOP_SUPPORT_REPLY : GROQ_UNAVAILABLE_REPLY, memory: session.conversation_memory }
+      : captureConversationMemory(modelText, session.conversation_memory, latest, requestId);
     const askToUseReview = !siteSupport && !directHelp && !directAbuse && !useLinkedReview && !awaitingReviewContext && scope !== 'audit'
       && platformState.reviewLinked && captured.text.includes(REVIEW_CONTEXT_MARKER) && !captured.text.includes('[[FLAG:');
     let rawText = askToUseReview ? REVIEW_CONTEXT_QUESTION : captured.text.replace(/\[\[REVIEW_CONTEXT:[^\r\n]*?(?:\]\]|$)/g, '').trim();
@@ -246,10 +255,12 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
       flagStatus = moderation.flagStatus;
       warned = moderation.changed && flagStatus === 'yellow';
     }
-    const repeated = Boolean(model && !flag && !askToUseReview && repeatsLastReply(rawText,lastReply));
-    if (repeated) rawText = "I apologize, I seem to be repeating myself. If I'm not helping, please click the Contact Support button below so a human can assist you.";
-    const siteSupportReply = siteSupport && !directHelp && !flag && !repeated;
-    const routed = siteSupportReply ? {
+    const repeated = groqRepeated || (model === 'gemini' && !flag && !askToUseReview
+      && (repeatsRecentQuestion(rawText, recentReplies) || repeatsLastReply(rawText,lastReply)));
+    if (repeated && !groqFallback) rawText = "I apologize, I seem to be repeating myself. If I'm not helping, please click the Contact Support button below so a human can assist you.";
+    const siteSupportReply = siteSupport && !directHelp && !flag && !repeated && !groqFallback;
+    const routed = groqFallback && !repeated ? { text: rawText, routingState: session.routing_state || { problemType: 'unknown', permission: 'none' } }
+      : siteSupportReply ? {
       text: /\[\[(?:BOOK_CALL|PLAYBOOK|TIKTOK_CONTENT)\]\]|"nextAction"\s*:\s*"offer_(?:call|playbook)"/i.test(rawText)
         ? 'This chat is for help using the TMH site. For marketing advice or help with a project, open Need Help on the homepage.' : rawText,
       routingState: { problemType: 'support', permission: 'none', pendingAction: null },
@@ -275,11 +286,11 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
       parsed.chips = [...new Set([
         ...(repeated ? ['__LOOP_SUPPORT__'] : openTestimonials ? ['__TESTIMONIALS__'] : proof?.chips
           || (askingAboutPlaybook ? PLAYBOOK_CHOICES : openPlaybookSection ? ['__SHOP__'] : siteSupportReply ? [] : parsed.chips)),
-        ...(platformNavigationHelp(latest)?.chips || []),
+        ...(!groqFallback && !repeated ? platformNavigationHelp(latest)?.chips || [] : []),
       ])];
     }
     const leadMatch = [...rawText.matchAll(/\[\[LEAD:([A-Z]+)\]\]/g)].at(-1)?.[1];
-    const currentStep = siteSupportReply || repeated ? STEPS.CUSTOMER_SUPPORT_OPEN : Object.values(STEPS).includes(stepMatch || '') && stepMatch !== STEPS.GREETING ? stepMatch : promptContext.auditData.currentStep;
+    const currentStep = siteSupportReply ? STEPS.CUSTOMER_SUPPORT_OPEN : Object.values(STEPS).includes(stepMatch || '') && stepMatch !== STEPS.GREETING ? stepMatch : promptContext.auditData.currentStep;
     const leadTemperature = !siteSupport && !repeated && Object.values(LEADS).includes(leadMatch || '') ? leadMatch : null;
     parsed.text=parsed.text.replace(/\[\[(?:STEP:[A-Z0-9_]+|LEAD:[A-Z_]+|DECISION:[\s\S]*?|MEMORY:[\s\S]*?)\]\]/g,'').replace(/\s*\u2014\s*/g,'; ').trim();
     if(/info@themarketinghaven\.xyz/i.test(parsed.text))parsed.chips=[...parsed.chips,'__CONTACT_SUPPORT__'];

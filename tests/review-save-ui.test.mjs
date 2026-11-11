@@ -58,6 +58,8 @@ function component(source, { requires = {}, props, globals = {}, exportName = 'd
       return [slots[index], (value) => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }];
     },
     useRef(initial) { const index = cursor++; return slots[index] ||= { current: initial }; },
+    useCallback(fn) { const index = cursor++; return slots[index] ||= fn; },
+    useImperativeHandle(ref, factory) { if (ref) ref.current = factory(); },
     useEffect(effect, deps) {
       const index = cursor++;
       if (!(index in slots) || deps.some((value, i) => value !== slots[index][i])) effects.push(effect);
@@ -138,19 +140,75 @@ function reviewModal(onSubmit, saved = new Map()) {
 }
 
 test('the review submit stays disabled until Turnstile verifies and after expiry or error', async () => {
-  const ui = reviewModal(() => {});
+  let submissions = 0;
+  const ui = reviewModal(() => { submissions++; });
   await ui.ready({ solve: false });
   assert.equal(ui.submit().props.disabled, true);
   assert.ok(ui.render().some(node => node.props.role === 'status' && textContent(node).includes('Waiting for the security check')));
   for (const callback of ['onExpire', 'onError']) {
     ui.verify('captcha-first');
     assert.equal(ui.submit().props.disabled, false);
+    const oldSubmit = ui.submit().props.onClick;
     ui.render().find(node => node.type === 'captcha').props[callback]();
+    await oldSubmit();
+    assert.equal(submissions, 0);
     assert.equal(ui.submit().props.disabled, true);
     assert.ok(ui.render().some(node => node.props.role === 'status' && textContent(node) === 'Renewing security check...'));
   }
   ui.verify('captcha-fresh');
   assert.equal(ui.submit().props.disabled, false);
+  const exitSubmit = ui.submit().props.onClick;
+  const exitVerify = ui.render().find(node => node.type === 'captcha').props.onVerify;
+  ui.render().find(node => node.props['aria-label'] === 'Close').props.onClick();
+  exitVerify('token-from-closing-widget');
+  await exitSubmit();
+  assert.equal(submissions, 0);
+  assert.equal(ui.closed, 1);
+});
+
+test('a server-rejected security token restarts verification without a review error', async () => {
+  const ui = reviewModal(() => ({ success: false, code: 'security_check_failed' }));
+  await ui.ready();
+  await ui.submit().props.onClick();
+  assert.equal(ui.submit().props.disabled, true);
+  assert.equal(ui.resets, 1);
+  assert.ok(ui.render().some(node => node.props.role === 'status' && textContent(node) === 'Renewing security check...'));
+  assert.ok(!ui.render().some(node => /Retry Review|Something went wrong saving your review/.test(textContent(node))));
+});
+
+test('Turnstile reloads a failed script and rejects tokens from a replaced challenge', async () => {
+  const scripts = [], challenges = [], tokens = [], errors = [], timers = new Map();
+  const window = {};
+  const widget = component(read('src/components/TurnstileWidget.jsx').replace('import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY', "'test-site-key'"), {
+    props: { action: 'brand_review', onVerify: token => tokens.push(token), onError: () => errors.push('retry') },
+    globals: { window, document: {
+      createElement: () => ({ remove() { this.removed = true; } }),
+      head: { append: script => scripts.push(script) },
+    }, setTimeout: (fn, delay) => { const id = Symbol(); timers.set(id, { fn, delay }); return id; },
+    clearTimeout: id => timers.delete(id) },
+  });
+  const container = widget.mount().find(node => node.props.ref).props.ref;
+  container.current = { clientWidth: 270 };
+  const settle = () => new Promise(setImmediate);
+  async function runRetry() {
+    const [id, { fn }] = [...timers].find(([, timer]) => timer.delay < 10000);
+    timers.delete(id);
+    fn(); await settle();
+  }
+  scripts[0].onerror(); await settle();
+  assert.equal(scripts[0].removed, true);
+  assert.equal(errors.length, 1);
+  await runRetry();
+  assert.equal(scripts.length, 2);
+  window.turnstile = { render: (_, config) => challenges.push(config), remove() {} };
+  scripts[1].onload(); await settle();
+  assert.equal(challenges[0].size, 'compact');
+  challenges[0]['error-callback']();
+  challenges[0].callback('stale');
+  await runRetry();
+  challenges[1].callback('fresh');
+  assert.deepEqual(tokens, ['fresh']);
+  assert.equal(errors.length, 2);
 });
 
 test('creation sends CAPTCHA and screenshot only to server, with a bounded request and private stable credentials', async () => {

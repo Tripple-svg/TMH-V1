@@ -5,7 +5,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
 import {privacyEmail,emailFooterText} from '../_shared/email-template.js';
 import { HavenRequestError, readBoundedJson, responseHeaders, verifyOrigin } from '../_shared/haven-request.ts';
-import { deletionEmailHash, deletionNetworkHash } from '../_shared/deletion-tombstone.ts';
+import { DELETION_ALREADY_PROCESSED, deletionEmailHash, deletionNetworkHash } from '../_shared/deletion-tombstone.ts';
 
 const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[0-9a-f]{32}$/i;
 
@@ -55,6 +55,9 @@ serve(observe('confirm-data-deletion',async (request,requestId) => {
       p_token: token, p_email_hash: emailHash, p_network_hash: networkHash,
     });
     if (error || !prepared) throw new HavenRequestError('Unable to prepare deletion. Please contact the team if this continues.', 503);
+    if (prepared.error === 'Already used') {
+      return json({ ok: false, code: 'deletion_already_processed', error: DELETION_ALREADY_PROCESSED }, 409);
+    }
     if (prepared.error) return json({ ok: false, error: prepared.error }, 400);
     if (!Array.isArray(prepared.paths) || !Number.isSafeInteger(prepared.deleted) || typeof prepared.requestId !== 'string' || typeof prepared.email !== 'string') {
       throw new HavenRequestError('Unable to complete deletion.', 503);
@@ -65,7 +68,8 @@ serve(observe('confirm-data-deletion',async (request,requestId) => {
     }
     const { data: completed, error: completionError } = await db.rpc('complete_saved_review_deletion', { p_request: prepared.requestId });
     if (completionError) throw new HavenRequestError('Deletion cleanup finished, but confirmation could not be saved. Retry this confirmation.', 503);
-    if (completed === true) await sendDeletionConfirmation(prepared.email,requestId);
+    if (completed !== true) return json({ ok: false, code: 'deletion_already_processed', error: DELETION_ALREADY_PROCESSED }, 409);
+    await sendDeletionConfirmation(prepared.email,requestId);
     return json({ ok: true, deleted: prepared.deleted, reviewIds: prepared.reviewIds || [], visitorIds: prepared.visitorIds || [] });
   } catch (error) {
     if (error instanceof HavenRequestError) {

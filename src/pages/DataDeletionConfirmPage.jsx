@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, LoaderCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { clearReviewFormData } from '../components/haven/utils/reviewPersistence';
+import { DELETION_BROWSER_MESSAGE, rememberDeletionRequest } from '../lib/deletionRequestStorage';
 
 function clearDeletedBrowserData({ reviewIds, visitorIds }) {
   const storage = window.localStorage;
@@ -50,14 +51,20 @@ export default function DataDeletionConfirmPage() {
       });
 
       if (confirmationError || data?.ok !== true) {
-        let detail = data?.error;
+        let detail = data;
         if (!detail && confirmationError?.context?.json) {
-          try { detail = (await confirmationError.context.json())?.error; } catch { /* Show a safe retry message. */ }
+          try { detail = await confirmationError.context.json(); } catch { /* Show a safe retry message. */ }
         }
-        setResult({ token, status: 'error', error: detail || 'Unable to confirm deletion. Please retry or contact the team.' });
+        if (detail?.code === 'deletion_already_processed') {
+          rememberDeletionRequest();
+          setResult({ token, status: 'processed' });
+          return;
+        }
+        setResult({ token, status: 'error', error: detail?.error || 'Unable to confirm deletion. Please retry or contact the team.' });
         return;
       }
 
+      rememberDeletionRequest();
       try {
         clearDeletedBrowserData(data);
       } catch { /* Browser storage may be disabled. Server deletion already succeeded. */ }
@@ -108,6 +115,14 @@ export default function DataDeletionConfirmPage() {
               Your saved review, linked chats and support requests, and stored screenshots were removed. You can keep using the site and Support. Contact Team Haven if you need another review.
             </p>
             <p className="mt-3 text-xs leading-5 text-zinc-600 dark:text-zinc-300">We keep a limited record to prevent repeat free reviews. Purchase, booking, deletion-request, security and delivery records, and unlinked guest chats, are outside this automated flow.</p>
+          </div>
+        )}
+
+        {displayStatus === 'processed' && (
+          <div className="py-4">
+            <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500" />
+            <h1 className="mt-5 text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">Deletion request already processed</h1>
+            <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{DELETION_BROWSER_MESSAGE}</p>
           </div>
         )}
 

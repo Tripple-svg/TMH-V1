@@ -284,10 +284,29 @@ test('provider outages record safe diagnostics and cooldown without tight-loop r
 test('Gemini 429 respects provider Retry-After and immediately tries the configured fallback', async () => {
   const app = load('haven-chat', { fetchImpl: async url => url.includes('googleapis')
     ? Response.json({}, { status: 429, headers: { 'Retry-After': '80' } })
-    : Response.json({ choices: [{ finish_reason: 'stop', message: { content: 'What is the next step customers should take?' } }] }) });
+    : Response.json({ choices: [{ finish_reason: 'stop', message: { content: 'You need the Playbook. [[PLAYBOOK]][[BOOK_CALL]][[LEAD:HOT]][[STEP:ROUTING_TO_CALL]][[FLAG:ABUSE]]' } }] }) });
   const body = await (await app.handler(app.request(chatBody()))).json();
   assert.equal(body.model, 'groq'); assert.equal(app.requests.length, 2);
+  assert.equal(body.text, "I'm having trouble connecting to my brain right now. Let's try that again in a moment.");
+  assert.deepEqual(body.chips, []); assert.equal(body.leadTemperature, null); assert.equal(body.flagStatus, 'white');
+  assert.equal(app.rpcCalls.find(call => call.name === 'finish_haven_turn').args.p_question, false);
+  assert.ok(!app.rpcCalls.some(call => call.name === 'apply_haven_ai_flag'));
+  assert.doesNotMatch(app.requests[1].payload.messages[0].content, /The Unseen Playbook|AUDIT_FLOW/);
   assert.equal(body.providerDiagnostics[0].retryAfter, 80);
+});
+
+test('a repeated Groq question from two replies ago offers only human support', async () => {
+  const question = 'Who is the target buyer for your candles?';
+  const app = load('haven-chat', { env: { GEMINI_ENABLED: 'false' }, session: { messages: [
+    { role: 'agent', content: question }, { role: 'user', content: 'Office workers.' },
+    { role: 'agent', content: 'What do you sell them?' },
+  ] }, modelText: `Let’s back up. ${question} [[BOOK_CALL]]` });
+  const response = await app.handler(app.request(chatBody()));
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.text, 'I apologize, I am repeating myself. Please contact support below.');
+  assert.deepEqual(data.chips, ['__LOOP_SUPPORT__']);
+  assert.equal(app.rpcCalls.find(call => call.name === 'finish_haven_turn').args.p_question, false);
 });
 
 test('source correction requires ownership, validates public URLs and preserves the private source on a conflict', async () => {
@@ -485,7 +504,7 @@ test('website scoring: reader failure is failed, not bad data, and clears prior 
 });
 test('website scoring: unavailable scorer cannot turn meaningful content into a bogus low score', async () => {
   const app = load('scrape-website', { scoring: { ...LOW_SCORE, score: 99 } });
-  const response = await app.handler(app.request({ context: ACCESS })); assert.equal(response.status, 502);
+  const response = await app.handler(app.request({ context: ACCESS })); assert.equal(response.status, 503);
   assert.equal((await response.json()).state, 'failed'); assert.equal(app.rows.brand_reviews[0].haven_score, null);
 });
 test('website scoring: ownership and saved target restrict scraping before external requests', async () => {
@@ -582,13 +601,36 @@ test('server automatic moderation: first event is recorded without mail, second 
   assert.equal(third.flagStatus,'red');assert.match(third.text,/restricted/);assert.doesNotMatch(third.text,/FLAG:/);
 });
 
-test('provider configuration: explicit disabling skips Gemini while text chat and website scoring use Groq', async () => {
-  for(const name of ['haven-chat','scrape-website']) {
-    const app=load(name,{env:{GEMINI_ENABLED:'false'}});
-    const response=await app.handler(app.request(name==='haven-chat'?chatBody():{context:ACCESS}));
-    assert.equal(response.status,200);assert.equal(app.requests.filter((row)=>row.url.includes('googleapis')).length,0);
-    assert.ok(app.requests.some((row)=>row.url.includes('groq.com')));
+test('provider configuration: disabled Gemini permits the guarded chat fallback but prevents website scoring', async () => {
+  const chat = load('haven-chat', { env: { GEMINI_ENABLED: 'false' } });
+  assert.equal((await chat.handler(chat.request(chatBody()))).status, 200);
+  assert.equal(chat.requests.length, 1); assert.match(chat.requests[0].url, /groq\.com/);
+  const website = load('scrape-website', { env: { GEMINI_ENABLED: 'false' } });
+  const response = await website.handler(website.request({ context: ACCESS }));
+  assert.equal(response.status, 503); assert.equal(website.requests.length, 0);
+  assert.equal((await response.json()).error, 'Our AI is currently experiencing high traffic. Please try again in a few minutes.');
+});
+
+test('Gemini scoring failures never call Groq and show the same clear message for both review sources', async () => {
+  for (const [name, platform_type] of [['scrape-website','website'], ['score-social','social']]) {
+    const app = load(name, { review: { platform_type }, fetchImpl: async url => url.startsWith('https://r.jina.ai/')
+      ? new Response(GOOD_TEXT) : Response.json({ error: 'upstream busy' }, { status: 429 }) });
+    const response = await app.handler(app.request({ context: ACCESS }));
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, 'Our AI is currently experiencing high traffic. Please try again in a few minutes.');
+    assert.equal(app.requests.filter(request => request.url.includes('googleapis')).length, 1);
+    assert.ok(!app.requests.some(request => request.url.includes('groq.com')));
+    assert.equal(app.rows.brand_reviews[0].haven_score, null);
   }
+});
+
+test('the Gemini prompt for a broad conversion goal starts with business facts before buying mechanics', async () => {
+  const app = load('haven-chat');
+  const response = await app.handler(app.request(chatBody({ messages: [{ role: 'user', content: 'Turning visitors to customers would be nice.' }] })));
+  assert.equal(response.status, 200);
+  const prompt = app.requests[0].payload.systemInstruction.parts[0].text;
+  assert.match(prompt, /1\. Who they most want to reach[\s\S]*2\. What they sell[\s\S]*3\. How an interested person actually buys today/);
+  assert.match(prompt, /Skip any detail you\s+already know/);
 });
 test('provider configuration: explicit disabling never invents a vision score', async () => {
   const app=load('score-social',{review:{platform_type:'social'},env:{GEMINI_ENABLED:'false'}});

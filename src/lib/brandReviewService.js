@@ -111,7 +111,7 @@ export async function createBrandReview(payload) {
       signal: AbortSignal.timeout(CREATION_TIMEOUT_MS),
     });
     const result = await response.json().catch(() => ({}));
-    if (response.status === 403 && ['review_email_deleted', 'review_network_deleted'].includes(result.code)) {
+    if (result.code === 'security_check_failed' || (response.status === 403 && ['review_email_deleted', 'review_network_deleted'].includes(result.code))) {
       return { success: false, error: new Error(result.error), code: result.code };
     }
     if (response.status === 429) return { success: false, error: new Error(result.error), code: result.code || 'review_cooldown',

@@ -2,6 +2,13 @@ function comparable(text: string) {
   return text.replace(/\[\[[\s\S]*?\]\]/g, ' ').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 }
 
+export function repeatsRecentQuestion(reply: string, previousReplies: string[]) {
+  const questions = (text: string) => (text.replace(/\[\[[\s\S]*?\]\]/g, ' ').match(/[^.!?\r\n]+\?/g) || [])
+    .map(comparable).filter(Boolean);
+  const recent = new Set(previousReplies.slice(-2).flatMap(questions));
+  return questions(reply).some(question => recent.has(question));
+}
+
 export function repeatsLastReply(reply: string, previous: string) {
   const a = comparable(reply), b = comparable(previous);
   if (!a || !b) return false;

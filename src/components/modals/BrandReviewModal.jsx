@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import TurnstileWidget from '../TurnstileWidget';
 import { reviewScreenshotError, reviewScreenshotFileError } from '../../lib/reviewScreenshot';
@@ -143,7 +143,12 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
   const [screenshotFileName, setScreenshotFileName] = useState('');
   const [imageLoading, setImageLoading] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState(null);
+  const [captchaToken, setCaptchaTokenState] = useState(null);
+  const liveCaptchaToken = useRef(null);
+  const setCaptchaToken = useCallback((token) => {
+    liveCaptchaToken.current = token;
+    setCaptchaTokenState(token);
+  }, []);
   const [captchaExpired, setCaptchaExpired] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
@@ -155,6 +160,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
   const rateLimited = blocked || remaining > 0;
   const fileInputRef = useRef(null);
   const captchaRef = useRef(null);
+  const closingRef = useRef(false);
   const submittingRef = useRef(false);
   const submissionIdRef = useRef(null);
   const pendingImageRequiredRef = useRef(false);
@@ -196,12 +202,14 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
 
   useEffect(() => {
     if (isOpen) {
+      closingRef.current = false;
       const savedForm = loadReviewFormData();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore the saved browser form when this modal reopens.
       setStep(loadReviewFormStep());
       setErrors({});
       setCaptchaToken(null);
       setCaptchaExpired(false);
+      captchaRef.current?.reset();
       try {
         const pendingId = sessionStorage.getItem(SUBMISSION_ID_KEY);
         const pending = JSON.parse(sessionStorage.getItem(`haven_review_creation_${pendingId}`) || 'null');
@@ -222,7 +230,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
       } catch { /* The original draft remains available if pending storage cannot be read. */ }
       setFormData(savedForm);
     }
-  }, [isOpen]);
+  }, [isOpen, setCaptchaToken]);
 
   useEffect(() => {
     if (isOpen) saveReviewFormData(formData);
@@ -264,7 +272,15 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
   };
 
   const close = () => {
-    if (!submittingRef.current) onClose?.();
+    if (submittingRef.current) return;
+    closingRef.current = true;
+    setCaptchaToken(null);
+    onClose?.();
+  };
+
+  const goBack = () => {
+    setCaptchaToken(null);
+    setStep(1);
   };
 
   const change = (event) => {
@@ -307,7 +323,6 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
     }
     const screenshotError = reviewScreenshotError(screenshotBase64);
     if (screenshotError) next.screenshot = screenshotError;
-    if (!captchaToken) next.captcha = 'Please wait for the security check to finish.';
     return next;
   };
 
@@ -396,12 +411,13 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
   };
 
   const submit = async () => {
-    if (submittingRef.current || rateLimited || readReviewCooldown()) return;
+    const token = liveCaptchaToken.current;
+    if (!isOpen || closingRef.current || step !== 2 || !token || submittingRef.current || rateLimited || readReviewCooldown()) return;
 
     const firstStepErrors = validateStepOne();
     const next = { ...firstStepErrors, ...validateStepTwo() };
     setErrors(next);
-    if (Object.keys(firstStepErrors).length) setStep(1);
+    if (Object.keys(firstStepErrors).length) goBack();
     if (Object.keys(next).length) return;
 
     submittingRef.current = true;
@@ -424,7 +440,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
         id: submissionIdRef.current,
         agreedToTerms,
         agreedAt: new Date().toISOString(),
-        turnstileToken: captchaToken,
+        turnstileToken: token,
         screenshotBase64,
         screenshotFileName,
       });
@@ -443,7 +459,8 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
     } catch (error) {
       const deletionDenied = DELETION_DENIAL_CODES.includes(error.code);
       const pendingChanged = error.code === 'pending_submission_changed';
-      setErrors({ submit: deletionDenied || pendingChanged ? error.message : SAVE_ERROR, pendingChanged, contactSupport: deletionDenied });
+      const securityCheckFailed = error.code === 'security_check_failed';
+      setErrors({ submit: securityCheckFailed ? '' : deletionDenied || pendingChanged ? error.message : SAVE_ERROR, pendingChanged, contactSupport: deletionDenied });
       setCaptchaToken(null);
       setCaptchaExpired(true);
       captchaRef.current?.reset();
@@ -521,7 +538,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
             <div className="mb-7 flex items-center gap-2.5">
               <button
                 type="button"
-                onClick={() => step > 1 && setStep(1)}
+                onClick={() => step > 1 && goBack()}
                 disabled={step === 1 || verifying}
                 aria-current={step === 1 ? 'step' : undefined}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-medium uppercase tracking-[0.12em] transition-colors ${
@@ -821,9 +838,9 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                       ref={captchaRef}
                       action="brand_review"
                       onVerify={(token) => {
+                        if (closingRef.current) return;
                         setCaptchaToken(token);
                         setCaptchaExpired(false);
-                        setErrors((current) => ({ ...current, captcha: '' }));
                       }}
                       onExpire={() => {
                         setCaptchaToken(null);
@@ -840,11 +857,6 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                       {captchaExpired ? 'Renewing security check...' : 'Waiting for the security check...'}
                     </span>
                   )}
-                  {errors.captcha && (
-                    <span className="mt-1.5 block text-xs text-red-500 dark:text-red-400">
-                      {errors.captcha}
-                    </span>
-                  )}
                 </div>
 
                 {errors.pendingChanged && <button type="button" onClick={() => {
@@ -857,7 +869,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                     type="button"
                     disabled={verifying}
                     onClick={() => {
-                      setStep(1);
+                      goBack();
                       setErrors({});
                     }}
                     className="w-1/3 rounded-xl border border-zinc-200/80 dark:border-white/[0.06] bg-white/40 dark:bg-white/[0.02] py-3.5 text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 transition hover:bg-white/70 dark:hover:bg-white/[0.05]"

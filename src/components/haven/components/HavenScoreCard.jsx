@@ -73,7 +73,7 @@ export default function HavenScoreCard({ preflight, kind = 'website', onProceed,
       <h3 className="text-base font-semibold tracking-tight text-white">{loading ? (kind === 'social' ? 'Reading your screenshot' : 'Reading your website')
         : needsRecovery ? 'This saved review needs access recovery' : hasScore ? 'Your Haven score' : status === 'failed' ? 'Review unavailable' : 'Not enough evidence to score'}</h3>
       {hasScore && <p className="text-[56px] font-semibold leading-none tracking-tight text-white tabular-nums">{score}<span className="ml-2 text-lg font-medium text-zinc-500">/ 100</span></p>}
-      <p className="mx-auto max-w-sm text-[13px] leading-relaxed text-zinc-400">{needsRecovery ? error : status === 'failed' ? error || scoreFailureCopy(reason || 'provider_unavailable', kind)
+      <p className="mx-auto max-w-sm text-[13px] leading-relaxed text-zinc-400">{needsRecovery ? error : status === 'failed' ? error || scoreFailureCopy(reason || 'request_failed', kind)
         : !hasScore && !loading ? message || scoreFailureCopy(reason, kind)
         : kind === 'social' ? SOCIAL_SCORE_EXPLANATION : WEBSITE_SCORE_EXPLANATION}</p>
       {hasScore && <p className="text-[11px] leading-relaxed text-zinc-500">{currentRubric ? 'A review of visible communication, not a prediction of sales or a test of technical performance.' : 'Saved under the previous rubric. Review your source again for the current evidence-based assessment.'}</p>}

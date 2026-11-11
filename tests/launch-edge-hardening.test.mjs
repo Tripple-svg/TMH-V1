@@ -24,9 +24,10 @@ test('forwarded-header rotation cannot create new network budgets and malformed 
 });
 test('health reports absent required configuration as 503 without revealing secret values; optional setup is visible',async()=>{
   const checks={database:true,rpc:true,vault:true,cron:true,workers:true};
-  const configured={RESEND_API_KEY:'private-mail-value',PAYSTACK_SECRET_KEY:'private-payment-value',CLOUDFLARE_TURNSTILE_SECRET_KEY:'private-captcha-value',GROQ_API_KEY:'private-ai-value',CALENDLY_API_TOKEN:'private-calendar-value'};
+  const configured={RESEND_API_KEY:'private-mail-value',PAYSTACK_SECRET_KEY:'private-payment-value',CLOUDFLARE_TURNSTILE_SECRET_KEY:'private-captcha-value',GEMINI_API_KEY:'private-ai-value',CALENDLY_API_TOKEN:'private-calendar-value'};
   const call=env=>endpoint('health',{env,rpc:async()=>({data:checks})})(new Request('https://isolated.example'));
   const missing=await call({...configured,CLOUDFLARE_TURNSTILE_SECRET_KEY:''});assert.equal(missing.status,503);assert.equal((await missing.json()).configuration.required.captcha,false);
+  const fallback=await call({...configured,GEMINI_ENABLED:'false',GROQ_API_KEY:'private-fallback-value'});assert.equal(fallback.status,503);assert.equal((await fallback.json()).configuration.required.ai,false);
   const healthy=await call(configured);assert.equal(healthy.status,200);const body=await healthy.text();assert.doesNotMatch(body,/private-.*-value/);assert.equal(JSON.parse(body).configuration.optional.errorTracking,false);
   const head=await endpoint('health',{env:configured,rpc:async()=>({data:checks})})(new Request('https://isolated.example',{method:'HEAD'}));assert.equal(head.status,200);assert.equal(await head.text(),'');
 });

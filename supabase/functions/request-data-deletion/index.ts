@@ -46,6 +46,10 @@ function success(origin: string | null) {
   return json({ ok: true }, origin);
 }
 
+function unavailable(origin: string | null) {
+  return json({ ok: false, error: 'We could not submit your request. Please try again.' }, origin, 503);
+}
+
 function createToken() {
   const suffix = Array.from(crypto.getRandomValues(new Uint8Array(16)))
     .map((byte) => byte.toString(16).padStart(2, '0'))
@@ -77,7 +81,7 @@ serve(observe('request-data-deletion',async (req,requestId) => {
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       logEvent('error','request-data-deletion.diagnostic_1',requestId);
-      return success(origin);
+      return unavailable(origin);
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -90,7 +94,7 @@ serve(observe('request-data-deletion',async (req,requestId) => {
     }
     if (!RESEND_API_KEY) {
       logEvent('error','request-data-deletion.email_unconfigured',requestId);
-      return success(origin);
+      return unavailable(origin);
     }
     const { data: reviews, error: reviewError } = await supabase
       .from('brand_reviews')
@@ -100,7 +104,7 @@ serve(observe('request-data-deletion',async (req,requestId) => {
 
     if (reviewError) {
       logEvent('error','request-data-deletion.diagnostic_2',requestId);
-      return success(origin);
+      return unavailable(origin);
     }
 
     if (!reviews?.length) {
@@ -110,7 +114,7 @@ serve(observe('request-data-deletion',async (req,requestId) => {
     const storedEmail = typeof reviews[0].email === 'string' ? reviews[0].email : '';
     if (!storedEmail) {
       logEvent('error','request-data-deletion.diagnostic_3',requestId);
-      return success(origin);
+      return unavailable(origin);
     }
 
     const token = createToken();
@@ -127,12 +131,13 @@ serve(observe('request-data-deletion',async (req,requestId) => {
 
     if (requestError) {
       logEvent('error','request-data-deletion.diagnostic_4',requestId);
-      return success(origin);
+      return unavailable(origin);
     }
 
     const confirmationUrl = `${SITE_URL}/data-deletion/confirm?token=${encodeURIComponent(token)}`;
     const resendResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
+      signal: AbortSignal.timeout(10000),
       headers: {
         Authorization: `Bearer ${RESEND_API_KEY}`,
         'Content-Type': 'application/json',
@@ -148,10 +153,12 @@ serve(observe('request-data-deletion',async (req,requestId) => {
 
     if (!resendResponse.ok) {
       logEvent('error','request-data-deletion.diagnostic_5',requestId);
+      return unavailable(origin);
     }
   } catch (error) {
     if(error instanceof HavenRequestError)return json({ok:false,error:error.message},origin,error.status);
     logEvent('error','request-data-deletion.diagnostic_6',requestId);
+    return unavailable(origin);
   }
 
   return success(origin);

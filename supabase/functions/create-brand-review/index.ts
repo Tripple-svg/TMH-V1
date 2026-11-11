@@ -68,7 +68,10 @@ serve(observe('create-brand-review',async (req,requestId) => {
       try {
         await verifyTurnstile(req,body.turnstileToken,'brand_review');
       } catch (error) {
-        if (error instanceof HavenRequestError && error.status < 500) await reviewAttemptGate(supabase,req,key,true);
+        if (error instanceof HavenRequestError) {
+          if (error.status < 500) await reviewAttemptGate(supabase,req,key,true);
+          return json({ ok: false, code: 'security_check_failed', error: error.message }, error.status);
+        }
         throw error;
       }
       await reviewAttemptGate(supabase,req,key);

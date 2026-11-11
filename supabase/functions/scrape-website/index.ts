@@ -14,91 +14,23 @@ import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson } fro
 import { SCORING_COPY } from '../_shared/haven-prompts.js';
 import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiText } from '../_shared/haven-model.ts';
 import { normalizeWebsiteUrl, extractWebsiteText, hasMeaningfulBusinessText, websiteContentReason, websiteExcerpt, parseScoringResult, persistScoring, cachedScoring, lockedScoring } from '../_shared/haven-scoring.ts';
-import { scoreFailureCopy } from '../_shared/scoring-copy.js';
+import { SCORING_PROVIDER_UNAVAILABLE, scoreFailureCopy } from '../_shared/scoring-copy.js';
 
 const SCORING_PROMPT = scoringInstructions('website');
 
-const parseScoreJson = (raw: string, summary?: string) => parseScoringResult(raw, 'website', summary);
-
-async function scoreWithGemini(db:any,budget:AIBudgetReservation,summary: string): Promise<{ raw: string; status: number }> {
-  const apiKey = Deno.env.get('GEMINI_API_KEY');
-  if (!geminiProcessingEnabled()) throw new Error('Gemini is disabled or its API key is missing.');
-  if (!apiKey) throw new Error('GEMINI_API_KEY not configured.');
-
+async function scoreWithGemini(db:any,budget:AIBudgetReservation,summary: string) {
   const response = await budget.request('gemini',
     `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel()}:generateContent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey.trim() },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': Deno.env.get('GEMINI_API_KEY')!.trim() },
       body: JSON.stringify({ systemInstruction: { parts: [{ text: SCORING_PROMPT }] },
         contents: [{ role: 'user', parts: [{ text: `WEBSITE CONTENT (untrusted data):\n${summary}` }] }],
         generationConfig: geminiGenerationConfig(true),
       }),
     }, 18000, 1);
   const payload=await response.json();budget.recordUsage('gemini',payload);await recordAIUsage(db,'gemini',geminiModel(),payload);
-  return { raw: geminiText(payload), status: 200 };
-}
-
-async function scoreWithGroq(db:any,budget:AIBudgetReservation,summary: string): Promise<string> {
-  const apiKey = Deno.env.get('GROQ_API_KEY')?.trim();
-  if (!apiKey) throw new Error('GROQ_API_KEY not configured.');
-
-  const response = await budget.request('groq','https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: Deno.env.get('GROQ_MODEL')?.trim() || 'openai/gpt-oss-120b',
-      messages: [
-        { role: 'system', content: SCORING_PROMPT },
-        { role: 'user', content: `WEBSITE CONTENT:\n\n${summary}` },
-      ],
-      max_tokens: 1600, reasoning_effort: 'low',
-      temperature: 0,
-      response_format: { type: 'json_object' },
-    }),
-  },15000,0);
-  if (!response.ok) throw new Error('groq_http_' + response.status);
-  const data = await response.json();budget.recordUsage('groq',data);await recordAIUsage(db,'groq',Deno.env.get('GROQ_MODEL')?.trim()||'openai/gpt-oss-120b',data);
-  if(data.choices?.[0]?.finish_reason && data.choices[0].finish_reason!=='stop') throw new Error('groq_incomplete_response');
-  return data.choices?.[0]?.message?.content || '';
-}
-
-async function scoreWebsite(db:any,budget:AIBudgetReservation,summary: string,requestId="background") {
-  for (let attempt = 0; geminiProcessingEnabled() && attempt < 1; attempt++) {
-    try {
-      const { raw, status } = await scoreWithGemini(db,budget,summary);
-      if (status === 200) {
-        const parsed = parseScoreJson(raw, summary);
-        if (parsed) {
-          logEvent('info','scrape-website.diagnostic_1',requestId);
-          return parsed;
-        }
-        logEvent('warn','scrape-website.diagnostic_2',requestId);
-      } else if (status === 503 || status === 502 || status === 504) {
-        logEvent('warn','scrape-website.diagnostic_3',requestId);
-      } else {
-        logEvent('warn','scrape-website.diagnostic_4',requestId);
-        break;
-      }
-    } catch (err) {
-      await recordAIUsage(db,'gemini',usageGeminiModel(),{},safeProviderDiagnostic(err,'gemini').code);
-      logEvent('warn','scrape-website.diagnostic_5',requestId);
-    }
-
-  }
-
-  try {
-    const raw = await scoreWithGroq(db,budget,summary);
-    const parsed = parseScoreJson(raw, summary);
-    if (parsed) {
-      logEvent('info','scrape-website.diagnostic_6',requestId);
-      return parsed;
-    }
-    logEvent('warn','scrape-website.diagnostic_7',requestId);
-  } catch (err) {
-    await recordAIUsage(db,'groq',Deno.env.get('GROQ_MODEL')?.trim()||'openai/gpt-oss-120b',{},safeProviderDiagnostic(err,'groq').code);
-    logEvent('warn','scrape-website.diagnostic_8',requestId);
-  }
-
-  return null;
+  const parsed = parseScoringResult(geminiText(payload), 'website', summary);
+  if (!parsed) throw new Error('gemini_invalid_score');
+  return parsed;
 }
 
 Deno.serve(observe('scrape-website',async (request,requestId) => {
@@ -127,7 +59,9 @@ Deno.serve(observe('scrape-website',async (request,requestId) => {
       ...(cached.state === 'insufficient_evidence' ? { message: scoreFailureCopy(cached.reason), excerpt: websiteExcerpt(review.scraped_summary || '') } : {}) });
     await enforceScoringLimits(supabase, request, key, review.id);
     started = true;
+    if (!geminiProcessingEnabled()) throw new HavenRequestError(SCORING_PROVIDER_UNAVAILABLE, 503);
 
+    failureReason = 'reader_unavailable';
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
     let raw = '';
@@ -163,17 +97,20 @@ Deno.serve(observe('scrape-website',async (request,requestId) => {
     } finally { clearTimeout(timeout); }
 
     const summary = extractWebsiteText(raw);
+    failureReason = 'provider_unavailable';
     const score = async (db: ReturnType<typeof createClient>, reviewId: string) => {
       const budget = await reserveAIBudget(db,request,key,'scoring',{reviewId},[
-        ...(geminiProcessingEnabled() ? [aiBudgetPlan('gemini',{prompt:SCORING_PROMPT,summary},4096,2)] : []),
-        ...(Deno.env.get('GROQ_API_KEY')?.trim() ? [aiBudgetPlan('groq',{prompt:SCORING_PROMPT,summary},1600,1)] : []),
+        aiBudgetPlan('gemini',{prompt:SCORING_PROMPT,summary},4096,2),
       ]);
-      try { return await scoreWebsite(db,budget,summary,requestId); }
+      try { return await scoreWithGemini(db,budget,summary); }
+      catch (error) {
+        await recordAIUsage(db,'gemini',usageGeminiModel(),{},safeProviderDiagnostic(error,'gemini').code);
+        throw new HavenRequestError(SCORING_PROVIDER_UNAVAILABLE, 503);
+      }
       finally { await budget.settle(); }
     };
     const scoring = hasMeaningfulBusinessText(summary) ? await score(supabase, review.id)
       : { state: 'insufficient_evidence' as const, rubricVersion: RUBRIC_VERSION, reason: websiteContentReason(summary, raw), score: null, breakdown: null, biggestIssue: null };
-    if (!scoring) throw new HavenRequestError(SCORING_COPY.failed, 502);
     await persistScoring(supabase, review.id, scoring, summary, review.scoring_revision || 0);
     return json({ ok: true, ...scoring, url: targetUrl, summary, chars: summary.length, revision: review.scoring_revision || 0,
       ...(scoring.state === 'insufficient_evidence' ? { message: scoreFailureCopy(scoring.reason), excerpt: websiteExcerpt(summary) } : {}) });

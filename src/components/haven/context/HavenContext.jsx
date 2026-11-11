@@ -478,7 +478,7 @@ export function HavenProvider({ children, siteSupport = false }) {
       setAuditPreflight(prev => ({
         status: 'failed', url, score: null, breakdown: null, biggestIssue: null,
         summary: null,
-        reason: err.reason || null, error: err instanceof Error && (/access recovery/.test(err.message) || err.status === 409) ? err.message : scoreFailureCopy(err.reason || 'provider_unavailable'),
+        reason: err.reason || null, error: err instanceof Error && (/access recovery/.test(err.message) || err.status === 409) ? err.message : scoreFailureCopy(err.reason || 'request_failed'),
         dismissed: false, retryCount: prev.retryCount || 0,
       }));
       setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true, scrapeState: 'failed', auditScore: null, scoreBreakdown: null, biggestIssue: null }));
@@ -524,7 +524,8 @@ export function HavenProvider({ children, siteSupport = false }) {
       setAuditPreflight(prev => ({
         status: 'failed', url: null, score: null, breakdown: null, biggestIssue: null,
         summary: null,
-        error: err instanceof Error ? err.message : 'Unknown error',
+        reason: err.reason || null,
+        error: err instanceof Error && (err.status || /access recovery/.test(err.message)) ? err.message : scoreFailureCopy('request_failed', 'social'),
         dismissed: false, retryCount: prev.retryCount || 0,
       }));
       setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true, scrapeState: 'failed', auditScore: null, scoreBreakdown: null, biggestIssue: null }));

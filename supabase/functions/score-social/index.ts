@@ -12,13 +12,11 @@ import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiTex
 import { verifyReviewAccess, ReviewAccessError, storedReviewScreenshot } from '../_shared/review-access.ts';
 import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson, screenshotPart } from '../_shared/haven-request.ts';
 import { parseScoringResult, persistScoring, cachedScoring, lockedScoring } from '../_shared/haven-scoring.ts';
-import { scoreFailureCopy } from '../_shared/scoring-copy.js';
+import { SCORING_PROVIDER_UNAVAILABLE, scoreFailureCopy } from '../_shared/scoring-copy.js';
 
 const SOCIAL_SCORING_PROMPT = scoringInstructions('social');
 
-const parseScoreJson = (raw: string) => parseScoringResult(raw, 'social');
-
-async function scoreWithGemini(db:any,budget:AIBudgetReservation,screenshot: string): Promise<{ raw: string; status: number }> {
+async function scoreWithGemini(db:any,budget:AIBudgetReservation,screenshot: string) {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   if (!apiKey) throw new Error('GEMINI_API_KEY not configured.');
 
@@ -31,7 +29,9 @@ async function scoreWithGemini(db:any,budget:AIBudgetReservation,screenshot: str
       }),
     }, 18000, 1);
   const payload=await response.json();budget.recordUsage('gemini',payload);await recordAIUsage(db,'gemini',geminiModel(),payload);
-  return { raw: geminiText(payload), status: 200 };
+  const parsed = parseScoringResult(geminiText(payload), 'social');
+  if (!parsed) throw new Error('gemini_invalid_score');
+  return parsed;
 }
 
 Deno.serve(observe('score-social',async (request,requestId) => {
@@ -57,45 +57,22 @@ Deno.serve(observe('score-social',async (request,requestId) => {
       ...(cached.state === 'insufficient_evidence' ? { message: scoreFailureCopy(cached.reason,'social') } : {}) });
     await enforceScoringLimits(supabase, request, key, review.id);
     started = true;
+    if (!geminiProcessingEnabled()) throw new HavenRequestError(SCORING_PROVIDER_UNAVAILABLE, 503);
     // The saved private object, not a browser-swapped image, is authoritative.
     const screenshot = await storedReviewScreenshot(supabase, review);
-    if (!geminiProcessingEnabled()) throw new HavenRequestError('Image scoring is unavailable. Please continue to chat and describe your profile.', 503);
     budget = await reserveAIBudget(supabase,request,key,'scoring',{reviewId:review.id},[
       aiBudgetPlan('gemini',{prompt:SOCIAL_SCORING_PROMPT,screenshot},4096,2,true),
     ]);
 
-    // Only Gemini has vision. No Groq fallback possible.
-    let lastErr: string = '';
-    for (let attempt = 0; attempt < 1; attempt++) {
-      try {
-        const { raw, status } = await scoreWithGemini(supabase,budget,screenshot);
-        if (status === 200) {
-          const parsed = parseScoreJson(raw);
-          if (parsed) {
-            await persistScoring(supabase, review.id, parsed, null, review.scoring_revision || 0);
-            return json({ ok: true, ...parsed, revision: review.scoring_revision || 0,
-              ...(parsed.state === 'insufficient_evidence' ? { message: scoreFailureCopy(parsed.reason,'social') } : {}) });
-          }
-          lastErr = 'Gemini returned unparseable JSON';
-          logEvent('warn','score-social.diagnostic_1',requestId);
-        } else if (status === 503 || status === 502 || status === 504) {
-          lastErr = `Gemini ${status}`;
-          logEvent('warn','score-social.diagnostic_2',requestId);
-        } else {
-          lastErr = `Gemini ${status}: ${'[redacted model output]'}`;
-          logEvent('warn','score-social.diagnostic_3',requestId);
-          break;
-        }
-      } catch (err) {
-        await recordAIUsage(supabase,'gemini',usageGeminiModel(),{},safeProviderDiagnostic(err,'gemini').code);
-        lastErr = err instanceof Error ? err.message : String(err);
-        logEvent('warn','score-social.diagnostic_4',requestId);
-      }
-
+    let parsed;
+    try { parsed = await scoreWithGemini(supabase,budget,screenshot); }
+    catch (error) {
+      await recordAIUsage(supabase,'gemini',usageGeminiModel(),{},safeProviderDiagnostic(error,'gemini').code);
+      throw new HavenRequestError(SCORING_PROVIDER_UNAVAILABLE, 503);
     }
-
-    logEvent('warn','score-social.diagnostic_5',requestId);
-    throw new HavenRequestError('I ran into an unexpected error while reading your profile. Please try again or continue to chat.', 502);
+    await persistScoring(supabase, review.id, parsed, null, review.scoring_revision || 0);
+    return json({ ok: true, ...parsed, revision: review.scoring_revision || 0,
+      ...(parsed.state === 'insufficient_evidence' ? { message: scoreFailureCopy(parsed.reason,'social') } : {}) });
   } catch (error) {
     if (error instanceof HavenRequestError && ['ai_paused','ai_daily_budget_exceeded','ai_budget_unavailable'].includes((error as any).code)) {
       (headers as Record<string,string>)['Retry-After']=String(error.retryAfter || 60);

@@ -7,7 +7,7 @@ import vm from 'node:vm';
 import { transformSync, buildSync } from 'esbuild';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
-function render(path, name, overrides = {}) {
+function render(path, name, overrides = {}, globals = {}) {
   let state = 0;
   const source = read(path).replace(/^import[^\n]*\r?\n/gm, '').replace('export default function ', 'function ');
   const context = {
@@ -17,6 +17,7 @@ function render(path, name, overrides = {}) {
     useEffect() {}, useRef: (initial) => ({ current: initial }),
     useSearchParams: () => [new URLSearchParams('token=verified-request')],
     motion: { div: 'div' }, Link: 'link', ArrowLeft: 'icon', ArrowUp: 'icon', CheckCircle2: 'icon', X: 'icon', AlertTriangle: 'icon', LoaderCircle: 'icon',
+    hasRequestedDeletion: () => false, ...globals,
   };
   vm.runInNewContext(transformSync(`${source}\nmodule.exports=${name};`, { loader: 'jsx', format: 'cjs' }).code, context);
   return context.module.exports({ onClose() {} });
@@ -66,7 +67,8 @@ test('privacy and terms: warning automation, human restriction review, and priva
 test('privacy: provider processing discloses free-tier testing without promising universal no-training', () => {
   const page = render('src/pages/PrivacyPage.jsx', 'PrivacyPage');
   const copy = text(page);
-  assert.match(copy, /Gemini models as its primary AI provider and Groq as a fallback/);
+  assert.match(copy, /Gemini models for chat and scoring/);
+  assert.match(copy, /Groq may process a short portion of the recent chat text/);
   assert.match(copy, /During the current testing phase, TMH may use this unpaid tier/);
   assert.match(copy, /possible human review/);
   assert.ok(!copy.includes('We do not use your conversations to train public models'));
@@ -99,7 +101,7 @@ test('deletion disclosures: policies and request/confirmation pages describe the
   assert.match(privacy, /protected email hash/);
 });
 
-function deletionHandler(name, deletionStatus = null) {
+function deletionHandler(name, deletionStatus = null, mailStatus = 200) {
   let handler;
   const emails = [];
   const client = { async rpc(name) {
@@ -120,7 +122,7 @@ function deletionHandler(name, deletionStatus = null) {
     require: (module) => module.includes('server.ts') ? { serve: (callback) => { handler = callback; } } : { createClient: () => withSecurityRpc(client) },
     Deno: { env: { get: () => 'configured-for-test' } },
     Response, Request, Uint8Array, AbortSignal, crypto: webcrypto,
-    fetch: async (_, options) => { emails.push(JSON.parse(options.body)); return new Response(JSON.stringify({ id: 'email-1' })); },
+    fetch: async (_, options) => { emails.push(JSON.parse(options.body)); return new Response(JSON.stringify({ id: 'email-1' }), { status: mailStatus }); },
     console: { error() {} },
   });
   return { handler, emails };
@@ -152,4 +154,30 @@ test('a repeated deletion request returns the processed message without sending 
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error, 'A deletion request has already been processed for this email. Please contact Team Haven for further assistance.');
   assert.equal(emails.length, 0);
+});
+
+test('deletion intake does not acknowledge a known email delivery failure as a successful request', async () => {
+  const { handler } = deletionHandler('request-data-deletion', null, 503);
+  const response = await handler(new Request('https://project.supabase.co/functions/v1/delete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', origin: 'https://themarketinghaven.xyz' },
+    body: JSON.stringify({ email: 'owner@example.com' }),
+  }));
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).ok, false);
+});
+
+test('reopening the deletion dialog in a browser that submitted shows only the contact action', async () => {
+  let requested = false;
+  const message = 'A data deletion request has already been processed for this browser. If you need further assistance, please contact Team Haven.';
+  const dialog = () => render('src/components/legal/DataDeletionModal.jsx', 'DataDeletionDialog', { 0: 'owner@example.com' }, {
+    hasRequestedDeletion: () => requested, rememberDeletionRequest: () => { requested = true; },
+    DELETION_BROWSER_MESSAGE: message,
+    supabase: { functions: { invoke: async () => ({ data: { ok: true } }) } },
+  });
+  const [form] = find(dialog(), node => node.type === 'form');
+  await form.props.onSubmit({ preventDefault() {} });
+  const reopened = dialog();
+  assert.ok(text(reopened).includes(message));
+  assert.equal(find(reopened, node => node.type === 'input').length, 0);
+  assert.equal(find(reopened, node => node.props.href === 'mailto:info@themarketinghaven.xyz').length, 1);
 });

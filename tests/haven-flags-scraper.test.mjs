@@ -76,11 +76,13 @@ test('website scoring: bad extraction never reuses a stale score or becomes a ne
   assert.equal(ui.profile.auditScore, null); assert.equal(ui.profile.scrapeState, 'bad_data');
   assert.equal(ui.profile.scrapeFailed, false);
 });
-test('website scoring: upstream failure clears stale scores and shows retry/proceed copy', async () => {
-  const ui = harness({ status: 502, scoring: { ok: false, state: 'failed' }, profile: { auditScore: 99 } });
-  await ui.runScraper('https://example.com');
-  assert.equal(ui.preflight.status, 'failed'); assert.equal(ui.preflight.error, scoreFailureCopy('provider_unavailable'));
-  assert.equal(ui.profile.auditScore, null); assert.equal(ui.profile.scrapeState, 'failed');
+test('website scoring: only a reported provider outage shows the high traffic message', async () => {
+  for (const reason of [undefined, 'provider_unavailable']) {
+    const ui = harness({ status: 503, scoring: { ok: false, state: 'failed', reason }, profile: { auditScore: 99 } });
+    await ui.runScraper('https://example.com');
+    assert.equal(ui.preflight.status, 'failed'); assert.equal(ui.preflight.error, scoreFailureCopy(reason || 'request_failed'));
+    assert.equal(ui.profile.auditScore, null); assert.equal(ui.profile.scrapeState, 'failed');
+  }
 });
 test('website scoring: a response without an explicit trusted scoring state cannot supply a score', async () => {
   const ui = harness({ scoring: { ok: true, summary: 'a'.repeat(400), score: 99 } });
