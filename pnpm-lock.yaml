@@ -14,9 +14,6 @@ importers:
       '@google/genai':
         specifier: 2.18.0
         version: 2.18.0
-      '@hcaptcha/react-hcaptcha':
-        specifier: ^2.2.0
-        version: 2.2.0
       '@sentry/react':
         specifier: 11.10.0
         version: 11.10.0(react-router@7.18.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
@@ -379,9 +376,6 @@ packages:
     peerDependenciesMeta:
       '@modelcontextprotocol/sdk':
         optional: true
-
-  '@hcaptcha/react-hcaptcha@2.2.0':
-    resolution: {integrity: sha512-/HrPgNLRrJziLrh2s+qFRO33ubBSuHn9sdNsQcP0wQElpORxlpR6wnq3X9j/bZGd+uQtYIvPl4QSU2la+Jl9Hg==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -2002,8 +1996,6 @@ snapshots:
       - bufferutil
       - supports-color
       - utf-8-validate
-
-  '@hcaptcha/react-hcaptcha@2.2.0': {}
 
   '@humanfs/core@0.19.2':
     dependencies:

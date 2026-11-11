@@ -26,6 +26,7 @@ export function withSecurityRpc(client) {
       if(name==='record_ai_usage')return Promise.resolve({data:null,error:null});
       if(name==='ai_usage_summary')return Promise.resolve({data:[],error:null});
       if(name==='verification_attempt_gate')return Promise.resolve({data:{allowed:true},error:null});
+      if(name==='review_attempt_gate')return Promise.resolve({data:{allowed:true},error:null});
       // Existing business fixtures retain their original RPC/table model.
       // Real run_admin_mutation SQL and its fail-closed Edge integration have
       // dedicated adversarial coverage in admin-security.test.mjs.

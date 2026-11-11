@@ -2,7 +2,7 @@ import {logEvent} from '../_shared/logger.ts';
 import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
-import { publicRequestLimit } from '../_shared/abuse-limits.ts';
+import { enforceReviewRequestBudget, reviewAttemptGate, reviewLimitDetails } from '../_shared/review-attempts.ts';
 import { HavenRequestError,readBoundedJson } from '../_shared/haven-request.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
@@ -62,6 +62,11 @@ serve(observe('check-email-exists',async (req,requestId) => {
     // Email membership is used by the review form; moderation status requires
     // the private visitor/review capability checked by Haven, never an email lookup.
     if(includeFlag)return response(false,origin,undefined,403);
+    if (payload.action === 'review-limit-status' && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+      const db = createClient(SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}});
+      await reviewAttemptGate(db,req,SUPABASE_SERVICE_ROLE_KEY);
+      return new Response(JSON.stringify({allowed:true}),{headers:{...corsHeaders(origin),'Content-Type':'application/json','Cache-Control':'no-store'}});
+    }
 
     if (!EMAIL_PATTERN.test(email) || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return response(false, origin, undefined, includeFlag ? 400 : 200);
@@ -70,7 +75,7 @@ serve(observe('check-email-exists',async (req,requestId) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
     });
-    await publicRequestLimit(supabase,req,SUPABASE_SERVICE_ROLE_KEY,'email-lookup');
+    await enforceReviewRequestBudget(supabase,req,SUPABASE_SERVICE_ROLE_KEY,'email-lookup');
 
     // ILIKE with escaped wildcards is an exact case-insensitive comparison:
     // lower(email) = lower(trimmed input).
@@ -89,9 +94,13 @@ serve(observe('check-email-exists',async (req,requestId) => {
     // still limits the actual response to id and the optional public status.
     const matched = reviews as unknown as Array<{id:string;flag_status?:string}> | null;
     const flagStatus = includeFlag ? matched?.[0]?.flag_status || 'white' : undefined;
+    if (reviews?.length) await reviewAttemptGate(supabase,req,SUPABASE_SERVICE_ROLE_KEY,true);
     return response(Boolean(reviews?.length), origin, flagStatus);
   } catch (error) {
-    if(error instanceof HavenRequestError)return new Response(JSON.stringify({exists:false,error:error.message}),{status:error.status,headers:{...corsHeaders(origin),'Content-Type':'application/json','Cache-Control':'no-store',...(error.status===429?{'Retry-After':'600'}:{})}});
+    if(error instanceof HavenRequestError){
+      const limit = error.status===429 ? reviewLimitDetails(error) : null;
+      return new Response(JSON.stringify({exists:false,error:error.message,...limit}),{status:error.status,headers:{...corsHeaders(origin),'Content-Type':'application/json','Cache-Control':'no-store',...(limit?.retryAfter?{'Retry-After':String(limit.retryAfter)}:{})}});
+    }
     logEvent('error','check-email-exists.diagnostic_2',requestId);
     return response(false, origin, undefined, includeFlag ? 503 : 200);
   }

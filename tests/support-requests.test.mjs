@@ -37,16 +37,16 @@ function endpoint(name, { visitorHash, captcha = true, limited = false, admin = 
       return builder;
     },
   };
-  const env = { SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'private-service', HCAPTCHA_SECRET: 'captcha-secret', INTERNAL_POLL_SECRET: 'cron-secret', RESEND_API_KEY: 'resend-key' };
+  const env = { SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'private-service', CLOUDFLARE_TURNSTILE_SECRET_KEY: 'captcha-secret', INTERNAL_POLL_SECRET: 'cron-secret', RESEND_API_KEY: 'resend-key' };
   vm.runInNewContext(codes[name], {
     module: { exports: {} }, exports: {}, require: () => ({ createClient: () => db }),
     Deno: { serve: fn => { handler = fn; }, env: { get: key => env[key] } },
     fetch: async (url, init) => {
-      if (url.includes('hcaptcha')) return Response.json({ success: captcha });
+      if (url.includes('turnstile')) return Response.json({ success: captcha, action:'support_request', hostname:'themarketinghaven.xyz' });
       mail.push({ body: JSON.parse(init.body), headers: init.headers });
       return Response.json(providerFails ? { message: 'Provider unavailable' } : { id: 'accepted-mail-id' }, { status: providerFails ? 503 : 200 });
     },
-    crypto: webcrypto, TextEncoder, TextDecoder, Uint8Array, Request, Response, Headers, URLSearchParams, AbortSignal, setTimeout, clearTimeout, console: { error() {} },
+    crypto: webcrypto, TextEncoder, TextDecoder, Uint8Array, Request, Response, Headers, URL, URLSearchParams, AbortSignal, setTimeout, clearTimeout, console: { error() {} },
   });
   return {
     queries, writes, calls, mail,

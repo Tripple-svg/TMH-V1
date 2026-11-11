@@ -1,18 +1,42 @@
 export const PLATFORM_ACTIONS={
-  __FOOTER__:{label:'Show footer links',section:'footer'},
+  __FOOTER__:{label:'Show footer section',section:'footer'},
   __SUPPORT__:{label:'Open Support',path:'/support'},
+  __LOOP_SUPPORT__:{label:'Contact Support',path:'/support'},
   __DATA_ACCESS__:{label:'Download my data',path:'/data-access'},
   __DELETE_DATA__:{label:'Open Data Deletion',dialog:'data-deletion'},
   __TEAM__:{label:'Meet Team Haven',section:'about'},
   __SHOP__:{label:'Open Playbook section',section:'shop'},
   __SERVICES__:{label:'Open Services',section:'services'},
+  __TESTIMONIALS__:{label:'See testimonials',section:'testimonials'},
+  __FREE_CLASS__:{label:'Open The Marketing Room',section:'free-class'},
 };
+
+export const TESTIMONIAL_OFFER = 'I understand. It seems you haven’t seen our Testimonials yet. Would you like me to take you there?';
+
+export function testimonialHelp(text, lastReply) {
+  const value = String(text || '').trim().toLowerCase().replaceAll('’', "'");
+  if (lastReply === TESTIMONIAL_OFFER) {
+    if (/^(?:yes(?:,?\s+(?:show me|please|take me there))?|show me|go ahead)[.!?]*$/.test(value)) {
+      return { text: 'Sure, I’ll take you to the testimonials.', open: true };
+    }
+    if (/^(?:no(?:,?\s+(?:thanks|not now))?|not now)[.!?]*$/.test(value)) {
+      return { text: 'Of course. We can keep talking here.' };
+    }
+  }
+  if (!/\b(?:my|our)\s+(?:testimonials|site|website|reviews|customers|results)\b/.test(value)
+    && /\b(?:testimonials|case studies|client reviews|client results)\b|\b(?:show me|have you got|do you have|where is|haven't seen|have not seen)\b.{0,30}\b(?:any )?(?:proof|results)\b|\bwhat (?:brands|businesses|clients) have you worked with\b/.test(value)) {
+    return { text: TESTIMONIAL_OFFER, chips: ['Yes, show me','No, thanks'] };
+  }
+  return null;
+}
+
 export function platformNavigationHelp(text){
   const value=String(text||'').toLowerCase();
   if(/\b(?:delete|remove|erase)\b.{0,40}\b(?:my data|personal data|saved data|my information)\b|\bdata deletion\b/.test(value))return {text:'Use Data Deletion under Legal & Safety in the footer, or open it with the button below. Enter the review email and confirm the email link to continue. Opening the form does not delete anything. This flow covers your saved review and linked chats/screenshots; ask Support about other records.',chips:['__DELETE_DATA__','__FOOTER__']};
   if(/\b(?:download|export|copy)\b.{0,35}\b(?:my data|personal data|saved data|my information)\b|\bdata export\b/.test(value))return {text:'Choose Download my data under Legal & Safety in the footer, or use the button below. Enter your email on that page and confirm the inbox link. Your archive includes a readable My-Data.html and a JSON copy of matching saved reviews and linked chats. I have not requested or downloaded it from this chat.',chips:['__DATA_ACCESS__','__FOOTER__']};
   if(/\b(?:edit|change|correct|restart|reset|clear)\b.{0,35}\b(?:my review|review details|brand details|saved review)\b/.test(value))return {text:'You can replace a wrong website or screenshot on the scorecard before choosing Continue to Chat. Once the chat starts, the source and any saved score are locked. You can continue the same chat or contact Support if your saved details need correcting.',chips:['__SUPPORT__']};
-  if(/\b(?:show|find|open|where|go|take me)\b.{0,30}\bfooter\b/.test(value))return {text:'The footer is at the bottom of the homepage. Use the button below to jump there.',chips:['__FOOTER__']};
+  if(/\b(?:show|find|open|where|go|take me)\b.{0,30}\bfooter\b/.test(value))return {text:'Sure thing. Here’s the footer.',chips:['__FOOTER__']};
+  if(/\b(?:free (?:resources|class|course|training|marketing tips)|marketing room)\b/.test(value))return {text:'The Marketing Room is where TMH shares its free class. You can check its availability there.',chips:['__FREE_CLASS__']};
   if(/^show website help[.!?]*$/.test(value))return {text:'Use the buttons below to go to the footer, contact Support, or open the data access page.',chips:['__FOOTER__','__SUPPORT__','__DATA_ACCESS__']};
   if(/\b(?:support (?:form|request)|contact support)\b/.test(value)&&!/\b(?:status|progress|reply|answered|received)\b/.test(value))return {text:'Choose Send a support request under Contact Information in the footer, or use Open Support below. Choose the closest issue, explain what happened and complete the consent and security check. A reference appears after the request is saved. I have not submitted a request for you.',chips:['__SUPPORT__']};
   if(/\b(?:where|meet|who are|find|show)\b.{0,30}\b(?:the team|team haven|team section)\b/.test(value))return {text:'Meet Team Haven in About on the homepage. That section shows the public team roles. Public contact links are in the footer; private addresses, personal numbers and account details are not available through Haven.',chips:['__TEAM__','__FOOTER__']};

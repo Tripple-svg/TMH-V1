@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {readAdminLockout,recordAdminFailure,clearAdminLockout} from '../../lib/adminLockout';
+import {formatCountdown} from '../../lib/reviewCooldown';
 import { adminSupabase } from '../../lib/adminAuth';
 import { requestAdminPasswordReset } from '../../lib/adminPassword';
 import {readAdminMfa,verifiedAdminForMfa} from '../../lib/adminMfa';
@@ -11,9 +12,10 @@ export default function AdminSignIn({ onAuth }) {
   const [recovering, setRecovering] = useState(false), [notice, setNotice] = useState('');
   const [cooldown, setCooldown] = useState(0);
   const [challenge,setChallenge]=useState(null);
-  const [locked,setLocked]=useState(()=>readAdminLockout().remaining);
+  const [lockout,setLockout]=useState(readAdminLockout);
+  const locked = lockout.remaining;
   const submitLock=useRef(false);
-  useEffect(()=>{const refresh=()=>setLocked(readAdminLockout().remaining);const timer=setInterval(refresh,1000);window.addEventListener('storage',refresh);return()=>{clearInterval(timer);window.removeEventListener('storage',refresh);};},[]);
+  useEffect(()=>{const refresh=()=>setLockout(readAdminLockout());const timer=setInterval(refresh,1000);window.addEventListener('storage',refresh);return()=>{clearInterval(timer);window.removeEventListener('storage',refresh);};},[]);
   useEffect(()=>{let live=true;void adminSupabase.auth.getSession().then(async({data})=>{if(!data?.session)return;const user=await adminSupabase.auth.getUser(data.session.access_token);if(user.error||user.data?.user?.app_metadata?.role!=='admin')return;const state=await readAdminMfa(adminSupabase.auth,user.data.user);if(live&&state.required)setChallenge(state);}).catch(()=>{if(live)setError('Your sign-in security could not be checked. Please try again.');});return()=>{live=false;};},[]);
   useEffect(() => {
     if (!cooldown) return;
@@ -22,7 +24,8 @@ export default function AdminSignIn({ onAuth }) {
   }, [cooldown]);
   const submit = async event => {
     event.preventDefault();
-    if (submitLock.current || checking || (recovering ? cooldown : readAdminLockout().remaining)) return;
+    const state = readAdminLockout();
+    if (submitLock.current || checking || (recovering ? cooldown : state.remaining || state.resetRequired)) return;
     submitLock.current=true;
     setChecking(true); setError(''); setNotice('');
     try {
@@ -32,18 +35,18 @@ export default function AdminSignIn({ onAuth }) {
       }
       const { data, error } = await adminSupabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error || !data?.session || data.user?.app_metadata?.role !== 'admin') {
-        const attempt=recordAdminFailure(error||{code:'invalid_credentials'});setLocked(attempt.remaining);
+        setLockout(recordAdminFailure(error||{code:'invalid_credentials'}));
         if (data?.session) await adminSupabase.auth.signOut({ scope: 'local' });
         setError('Unable to sign in with these credentials. Please check your details or contact the team.'); return;
       }
       setPassword('');
-      clearAdminLockout();setLocked(0);
+      clearAdminLockout();setLockout(readAdminLockout());
       const user=await verifiedAdminForMfa(adminSupabase.auth);
       const mfa=await readAdminMfa(adminSupabase.auth,user);
       if(mfa.required){setChallenge(mfa);return;}
       onAuth(data.session.access_token);
     } catch (failure) {
-      if(!recovering)setLocked(recordAdminFailure(failure).remaining);
+      if(!recovering)setLockout(recordAdminFailure(failure));
       setError(recovering && failure?.name === 'AdminPasswordError' ? failure.message : recovering ? 'Password reset is temporarily unavailable. Please try again shortly.' : 'Sign-in is temporarily unavailable. Please try again shortly.');
       if (failure?.code === 'rate_limited') setCooldown(60);
     } finally { submitLock.current=false;setChecking(false); }
@@ -58,8 +61,9 @@ export default function AdminSignIn({ onAuth }) {
     {!recovering && <label className="mt-4 block text-xs text-zinc-400">Password<input type="password" required autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} className="mt-2 block w-full rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-zinc-100" /></label>}
     {error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}
     {notice && <p role="status" className="mt-4 text-sm leading-relaxed text-zinc-300">{notice}</p>}
-    {!recovering&&locked>0&&<p role="alert" className="mt-4 text-sm text-amber-200">Sign-in paused after repeated attempts. Try again in {Math.ceil(locked/60)} minutes.</p>}
-    <button disabled={checking || !email.trim() || (recovering ? cooldown > 0 : !password||locked>0)} className="mt-6 w-full rounded-lg bg-zinc-100 p-3 text-sm font-medium text-zinc-950 disabled:opacity-40">{checking ? recovering ? 'Requesting link…' : 'Signing in…' : recovering ? cooldown ? `Request again in ${cooldown}s` : 'Send reset link' : 'Sign in'}</button>
+    {!recovering&&locked>0&&<p role="status" className="mt-4 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-200">Sign-in paused. Try again in <time aria-live="off" className="font-mono font-semibold tabular-nums">{formatCountdown(locked)}</time>.</p>}
+    {!recovering&&lockout.resetRequired&&<p role="alert" className="mt-4 text-sm text-amber-200">Use Forgot password to reset your password and sign in again.</p>}
+    <button disabled={checking || !email.trim() || (recovering ? cooldown > 0 : !password||locked>0||lockout.resetRequired)} className="mt-6 w-full rounded-lg bg-zinc-100 p-3 text-sm font-medium text-zinc-950 disabled:opacity-40">{checking ? recovering ? 'Requesting link…' : 'Signing in…' : recovering ? cooldown ? `Request again in ${formatCountdown(cooldown)}` : 'Send reset link' : 'Sign in'}</button>
     <button type="button" disabled={checking} onClick={toggleRecovery} className="mt-4 block w-full py-2 text-sm text-zinc-400 underline decoration-zinc-700 underline-offset-4 hover:text-zinc-100 disabled:opacity-40">{recovering ? 'Back to sign-in' : 'Forgot password?'}</button>
     {recovering && <p className="mt-3 text-xs leading-relaxed text-zinc-500">A reset link does not grant admin access. If your invitation or reset email does not arrive, <a href="mailto:info@themarketinghaven.xyz?subject=Admin%20account%20access" className="text-zinc-300 underline underline-offset-2">contact the owner</a>.</p>}
   </form></main>;

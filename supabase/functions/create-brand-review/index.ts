@@ -5,7 +5,8 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { hashReviewToken, validReviewCredentials, verifyReviewAccess, ReviewAccessError } from '../_shared/review-access.ts';
 import { readBoundedJson, HavenRequestError } from '../_shared/haven-request.ts';
-import { publicRequestLimit } from '../_shared/abuse-limits.ts';
+import { enforceReviewRequestBudget, reviewAttemptGate, reviewLimitDetails } from '../_shared/review-attempts.ts';
+import { verifyTurnstile } from '../_shared/turnstile.ts';
 import { decodeScreenshotDataUrl, ScreenshotValidationError } from '../_shared/screenshot-validation.ts';
 import {PUBLIC_ORIGINS as ORIGINS} from '../_shared/cors.ts';
 
@@ -21,15 +22,14 @@ const boundedInt = (value: unknown, min: number, max: number) => Math.min(max, M
 
 serve(observe('create-brand-review',async (req,requestId) => {
   const origin = req.headers.get('origin');
-  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers:{...headers(origin),...(status===429?{'Retry-After':'600'}:{})} });
+  const json = (body: unknown, status = 200, retryAfter = 0) => new Response(JSON.stringify(body), { status, headers:{...headers(origin),...(retryAfter?{'Retry-After':String(retryAfter)}:{})} });
   if (req.method === 'OPTIONS') return new Response('ok', { headers: headers(origin) });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
   if (origin && !ORIGINS.includes(origin)) return json({ ok: false, error: 'Origin not allowed' }, 403);
   try {
     const url = Deno.env.get('SUPABASE_URL');
     const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const captchaSecret = Deno.env.get('HCAPTCHA_SECRET');
-    if (!url || !key || !captchaSecret) return json({ ok: false, error: 'Review service is not configured' }, 500);
+    if (!url || !key) return json({ ok: false, error: 'Review service is not configured' }, 500);
     const body = await readBoundedJson(req, 7_100_000);
     const { id, sessionId, accessToken } = body;
     if (!validReviewCredentials(sessionId, id, accessToken)) return json({ ok: false, error: 'Invalid review credentials' }, 400);
@@ -59,17 +59,14 @@ serve(observe('create-brand-review',async (req,requestId) => {
         return json({ ok: false, error: 'Retry the original submission or contact the team' }, 409);
       }
     } else {
-      await publicRequestLimit(supabase,req,key,'review-submit');
-      const token = text(body.hcaptchaToken, 10000);
-      if (!token) return json({ ok: false, error: 'Please complete the verification check' }, 400);
-      const captcha = await fetch('https://api.hcaptcha.com/siteverify', {
-        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ secret: captchaSecret, response: token,
-          sitekey: Deno.env.get('HCAPTCHA_SITE_KEY') || '2506b35e-f496-40aa-a6e4-32cc1eb84e4c' }),
-        signal: AbortSignal.timeout(15000),
-      });
-      const result = await captcha.json();
-      if (!captcha.ok || result.success !== true) return json({ ok: false, error: 'Verification failed. Please try again.' }, 403);
+      await enforceReviewRequestBudget(supabase,req,key,'review-submit');
+      try {
+        await verifyTurnstile(req,body.turnstileToken,'brand_review');
+      } catch (error) {
+        if (error instanceof HavenRequestError && error.status < 500) await reviewAttemptGate(supabase,req,key,true);
+        throw error;
+      }
+      await reviewAttemptGate(supabase,req,key);
       const firstVisit = Date.parse(body.firstVisitAt);
       const review = {
         id, full_name: text(body.fullName, 150), brand_name: text(body.brandName, 200),
@@ -86,7 +83,11 @@ serve(observe('create-brand-review',async (req,requestId) => {
       const { error } = await supabase.rpc('create_haven_review', {
         p_review: review, p_session_id: sessionId, p_token_hash: await hashReviewToken(accessToken),
       });
-      if (error) return json({ ok: false, error: error.code === '23505' ? 'This email already has a review. Contact the team for help.' : 'Unable to save your review' }, error.code === '23505' ? 409 : 500);
+      if (error?.code === '23505') {
+        await reviewAttemptGate(supabase,req,key,true);
+        return json({ ok: false, error: 'This email already has a review. Contact the team for help.' },409);
+      }
+      if (error) return json({ ok: false, error: 'Unable to save your review' },500);
     }
     // Commit the record first. A failed upload retries with the same capability/path.
     if (screenshot && screenshotPath) {
@@ -105,6 +106,10 @@ serve(observe('create-brand-review',async (req,requestId) => {
     }
     return json({ ok: true, reviewId: id, sessionId });
   } catch (error) {
+    if (error instanceof HavenRequestError && error.status === 429) {
+      const limit = reviewLimitDetails(error);
+      return json({ok:false,error:error.message,...limit},429,limit.retryAfter);
+    }
     if (error instanceof ReviewAccessError || error instanceof HavenRequestError || error instanceof ScreenshotValidationError) return json({ ok: false, error: error.message }, error.status);
     logEvent('error','create-brand-review.diagnostic_2',requestId);
     return json({ ok: false, error: 'Unable to save your review. Please try again.' }, 500);

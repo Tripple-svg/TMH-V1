@@ -114,6 +114,14 @@ test('confirmed Playbook handoff goes straight to the public section once, only 
   assert.deepEqual(ui.calls, ['close', '/#shop']);
 });
 
+test('confirmed testimonial handoff navigates to Testimonials from Support without opening checkout', () => {
+  const ui=drawer();
+  ui.state.activeScope='support';
+  ui.state.playbookHandoff={scope:'support',sessionId:'session',chip:'__TESTIMONIALS__'};
+  ui.render();
+  assert.deepEqual(ui.calls,['close','/#testimonials']);
+});
+
 test('a started review stays in chat and shows its score even with a stale scorecard state', () => {
   const ui = drawer();
   ui.state.messages = [{ role: 'user', content: 'My first question' }];

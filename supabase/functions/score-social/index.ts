@@ -12,6 +12,7 @@ import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiTex
 import { verifyReviewAccess, ReviewAccessError, storedReviewScreenshot } from '../_shared/review-access.ts';
 import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson, screenshotPart } from '../_shared/haven-request.ts';
 import { parseScoringResult, persistScoring, cachedScoring, lockedScoring } from '../_shared/haven-scoring.ts';
+import { scoreFailureCopy } from '../_shared/scoring-copy.js';
 
 const SOCIAL_SCORING_PROMPT = scoringInstructions('social');
 
@@ -52,7 +53,8 @@ Deno.serve(observe('score-social',async (request,requestId) => {
     if (review.platform_type !== 'social') throw new HavenRequestError('This review does not have a social profile to score.');
     if (review.source_locked_at) return json({ ok: true, ...lockedScoring(review) });
     const cached = body.force === true ? null : cachedScoring(review, 'social');
-    if (cached) return json({ ok: true, ...cached, revision: review.scoring_revision || 0, cached: true });
+    if (cached) return json({ ok: true, ...cached, revision: review.scoring_revision || 0, cached: true,
+      ...(cached.state === 'insufficient_evidence' ? { message: scoreFailureCopy(cached.reason,'social') } : {}) });
     await enforceScoringLimits(supabase, request, key, review.id);
     started = true;
     // The saved private object, not a browser-swapped image, is authoritative.
@@ -71,7 +73,8 @@ Deno.serve(observe('score-social',async (request,requestId) => {
           const parsed = parseScoreJson(raw);
           if (parsed) {
             await persistScoring(supabase, review.id, parsed, null, review.scoring_revision || 0);
-            return json({ ok: true, ...parsed, revision: review.scoring_revision || 0 });
+            return json({ ok: true, ...parsed, revision: review.scoring_revision || 0,
+              ...(parsed.state === 'insufficient_evidence' ? { message: scoreFailureCopy(parsed.reason,'social') } : {}) });
           }
           lastErr = 'Gemini returned unparseable JSON';
           logEvent('warn','score-social.diagnostic_1',requestId);

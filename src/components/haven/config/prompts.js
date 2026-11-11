@@ -3,4 +3,5 @@ export {
   STEPS, LEADS, FLAGS, SCORING_COPY, CALENDLY_URL,
   WEBSITE_SCORING_CATEGORIES, SOCIAL_SCORING_CATEGORIES,
   getFollowerBand, hasSignificantMismatch, determineRoutingAction,
+  buildAuditGreeting,
 } from '../../../../supabase/functions/_shared/haven-prompts.js';

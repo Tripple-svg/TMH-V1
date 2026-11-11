@@ -1,7 +1,8 @@
 import {useLayoutEffect,useRef,useState} from 'react';
 import {Link,useLocation} from 'react-router-dom';
 import {supportPrefill} from '../lib/supportPrefill';
-import HCaptcha from '@hcaptcha/react-hcaptcha';
+import TurnstileWidget from '../components/TurnstileWidget';
+import { motion, useReducedMotion } from 'framer-motion';
 import {supabase} from '../lib/supabase';
 import {getHavenIdentity} from '../lib/havenIdentity';
 import {TMH_CONTACT} from '../lib/tmhPublicInfo';
@@ -17,6 +18,7 @@ const CATEGORIES=[
 ];
 export default function SupportPage(){
   const {openDrawer}=useHaven();
+  const reduceMotion=useReducedMotion();
   const heading=useRef(null);
   useLayoutEffect(()=>{window.scrollTo({top:0,behavior:'instant'});heading.current?.focus({preventScroll:true});},[]);
   const location=useLocation();
@@ -36,10 +38,10 @@ export default function SupportPage(){
       if(failure||data?.ok!==true)throw Error(diagnostic?.error||'Your request could not be confirmed. Please retry or email us.');
       setReference(data.reference);setMessage('');
     }catch(failure){setError(failure.message||'Support is unavailable. Email us instead.');}
-    finally{setCaptcha(null);captchaRef.current?.resetCaptcha();submitLock.current=false;setBusy(false);}
+    finally{setCaptcha(null);captchaRef.current?.reset();submitLock.current=false;setBusy(false);}
   };
   const field='mt-2 w-full rounded-xl border border-zinc-200 bg-white/60 px-4 py-3 text-base text-zinc-950 outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/10 disabled:opacity-60 dark:border-white/10 dark:bg-black/15 dark:text-white dark:placeholder:text-zinc-600 dark:focus:border-white/40 dark:focus:ring-white/5';
-  return <main className="relative isolate min-h-screen overflow-hidden bg-zinc-50 px-5 py-8 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 sm:py-12">
+  return <motion.main initial={reduceMotion ? false : {opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{duration:reduceMotion ? 0 : 0.22}} className="relative isolate min-h-screen overflow-hidden bg-zinc-50 px-5 py-8 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 sm:py-12">
     <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 bg-gradient-to-b from-zinc-200/35 to-transparent dark:from-white/[0.035]"/>
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center justify-between border-b border-zinc-200/80 pb-5 dark:border-white/[0.08]">
@@ -94,7 +96,7 @@ export default function SupportPage(){
           <div className="space-y-5 border-t border-zinc-200/70 pt-6 dark:border-white/[0.07]">
             <div><h2 className="text-base font-medium">3. Send and save your reference</h2><p className="mt-2 text-xs leading-6 text-zinc-500">Tick the consent box and complete the security check to enable the send button. Your reference appears here once the request is saved.</p></div>
             <label className="flex gap-3 text-xs leading-6 text-zinc-600 dark:text-zinc-400"><input type="checkbox" checked={agreed} required disabled={busy} onChange={e=>setAgreed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-zinc-700 dark:accent-zinc-300"/><span>I agree that TMH may save this request and contact me to help resolve it. <Link className="underline underline-offset-4" to="/privacy">Privacy notice</Link></span></label>
-            <div className="max-w-full overflow-x-auto"><HCaptcha ref={captchaRef} sitekey={import.meta.env.VITE_HCAPTCHA_SITE_KEY||'2506b35e-f496-40aa-a6e4-32cc1eb84e4c'} onVerify={setCaptcha} onExpire={()=>setCaptcha(null)} onError={()=>setCaptcha(null)}/></div>
+            <div className="max-w-full overflow-x-auto"><TurnstileWidget ref={captchaRef} action="support_request" onVerify={setCaptcha} onExpire={()=>setCaptcha(null)} onError={()=>setCaptcha(null)}/></div>
             {error&&<p role="alert" className="text-sm leading-6 text-red-600 dark:text-red-300">{error}</p>}
             <button type="submit" disabled={busy||!captcha||!agreed} className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-950 px-5 py-3.5 text-sm font-medium text-white outline-none transition-colors hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white dark:focus-visible:ring-offset-zinc-950">{busy?'Saving request…':'Send support request'}<ArrowUpRight aria-hidden="true" className="h-4 w-4"/></button>
             <p className="text-center text-[11px] leading-5 text-zinc-500">Keep the reference shown after sending. Access and limit changes need a separate review.</p>
@@ -102,5 +104,5 @@ export default function SupportPage(){
         </form>}
       <div className="mt-6 flex items-start gap-3 rounded-2xl border border-zinc-200/70 px-5 py-4 dark:border-white/[0.07]"><Mail aria-hidden="true" className="mt-1 h-4 w-4 shrink-0 text-zinc-500"/><p className="text-xs leading-6 text-zinc-500">Prefer email? <a href={`mailto:${TMH_CONTACT.email}`} className="text-zinc-700 underline underline-offset-4 dark:text-zinc-300">{TMH_CONTACT.email}</a>.<br/>Email replies are handled by the team. Use this form when you want a website request reference.</p></div>
     </div>
-  </main>;
+  </motion.main>;
 }

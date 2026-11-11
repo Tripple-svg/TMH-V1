@@ -5,7 +5,7 @@ import { scoreFailureCopy } from '../../../../supabase/functions/_shared/scoring
 // and click flags.
 
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { STEPS, LEADS, SCORING_COPY } from '../config/prompts';
+import { STEPS, LEADS, SCORING_COPY, buildAuditGreeting } from '../config/prompts';
 import { scheduleHavenSessionSync } from '../../../lib/havenSessionSync';
 import { getHavenIdentity, CHAT_NOTICE_VERSION } from '../../../lib/havenIdentity';
 
@@ -305,6 +305,7 @@ export function HavenProvider({ children, siteSupport = false }) {
   const pendingTurnsRef = useRef(new Map());
   const inFlightTurnsRef = useRef(new Set());
   const scoringRequestRef = useRef(0);
+  const scoringRetryRef = useRef(false);
 
   useEffect(() => {
     setSupportSessions(loadSessionsForScope('support'));
@@ -437,13 +438,13 @@ export function HavenProvider({ children, siteSupport = false }) {
     return newSession.id;
   }, [setSessionsForScope]);
 
-  const runScraper = useCallback(async (url, { force = false, access = userProfile } = {}) => {
+  const runScraper = useCallback(async (url, { force = false, retry = false, access = userProfile } = {}) => {
     if (!url) return;
     const requestId = ++scoringRequestRef.current;
 
     setAuditPreflight(prev => ({
       status: 'scraping', url, score: null, breakdown: null, biggestIssue: null,
-      summary: null, error: null, dismissed: false, retryCount: prev.retryCount || 0,
+      summary: null, error: null, dismissed: false, retryCount: (prev.retryCount || 0) + Number(retry),
     }));
     setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: false, scrapeState: null,
       auditScore: null, scoreBreakdown: null, biggestIssue: null }));
@@ -461,7 +462,7 @@ export function HavenProvider({ children, siteSupport = false }) {
         rubricVersion: result.rubricVersion, evidence: result.evidence || null,
         score: valid ? result.score : null, breakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null, summary: result.summary || '',
-        error: null, dismissed: result.locked === true, retryCount: prev.retryCount || 0,
+        error: null, message: result.message, excerpt: result.excerpt, dismissed: result.locked === true, retryCount: prev.retryCount || 0,
       }));
       setUserProfile(prev => ({
         ...prev,
@@ -478,19 +479,19 @@ export function HavenProvider({ children, siteSupport = false }) {
         status: 'failed', url, score: null, breakdown: null, biggestIssue: null,
         summary: null,
         reason: err.reason || null, error: err instanceof Error && (/access recovery/.test(err.message) || err.status === 409) ? err.message : scoreFailureCopy(err.reason || 'provider_unavailable'),
-        dismissed: false, retryCount: (prev.retryCount || 0) + 1,
+        dismissed: false, retryCount: prev.retryCount || 0,
       }));
       setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true, scrapeState: 'failed', auditScore: null, scoreBreakdown: null, biggestIssue: null }));
     }
   }, [userProfile]);
 
-  const runSocialScorer = useCallback(async (screenshot, { force = false, access = userProfile } = {}) => {
+  const runSocialScorer = useCallback(async (screenshot, { force = false, retry = false, access = userProfile } = {}) => {
     if (!access.reviewId) return;
     const requestId = ++scoringRequestRef.current;
 
     setAuditPreflight(prev => ({
       status: 'scraping', url: null, score: null, breakdown: null, biggestIssue: null,
-      summary: null, error: null, dismissed: false, retryCount: prev.retryCount || 0,
+      summary: null, error: null, dismissed: false, retryCount: (prev.retryCount || 0) + Number(retry),
     }));
     setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: false, scrapeState: null,
       auditScore: null, scoreBreakdown: null, biggestIssue: null }));
@@ -507,7 +508,7 @@ export function HavenProvider({ children, siteSupport = false }) {
         rubricVersion: result.rubricVersion, evidence: result.evidence || null,
         score: valid ? result.score : null, breakdown: valid ? result.breakdown : null,
         biggestIssue: result.biggestIssue ?? null, summary: null,
-        error: null, dismissed: result.locked === true, retryCount: prev.retryCount || 0,
+        error: null, message: result.message, dismissed: result.locked === true, retryCount: prev.retryCount || 0,
       }));
       setUserProfile(prev => ({
         ...prev,
@@ -524,19 +525,21 @@ export function HavenProvider({ children, siteSupport = false }) {
         status: 'failed', url: null, score: null, breakdown: null, biggestIssue: null,
         summary: null,
         error: err instanceof Error ? err.message : 'Unknown error',
-        dismissed: false, retryCount: (prev.retryCount || 0) + 1,
+        dismissed: false, retryCount: prev.retryCount || 0,
       }));
       setUserProfile(prev => ({ ...prev, scrapedWebSummary: null, scrapeFailed: true, scrapeState: 'failed', auditScore: null, scoreBreakdown: null, biggestIssue: null }));
     }
   }, [userProfile]);
 
-  const retryScrape = useCallback(() => {
-    if (userProfile.businessDomain === 'social') {
-      runSocialScorer(userProfile.screenshot, { force: true });
-    } else if (userProfile.websiteUrl) {
-      runScraper(userProfile.websiteUrl, { force: true });
-    }
-  }, [userProfile.businessDomain, userProfile.screenshot, userProfile.websiteUrl, runScraper, runSocialScorer]);
+  const retryScrape = useCallback(async () => {
+    if (scoringRetryRef.current || auditPreflight.status !== 'failed' || auditPreflight.retryCount >= 3
+      || ['reader_blocked','reader_too_large'].includes(auditPreflight.reason)) return;
+    scoringRetryRef.current = true;
+    try {
+      if (userProfile.businessDomain === 'social') await runSocialScorer(userProfile.screenshot, { force: true, retry: true });
+      else if (userProfile.websiteUrl) await runScraper(userProfile.websiteUrl, { force: true, retry: true });
+    } finally { scoringRetryRef.current = false; }
+  }, [auditPreflight.status, auditPreflight.retryCount, auditPreflight.reason, userProfile.businessDomain, userProfile.screenshot, userProfile.websiteUrl, runScraper, runSocialScorer]);
 
   const correctReviewSource = useCallback(async (source) => {
     if (!userProfile.reviewId || !userProfile.sessionId || !userProfile.accessToken) throw new Error(REVIEW_RECOVERY_MESSAGE);
@@ -569,8 +572,12 @@ export function HavenProvider({ children, siteSupport = false }) {
   const proceedFromPreflight = useCallback(async () => {
     const result = await callCorrectSource({action:'lock'}, reviewAccess(userProfile), userProfile.scoringRevision || 0);
     if (result.locked !== true) throw new Error('Could not start the review chat. Please try again.');
+    const content = buildAuditGreeting({ name: userProfile.name, presence: userProfile.businessDomain, scored: Number.isInteger(userProfile.auditScore) });
+    setSessionsForScope('audit', previous => previous.map(session => session.id === userProfile.sessionId
+      && session.messages.length === 1 && session.messages[0].isSeedGreeting
+      ? { ...session, messages: [{ ...session.messages[0], content, timestamp: Date.now() }] } : session));
     setAuditPreflight(prev => ({ ...prev, dismissed: true }));
-  }, [userProfile]);
+  }, [userProfile, setSessionsForScope]);
 
   const resetPreflight = useCallback(() => {
     scoringRequestRef.current += 1;
@@ -957,7 +964,9 @@ export function HavenProvider({ children, siteSupport = false }) {
       }
 
       addMessage('agent', cleanedText, null, agentExtraProps);
-      if (result.openPlaybookSection === true) setPlaybookHandoff({ scope: activeScope, sessionId: activeSessionId });
+      if (result.openPlaybookSection === true || result.openTestimonials === true) {
+        setPlaybookHandoff({ scope: activeScope, sessionId: activeSessionId, chip: result.openTestimonials ? '__TESTIMONIALS__' : '__SHOP__' });
+      }
     } catch (err) {
       if (activeRequest.stopped) return;
       const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;

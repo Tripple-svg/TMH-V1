@@ -300,6 +300,7 @@ export default function HavenDrawer() {
 
   const scrollRef         = useRef(null);
   const dialogRef         = useRef(null);
+  const restrictionRef    = useRef(null);
   const scrollContentRef  = useRef(null);
   const endRef            = useRef(null);
   const menuRef           = useRef(null);
@@ -330,7 +331,8 @@ export default function HavenDrawer() {
   const showChat = !showPreflight && viewState !== 'landing';
   const showConsentLine = !hasUserMessage && !showPreflight;
 
-  useDialogFocus(isOpen&&!modalType&&!showBookingModal&&!bookingNoticeOpen,dialogRef,closeDrawer);
+  useDialogFocus(isOpen&&!isRestricted&&!modalType&&!showBookingModal&&!bookingNoticeOpen,dialogRef,closeDrawer);
+  useDialogFocus(isOpen&&isRestricted,restrictionRef,closeDrawer);
 
 
   useEffect(() => {
@@ -482,7 +484,7 @@ export default function HavenDrawer() {
     const frame = requestAnimationFrame(() => {
       consumePlaybookHandoff();
       if (isOpen && activeScope === playbookHandoff.scope && activeSessionId === playbookHandoff.sessionId) {
-        handleChipSelect('__SHOP__');
+        handleChipSelect(playbookHandoff.chip || '__SHOP__');
       }
     });
     return () => cancelAnimationFrame(frame);
@@ -810,18 +812,6 @@ export default function HavenDrawer() {
                     disabled={needsReviewRecovery || isRestricted}
                     size="full"
                   />
-                  {isRestricted && (
-                    <div role="status" className="mt-3 text-xs leading-relaxed text-zinc-300">
-                      Your access is currently restricted. Contact{' '}
-                      <a href="/support" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">Team Haven Support</a>{' '}for help.
-                      <button type="button" disabled={checkingAccess} className="ml-2 underline underline-offset-2 disabled:opacity-50" onClick={async () => {
-                        setCheckingAccess(true); setAccessError('');
-                        try { await recheckHavenAccess(); } catch { setAccessError('Could not check access. Please try again.'); }
-                        finally { setCheckingAccess(false); }
-                      }}>{checkingAccess ? 'Checking…' : 'Check access again'}</button>
-                      {accessError && <p role="alert" className="mt-1 text-red-300">{accessError}</p>}
-                    </div>
-                  )}
                   {activeScope === 'audit' && ['retrying', 'failed'].includes(sessionSaveState) && (
                     <p role="status" className="mt-2 text-xs leading-relaxed text-amber-200/80">
                       {sessionSaveState === 'retrying'
@@ -839,6 +829,25 @@ export default function HavenDrawer() {
           </>
         )}
       </AnimatePresence>
+
+      {isOpen && isRestricted && <div className="fixed inset-0 z-[80] grid place-items-center bg-black/75 p-5">
+        <section ref={restrictionRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="haven-restriction-title" className="w-full max-w-sm space-y-4 rounded-2xl border border-white/15 bg-zinc-950 p-6 text-zinc-100 shadow-2xl">
+          <h2 id="haven-restriction-title" className="text-lg font-semibold">Haven access restricted</h2>
+          <p className="text-sm leading-relaxed text-zinc-300">This restriction applies to all Haven chats. You can email Team Haven to ask for a review.</p>
+          <div className="flex flex-wrap gap-3">
+            <a href="mailto:info@themarketinghaven.xyz?subject=Haven%20restriction%20appeal" className="rounded-lg bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-950">Appeal restriction</a>
+            <button type="button" onClick={closeDrawer} className="rounded-lg border border-white/15 px-4 py-2 text-sm">Cancel</button>
+          </div>
+          <button type="button" disabled={checkingAccess} className="text-xs text-zinc-300 underline underline-offset-2 disabled:opacity-50" onClick={async () => {
+            setCheckingAccess(true); setAccessError('');
+            try {
+              if (await recheckHavenAccess() === 'red') setAccessError('Your restriction is still active.');
+            } catch { setAccessError('Could not check access. Please try again.'); }
+            finally { setCheckingAccess(false); }
+          }}>{checkingAccess ? 'Checking…' : 'Check access again'}</button>
+          {accessError && <p role="status" className="text-xs text-zinc-300">{accessError}</p>}
+        </section>
+      </div>}
 
       <ActionModals modalType={modalType} onClose={() => setModalType(null)}
         onConfirm={() => {

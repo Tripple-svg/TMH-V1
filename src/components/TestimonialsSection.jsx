@@ -179,6 +179,7 @@ export default function TestimonialsSection() {
   return (
     <section
       id="testimonials"
+      tabIndex={-1}
       ref={sectionRef}
       className="relative w-full pt-4 sm:pt-6 pb-16 sm:pb-20 px-4 sm:px-6 lg:px-8 bg-white text-zinc-900 dark:bg-zinc-950 dark:text-white transition-colors duration-300"
     >

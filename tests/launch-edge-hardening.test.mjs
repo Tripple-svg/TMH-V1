@@ -24,17 +24,31 @@ test('forwarded-header rotation cannot create new network budgets and malformed 
 });
 test('health reports absent required configuration as 503 without revealing secret values; optional setup is visible',async()=>{
   const checks={database:true,rpc:true,vault:true,cron:true,workers:true};
-  const configured={RESEND_API_KEY:'private-mail-value',PAYSTACK_SECRET_KEY:'private-payment-value',HCAPTCHA_SECRET:'private-captcha-value',GROQ_API_KEY:'private-ai-value',CALENDLY_API_TOKEN:'private-calendar-value'};
+  const configured={RESEND_API_KEY:'private-mail-value',PAYSTACK_SECRET_KEY:'private-payment-value',CLOUDFLARE_TURNSTILE_SECRET_KEY:'private-captcha-value',GROQ_API_KEY:'private-ai-value',CALENDLY_API_TOKEN:'private-calendar-value'};
   const call=env=>endpoint('health',{env,rpc:async()=>({data:checks})})(new Request('https://isolated.example'));
-  const missing=await call({...configured,HCAPTCHA_SECRET:''});assert.equal(missing.status,503);assert.equal((await missing.json()).configuration.required.captcha,false);
+  const missing=await call({...configured,CLOUDFLARE_TURNSTILE_SECRET_KEY:''});assert.equal(missing.status,503);assert.equal((await missing.json()).configuration.required.captcha,false);
   const healthy=await call(configured);assert.equal(healthy.status,200);const body=await healthy.text();assert.doesNotMatch(body,/private-.*-value/);assert.equal(JSON.parse(body).configuration.optional.errorTracking,false);
   const head=await endpoint('health',{env:configured,rpc:async()=>({data:checks})})(new Request('https://isolated.example',{method:'HEAD'}));assert.equal(head.status,200);assert.equal(await head.text(),'');
 });
 test('CAPTCHA validation rejects bad origins and oversized input, then stops provider requests at the network budget',async()=>{
   let requests=0,provider=0;
-  const handler=endpoint('validate-hcaptcha',{env:{HCAPTCHA_SECRET:'private-captcha-value'},rpc:async()=>({data:++requests<=5}),fetch:async()=>{provider++;return Response.json({success:true});}});
-  const call=(token,origin='http://localhost:5173')=>handler(new Request('https://isolated.example',{method:'POST',headers:{origin,'cf-connecting-ip':'192.0.2.1'},body:JSON.stringify({token})}));
+  const handler=endpoint('validate-turnstile',{env:{CLOUDFLARE_TURNSTILE_SECRET_KEY:'private-captcha-value',CLOUDFLARE_TURNSTILE_HOSTNAMES:'localhost'},rpc:async()=>({data:++requests<=5}),fetch:async()=>{provider++;return Response.json({success:true,action:'brand_review',hostname:'localhost'});}});
+  const call=(token,origin='http://localhost:5173')=>handler(new Request('https://isolated.example',{method:'POST',headers:{origin,'cf-connecting-ip':'192.0.2.1'},body:JSON.stringify({token,action:'brand_review'})}));
   assert.equal((await call('token','https://evil.example')).status,403);assert.equal((await call('a'.repeat(5000))).status,413);assert.equal(requests,0);
   for(let i=0;i<5;i++)assert.equal((await call('synthetic-token')).status,200);
   const limited=await call('synthetic-token');assert.equal(limited.status,429);assert.equal(limited.headers.get('Retry-After'),'600');assert.equal(provider,5);
+});
+
+test('Turnstile denies wrong hostnames, wrong actions, expired tokens and replayed tokens',async()=>{
+  for(const result of [
+    {success:true,action:'brand_review',hostname:'evil.example'},
+    {success:true,action:'support_request',hostname:'localhost'},
+    {success:true,hostname:'localhost'},
+    {success:false,'error-codes':['timeout-or-duplicate']},
+  ]){
+    const handler=endpoint('validate-turnstile',{env:{CLOUDFLARE_TURNSTILE_SECRET_KEY:'private-value',CLOUDFLARE_TURNSTILE_HOSTNAMES:'localhost'},fetch:async()=>Response.json(result)});
+    const response=await handler(new Request('https://isolated.example',{method:'POST',headers:{origin:'http://localhost:5173'},body:JSON.stringify({token:'single-use-token',action:'brand_review'})}));
+    assert.equal(response.status,403);
+    assert.doesNotMatch(await response.text(),/private-value|single-use-token/);
+  }
 });

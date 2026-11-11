@@ -18,11 +18,11 @@ Internal credentials have infrastructure authority and must stay server-only. Si
 | `calendly-poll-bookings` | Internal poll secret | Trusted worker; durable event deduplication |
 | `calendly-webhook` | HMAC on raw body; timestamp within 180 seconds | No public quota; signed event deduplication |
 | `capture-booking-lead` | Public validated booking intent; origin check | 5/10min/network; booking guards |
-| `check-email-exists` | Public bounded lookup | 5/10min/network |
+| `check-email-exists` | Public bounded lookup | 5/10min/network and shared review cooldown/block |
 | `confirm-data-deletion` | Email-delivered private token; explicit POST | 10/10min/network; token state and expiry |
 | `confirm-data-export` | Email-delivered token digest; explicit POST | 10/15min/network; 24-hour expiry and one delivery |
 | `content-performance` | Current optional browser profile proof and consent flag | 100/10s global; one event/profile/section/day |
-| `create-brand-review` | hCaptcha and server-owned review/session capability | 5/10min/network; one saved review/email |
+| `create-brand-review` | Turnstile action/hostname verification and server-owned review/session capability | Shared network gate, two cooldowns then staff reset; one saved review/email |
 | `flag-user` | Admin gate for manual actions; internal service credential for AI events | Admin 60/minute; AI event deduplication |
 | `haven-chat` | Private visitor proof; review capability when linked; privacy notice version | 8/min/device, 30/min/network, 30/10min/device, 100/hour/network; daily AI call/token budgets |
 | `health` | Public GET/HEAD; boolean check names only, including required and optional configuration presence | No application quota; 5-second DB request timeout; missing required configuration returns 503 |
@@ -49,7 +49,7 @@ Internal credentials have infrastructure authority and must stay server-only. Si
 | `support-request` | Public hCaptcha and consent; optional verified browser link | 3/15min/network |
 | `sync-haven-session` | Private review/session capability | Bounded snapshot and timestamp; no separate quota |
 | `update-review-source` | Private review capability and revision check; explicit restart confirmation; service-only correction/restart RPCs | 10/hour/review; 20/hour/network; subsequent scoring budgets |
-| `validate-hcaptcha` | Public bounded challenge validation; no review or admin authority | 5/10min/network; 4KB body; 10-second provider timeout |
+| `validate-turnstile` | Public bounded challenge validation with expected action and hostname | 5/10min/network; 4KB body; 10-second provider timeout. Submission handlers verify their own token. |
 | `verify-paystack` | Server payment verification and checkout proof or device grant | 60/hour download/network; 5/hour checkout/network; invalid download 5/10min/network |
 | `verify-playbook-recovery` | Inbox OTP keyed hash and verified payment | Five challenge guesses; shared verification network/device cooldowns |
 | `zoho-support-webhook` | Pinned signed integration; one-time secret only during enrollment | Provider message-ID deduplication and bounded verification |

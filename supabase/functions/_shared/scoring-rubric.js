@@ -26,6 +26,7 @@ export function scoringInstructions(kind) {
   return `You review ${website ? 'extracted website text' : 'a supplied social profile screenshot'} for The Marketing Haven.
 RUBRIC VERSION: ${RUBRIC_VERSION}. Review only the supplied material, never the entire business.
 First assess evidence coverage. If unreadable, predominantly legal/navigation boilerplate, or too incomplete to assess all four categories, return {"state":"insufficient_evidence","reason":"${website ? 'insufficient_text' : 'unreadable_profile'}","score":null,"breakdown":null,"biggestIssue":null}.
+${website ? '' : 'Use not_a_profile for an unrelated image or profile_missing_context for a recognisable but incomplete profile. Use unreadable_profile when the text cannot be read. Do not invent a quotation.'}
 Do not assign zero to an area hidden by extraction or cropping. Clear but weak material can receive a genuinely low score. Low scores do not prove lost revenue.
 Each category has five checks, each worth 0-5: 0 unsupported/missing in otherwise adequately covered material; 1 vague; 2 partly understandable; 3 clear but incomplete; 4 specific and useful; 5 explicit, specific and well supported. Use consistent anchors. Each category totals 0-25, four categories total 0-100. Do not double-penalize the same observation under different categories.
 ${criteria.map((line, index) => `${index + 1}. ${line}`).join('\n')}

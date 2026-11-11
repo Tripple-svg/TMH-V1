@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@google/genai": "2.18.0",
-    "@hcaptcha/react-hcaptcha": "^2.2.0",
     "@sentry/react": "11.10.0",
     "@supabase/supabase-js": "2.115.0",
     "framer-motion": "^13.1.1",

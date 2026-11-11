@@ -13,10 +13,11 @@ import { ReviewAccessError, hashReviewToken } from '../_shared/review-access.ts'
 import { prepareConversation, substantiveAnswer, explicitCallRequest, RESTRICTED_MESSAGE, REVIEW_CONTEXT_QUESTION, REVIEW_CONTEXT_MARKER, loadLinkedReviewContext } from '../_shared/haven-conversation.ts';
 import { resolveHavenRouting, supportHelpReply, acceptedCallInvitation, inferHavenNeed, isAffirmative, isPlainDecline, directPlaybookReply, CALL_HANDOFF, PLAYBOOK_CHOICES } from '../_shared/haven-routing.js';
 import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiText } from '../_shared/haven-model.ts';
-import { applyAutomaticFlag, ModerationError, detectHavenAbuse, moderationReply } from '../_shared/haven-moderation.ts';
+import { applyAutomaticFlag, ModerationError, detectHavenAbuse, moderationReply, requestsPrivateContact, PRIVATE_CONTACT_REPLY } from '../_shared/haven-moderation.ts';
 import { verifyPlaybookAccess } from '../_shared/playbook-access.js';
 import {havenPlatformState,bookingQuestionReply} from '../_shared/haven-platform-state.js';
-import {platformNavigationHelp} from '../_shared/platform-navigation.js';
+import {platformNavigationHelp, testimonialHelp} from '../_shared/platform-navigation.js';
+import {repeatsLastReply} from '../_shared/haven-repetition.ts';
 import {
   HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson, screenshotPart,
   textValue, validateChatBody, savedStep,
@@ -131,6 +132,8 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     const previousRoute = conversation.session.routing_state;
     const siteSupport = scope === 'support' && conversation.session.service_id === 'site-support';
     const directAbuse = detectHavenAbuse(latest);
+    const lastReply = conversation.session.messages?.findLast((message: HavenMessage) => message.role === 'agent' && !message.isSeedGreeting)?.content || '';
+    const privateContact = requestsPrivateContact(latest,lastReply);
     const awaitingReviewContext = scope !== 'audit'
       && conversation.session.messages?.findLast((message: HavenMessage) => message.role === 'agent')?.content === REVIEW_CONTEXT_QUESTION;
     const reviewIntent = latest.replaceAll('’', "'");
@@ -146,7 +149,10 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     const pendingResource = !awaitingReviewContext && !useLinkedReview
       && ['playbook', 'playbook_preview'].includes(previousRoute?.pendingAction) && previousRoute?.permission === 'asked';
     const supportContext = { teamInquiry: conversation.session.service_id === 'team-inquiry', siteSupport };
-    const supportReply = bookingQuestionReply(latest,platformState)||supportHelpReply(latest, scope, supportContext);
+    const proof = !directAbuse && !privateContact ? testimonialHelp(latest,previousRoute?.testimonialOffered === true ? lastReply : '') : null;
+    const resumeAudit = scope === 'audit' && (conversation.session.messages || []).some((message: HavenMessage) => message.role === 'user');
+    const contactReply = privateContact ? PRIVATE_CONTACT_REPLY + (resumeAudit ? ' We can pick up your review whenever you’re ready.' : '') : null;
+    const supportReply = contactReply || proof?.text || bookingQuestionReply(latest,platformState)||supportHelpReply(latest, scope, supportContext);
     const playbookReply = supportReply ? null : directPlaybookReply(latest, previousRoute, playbookVerified);
     const directHelp = supportReply
       || playbookReply?.text
@@ -233,23 +239,26 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     const flag = directAbuse || rawText.match(/\[\[FLAG:(SEXUAL|PERSONAL_INFO|HARASSMENT|ABUSE)\]\]/)?.[1];
     if (flag) {
       const moderation = await applyAutomaticFlag(supabase, {
-        ...(conversation.review ? { reviewId: conversation.review.id } : { visitorId: conversation.visitor.id }),
+        reviewId: conversation.review?.id, visitorId: conversation.visitor.id,
         sessionId: session.id,
         eventKey: `chat:${conversation.session.id}:${requestId}`, reason: `Haven detected ${flag.toLowerCase().replaceAll('_',' ')} in this conversation.`,
       });
       flagStatus = moderation.flagStatus;
       warned = moderation.changed && flagStatus === 'yellow';
     }
-    const siteSupportReply = siteSupport && !directHelp && !flag;
+    const repeated = Boolean(model && !flag && !askToUseReview && repeatsLastReply(rawText,lastReply));
+    if (repeated) rawText = "I apologize, I seem to be repeating myself. If I'm not helping, please click the Contact Support button below so a human can assist you.";
+    const siteSupportReply = siteSupport && !directHelp && !flag && !repeated;
     const routed = siteSupportReply ? {
       text: /\[\[(?:BOOK_CALL|PLAYBOOK|TIKTOK_CONTENT)\]\]|"nextAction"\s*:\s*"offer_(?:call|playbook)"/i.test(rawText)
         ? 'This chat is for help using the TMH site. For marketing advice or help with a project, open Need Help on the homepage.' : rawText,
       routingState: { problemType: 'support', permission: 'none', pendingAction: null },
-    } : directAbuse || supportReply ? { text: rawText, routingState: session.routing_state || { problemType: 'unknown', permission: 'none' } }
+    } : repeated ? { text: rawText, routingState: { ...(session.routing_state || {}), problemType:session.routing_state?.problemType || 'unknown', permission:'none', pendingAction:null, lastAction:'support_handoff' } }
+      : directAbuse || supportReply ? { text: rawText, routingState: session.routing_state || { problemType: 'unknown', permission: 'none' } }
       : askToUseReview ? { text: rawText, routingState: { ...(session.routing_state || {}), problemType: session.routing_state?.problemType || 'unknown', permission: 'none', pendingAction: null, lastAction: 'clarify' } }
       : playbookReply || resolveHavenRouting(rawText, { scope, ...qualification, bookingStatus, teamInquiry: session.service_id === 'team-inquiry', acceptedCall, playbookVerified, routingState: session.routing_state, serviceId: session.service_id, latestUserText: latest, messages:session.messages||[] });
     rawText = routed.text;
-    const askedQuestion = !siteSupport && !directHelp && !flag && rawText.includes('?') && !/\[\[(?:BOOK_CALL|PLAYBOOK|STEP:AWAITING_PERMISSION)/.test(rawText);
+    const askedQuestion = !siteSupport && !directHelp && !flag && !repeated && rawText.includes('?') && !/\[\[(?:BOOK_CALL|PLAYBOOK|STEP:AWAITING_PERMISSION)/.test(rawText);
     rawText = rawText.replace(/\[\[(?:FLAG:[A-Z_]+|NEED:[A-Z_]+|DIAGNOSTIC_QUESTION)\]\]/g,'').trim();
     if (!rawText.replace(/\[\[[\s\S]*?\]\]/g,'').trim()) throw new Error('empty_filtered_response');
     if (warned) rawText += '\n\nPlease keep this conversation respectful and follow our terms. This is your warning. Another abusive message will restrict your access.';
@@ -258,23 +267,28 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     const stepMatch = [...rawText.matchAll(/\[\[STEP:([A-Z0-9_]+)\]\]/g)].at(-1)?.[1];
     const openPlaybookSection = !flag && flagStatus !== 'red'
       && 'openPlaybookSection' in routed && routed.openPlaybookSection === true;
+    const openTestimonials = !flag && flagStatus !== 'red' && proof?.open === true;
     if (!flag && flagStatus !== 'red') {
       const route = routed.routingState;
       const askingAboutPlaybook = stepMatch === STEPS.AWAITING_PERMISSION && route.permission === 'asked'
         && ['playbook', 'playbook_preview'].includes(route.pendingAction);
       parsed.chips = [...new Set([
-        ...(askingAboutPlaybook ? PLAYBOOK_CHOICES : openPlaybookSection ? ['__SHOP__'] : siteSupportReply ? [] : parsed.chips),
+        ...(repeated ? ['__LOOP_SUPPORT__'] : openTestimonials ? ['__TESTIMONIALS__'] : proof?.chips
+          || (askingAboutPlaybook ? PLAYBOOK_CHOICES : openPlaybookSection ? ['__SHOP__'] : siteSupportReply ? [] : parsed.chips)),
         ...(platformNavigationHelp(latest)?.chips || []),
       ])];
     }
     const leadMatch = [...rawText.matchAll(/\[\[LEAD:([A-Z]+)\]\]/g)].at(-1)?.[1];
-    const currentStep = siteSupportReply ? STEPS.CUSTOMER_SUPPORT_OPEN : Object.values(STEPS).includes(stepMatch || '') && stepMatch !== STEPS.GREETING ? stepMatch : promptContext.auditData.currentStep;
-    const leadTemperature = !siteSupport && Object.values(LEADS).includes(leadMatch || '') ? leadMatch : null;
+    const currentStep = siteSupportReply || repeated ? STEPS.CUSTOMER_SUPPORT_OPEN : Object.values(STEPS).includes(stepMatch || '') && stepMatch !== STEPS.GREETING ? stepMatch : promptContext.auditData.currentStep;
+    const leadTemperature = !siteSupport && !repeated && Object.values(LEADS).includes(leadMatch || '') ? leadMatch : null;
     parsed.text=parsed.text.replace(/\[\[(?:STEP:[A-Z0-9_]+|LEAD:[A-Z_]+|DECISION:[\s\S]*?|MEMORY:[\s\S]*?)\]\]/g,'').replace(/\s*\u2014\s*/g,'; ').trim();
     if(/info@themarketinghaven\.xyz/i.test(parsed.text))parsed.chips=[...parsed.chips,'__CONTACT_SUPPORT__'];
-    const response = { ok: true, ...parsed, ...(openPlaybookSection ? { openPlaybookSection } : {}), model, currentStep, leadTemperature, flagStatus, sessionId: session.id, routingState: routed.routingState, platformState, providerDiagnostics:diagnostics };
+    const routingState = { ...routed.routingState };
+    if (proof?.chips && !flag) Object.assign(routingState,{testimonialOffered:true});
+    else if (previousRoute?.testimonialOffered) Object.assign(routingState,{testimonialOffered:false});
+    const response = { ok: true, ...parsed, ...(openPlaybookSection ? { openPlaybookSection } : {}), ...(openTestimonials ? { openTestimonials } : {}), model, currentStep, leadTemperature, flagStatus, sessionId: session.id, routingState, platformState, providerDiagnostics:diagnostics };
     const { error: completionError } = await supabase.rpc('finish_haven_turn', {
-      p_session_id: session.id, p_turn_id: requestId, p_attempt_id:activeTurn.attemptId, p_response: { ...response, conversationMemory: captured.memory }, p_question: askedQuestion, p_step: currentStep,
+      p_session_id: session.id, p_turn_id: requestId, p_attempt_id:activeTurn.attemptId, p_response: { ...response, conversationMemory: repeated ? session.conversation_memory : captured.memory }, p_question: askedQuestion, p_step: currentStep,
     });
     if (completionError) throw new HavenRequestError('Could not save the conversation. Please try again.', 500);
     activeTurn = null;

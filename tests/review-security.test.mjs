@@ -48,20 +48,20 @@ function database({ present = true, failTable, rpcError, uploadError } = {}) {
 
 function load(name, db, options = {}) {
   let handler;
-  const env = { SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-test', HCAPTCHA_SECRET: 'captcha-test', ...options.env };
+  const env = { SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'service-test', CLOUDFLARE_TURNSTILE_SECRET_KEY: 'captcha-test', CLOUDFLARE_TURNSTILE_HOSTNAMES:'localhost', ...options.env };
   const code=buildSync({entryPoints:[new URL('../supabase/functions/'+name+'/index.ts',import.meta.url).pathname.replace(/^\/(\w:)/,'$1')],bundle:true,write:false,format:'cjs',platform:'node',external:['https://*'],logLevel:'silent'}).outputFiles[0].text;
   vm.runInNewContext(code,{
     require: specifier=>specifier.includes('server.ts')?{serve:fn=>{handler=fn;}}:{createClient:()=>withSecurityRpc(db.client)},
     Deno:{serve:fn=>{handler=fn;},env:{get:key=>env[key]}},Response,Request,Headers,TextEncoder,TextDecoder,Uint8Array,
     crypto:webcrypto,URL,URLSearchParams,AbortSignal,atob,
-    fetch:options.fetch||(async()=>new Response(JSON.stringify({success:true}))),
+    fetch:options.fetch||(async()=>Response.json({success:true,action:'brand_review',hostname:'localhost'})),
     console:{log(){},warn(){},error(){}},
   });
   return handler;
 }
 
 const syncPayload = () => ({ ...credentials, snapshotAt, messages: [{ id: 'one', role: 'user', content: 'Help me understand my review.' }], clickedBookingLink: true });
-const creationPayload = () => ({ id: reviewId, sessionId, accessToken, fullName: 'Owner', brandName: 'Example Brand', email: 'owner@example.com', whatsapp: '+2348012345678', platformType: 'website', websiteUrl: 'https://example.com', agreedToTerms: true, hcaptchaToken: 'solved-captcha' });
+const creationPayload = () => ({ id: reviewId, sessionId, accessToken, fullName: 'Owner', brandName: 'Example Brand', email: 'owner@example.com', whatsapp: '+2348012345678', platformType: 'website', websiteUrl: 'https://example.com', agreedToTerms: true, turnstileToken: 'solved-captcha' });
 
 test('social review rejects disguised and truncated image content before CAPTCHA, database writes or upload',async()=>{
   for(const screenshotBase64 of ['data:image/png;base64,PHN2Zy8+','data:image/png;base64,iVBORw0KGgo=','data:image/png;base64,YR==']){
@@ -122,10 +122,10 @@ test('sync rejects invalid timestamp, oversized payloads and methods', async () 
 test('creation validates CAPTCHA on the server and atomically creates review, session and hashed capability', async () => {
   const db = database({ present: false }); let captchaCalls = 0;
   const handler = load('create-brand-review', db, { fetch: async (url, options) => {
-    captchaCalls++; assert.equal(url, 'https://api.hcaptcha.com/siteverify');
+    captchaCalls++; assert.equal(url, 'https://challenges.cloudflare.com/turnstile/v0/siteverify');
     assert.equal(options.body.get('secret'), 'captcha-test');
     assert.equal(options.body.get('response'), 'solved-captcha');
-    return new Response(JSON.stringify({ success: true }));
+    return Response.json({ success: true, action:'brand_review', hostname:'localhost' });
   } });
   const response = await handler(request(creationPayload()));
   assert.equal(response.status, 200);
@@ -137,7 +137,7 @@ test('creation validates CAPTCHA on the server and atomically creates review, se
 });
 
 test('failed or missing CAPTCHA and invalid required fields never create a review', async () => {
-  for (const [patch, captchaSuccess] of [[{}, false], [{ hcaptchaToken: '' }, true], [{ agreedToTerms: false }, true], [{ email: 'invalid' }, true]]) {
+  for (const [patch, captchaSuccess] of [[{}, false], [{ turnstileToken: '' }, true], [{ agreedToTerms: false }, true], [{ email: 'invalid' }, true]]) {
     const db = database({ present: false });
     const handler = load('create-brand-review', db, { fetch: async () => new Response(JSON.stringify({ success: captchaSuccess })) });
     assert.ok((await handler(request({ ...creationPayload(), ...patch }))).status >= 400);
@@ -156,9 +156,9 @@ test('failed creation transaction returns failure; no screenshot is uploaded and
 
 test('response-lost creation retry uses the same capability and never consumes CAPTCHA or inserts twice', async () => {
   const db = database({ present: false }); let captchaCalls = 0;
-  const handler = load('create-brand-review', db, { fetch: async () => { captchaCalls++; return new Response(JSON.stringify({ success: true })); } });
+  const handler = load('create-brand-review', db, { fetch: async () => { captchaCalls++; return Response.json({success:true,action:'brand_review',hostname:'localhost'}); } });
   assert.equal((await handler(request(creationPayload()))).status, 200);
-  assert.equal((await handler(request({ ...creationPayload(), hcaptchaToken: '' }))).status, 200);
+  assert.equal((await handler(request({ ...creationPayload(), turnstileToken: '' }))).status, 200);
   assert.equal(db.calls.length, 1); assert.equal(captchaCalls, 1);
   assert.equal((await handler(request({ ...creationPayload(), accessToken: 'b'.repeat(64) }))).status, 403);
   assert.equal((await handler(request({ ...creationPayload(), email: 'different@example.com' }))).status, 409);
@@ -170,7 +170,7 @@ test('screenshot upload failure is recoverable with same saved credentials and p
   const handler = load('create-brand-review', db);
   const payload = { ...creationPayload(), platformType:'social', websiteUrl:null, screenshotBase64: PNG_DATA_URL };
   assert.equal((await handler(request(payload))).status, 500);
-  assert.equal((await handler(request({ ...payload, hcaptchaToken: '' }))).status, 200);
+  assert.equal((await handler(request({ ...payload, turnstileToken: '' }))).status, 200);
   assert.equal(db.calls.length, 1); assert.equal(db.uploads.length, 2);
   assert.equal(db.uploads[0].path, db.uploads[1].path);
   assert.equal(db.uploads[1].options.upsert, true);

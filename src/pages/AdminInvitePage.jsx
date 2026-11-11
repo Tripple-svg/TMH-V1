@@ -3,6 +3,7 @@ import { adminSupabase, initialAdminAuthLink } from '../lib/adminAuth';
 import { adminLinkError, saveAdminPassword, verifiedPasswordAdmin } from '../lib/adminPassword';
 import {readAdminMfa} from '../lib/adminMfa';
 import AdminMfaChallenge from '../components/admin/AdminMfaChallenge';
+import { clearAdminLockout } from '../lib/adminLockout';
 
 export default function AdminInvitePage() {
   const [ready, setReady] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState(false);
@@ -27,6 +28,7 @@ export default function AdminInvitePage() {
     setBusy(true); setError('');
     try {
       await saveAdminPassword(adminSupabase.auth, { password, confirmation, currentPassword, requireCurrentPassword: changing });
+      clearAdminLockout();
       setPassword(''); setConfirmation(''); setCurrentPassword(''); setSaved(true);
     } catch (failure) {
       setError(failure?.name === 'AdminPasswordError' ? failure.message : 'The password could not be saved. Please try again shortly.');

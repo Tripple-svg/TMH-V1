@@ -5,6 +5,7 @@ import { webcrypto } from 'node:crypto';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
 import { reviewScreenshotError, reviewScreenshotFileError } from '../src/lib/reviewScreenshot.js';
+import { formatCountdown } from '../src/lib/reviewCooldown.js';
 
 const REVIEW_ID = '18db594d-00f2-45b8-8039-3c67af2575e0';
 const SESSION_ID = '70f66ca0-dbef-4314-b4b4-bec51ee341ee';
@@ -97,7 +98,12 @@ function reviewModal(onSubmit, saved = new Map()) {
   const ui = component(read('src/components/modals/BrandReviewModal.jsx'), {
     props: { isOpen: true, onClose() { closed++; }, onSubmit },
     requires: {
-      '@hcaptcha/react-hcaptcha': { default: 'captcha', __esModule: true },
+      '../TurnstileWidget': { default: 'captcha', __esModule: true },
+      '../../lib/reviewCooldown': {
+        readReviewCooldown:()=>null, formatCountdown,
+        saveReviewCooldown:result=>({blocked:result.code==='review_blocked',until:Date.now()+(result.retryAfter||600)*1000}),
+        REVIEW_BLOCKED_MESSAGE:'You have reached the maximum number of attempts. Please contact support.',
+      },
       '../haven/utils/reviewPersistence': {
         DEFAULT_FORM_DATA: { ...fixture, fullName: '' }, loadReviewFormData: () => ({ ...fixture }), loadReviewFormStep: () => 1,
         saveReviewFormData() {}, saveReviewFormStep() {}, clearReviewFormData() { cleared++; },
@@ -124,7 +130,7 @@ function reviewModal(onSubmit, saved = new Map()) {
   }
   function verify(token) {
     const captcha = ui.render().find((node) => node.type === 'captcha');
-    captcha.props.ref.current = { resetCaptcha() { resets++; } };
+    captcha.props.ref.current = { reset() { resets++; } };
     captcha.props.onVerify(token);
   }
   const submit = () => ui.render().find((node) => node.type === 'button' && /Start Free Brand Review|Saving…/.test(textContent(node)));
@@ -140,28 +146,28 @@ test('creation sends CAPTCHA and screenshot only to server, with a bounded reque
     requestBody = JSON.parse(options.body);
     return Response.json({ ok: true, reviewId: requestBody.id, sessionId: requestBody.sessionId });
   }, saved, { timeout(ms) { deadline = ms; return AbortSignal.timeout(ms); } });
-  const result = await create({ id: REVIEW_ID, ...fixture, hcaptchaToken: 'single-use', screenshotBase64: IMAGE });
+  const result = await create({ id: REVIEW_ID, ...fixture, turnstileToken: 'single-use', screenshotBase64: IMAGE });
   assert.equal(result.success, true); assert.equal(result.reviewId, REVIEW_ID);
   assert.match(result.accessToken, /^[a-f\d]{64}$/); assert.equal(result.accessToken, requestBody.accessToken);
-  assert.equal(requestBody.hcaptchaToken, 'single-use'); assert.equal(requestBody.screenshotBase64, IMAGE);
+  assert.equal(requestBody.turnstileToken, 'single-use'); assert.equal(requestBody.screenshotBase64, IMAGE);
   assert.equal(deadline, 30000); assert.equal(saved.size, 0);
 });
 
 test('lost-response and reload retry reuse the same review/session/token rather than creating a second record', async () => {
   const saved = new Map(), attempts = [];
   const first = service(async (_url, options) => { attempts.push(JSON.parse(options.body)); throw new Error('Response lost after server commit'); }, saved);
-  assert.equal((await first({ id: REVIEW_ID, ...fixture, hcaptchaToken: 'first', screenshotBase64: ORIGINAL_IMAGE, screenshotFileName: 'original.png' })).success, false);
+  assert.equal((await first({ id: REVIEW_ID, ...fixture, turnstileToken: 'first', screenshotBase64: ORIGINAL_IMAGE, screenshotFileName: 'original.png' })).success, false);
   assert.equal(saved.size, 1);
-  assert.ok(![...saved.values()][0].includes('hcaptchaToken'));
+  assert.ok(![...saved.values()][0].includes('turnstileToken'));
   const retry = service(async (_url, options) => {
     const body = JSON.parse(options.body); attempts.push(body);
     return Response.json({ ok: true, reviewId: body.id, sessionId: body.sessionId });
   }, saved);
-  const result = await retry({ id: REVIEW_ID, ...fixture, hcaptchaToken: 'fresh' });
+  const result = await retry({ id: REVIEW_ID, ...fixture, turnstileToken: 'fresh' });
   assert.equal(result.success, true);
   for (const key of ['id', 'sessionId', 'accessToken']) assert.equal(attempts[0][key], attempts[1][key]);
   assert.equal(attempts[1].screenshotBase64, ORIGINAL_IMAGE); assert.equal(attempts[1].screenshotFileName, 'original.png');
-  assert.equal(attempts[1].hcaptchaToken, 'fresh'); assert.equal(saved.size, 0);
+  assert.equal(attempts[1].turnstileToken, 'fresh'); assert.equal(saved.size, 0);
 });
 
 test('screenshot quota failure still preserves small credentials for a reload retry with the original image', async () => {
@@ -193,18 +199,18 @@ test('retry refuses changed details and still accepts a fresh CAPTCHA for the un
     if (bodies.length === 1) throw new Error('Lost response');
     return Response.json({ ok: true, reviewId: body.id, sessionId: body.sessionId });
   }, saved);
-  const original = { id: REVIEW_ID, ...fixture, screenshotBase64: ORIGINAL_IMAGE, screenshotFileName: 'original.png', hcaptchaToken: 'first' };
+  const original = { id: REVIEW_ID, ...fixture, screenshotBase64: ORIGINAL_IMAGE, screenshotFileName: 'original.png', turnstileToken: 'first' };
   await create(original);
-  const result = await create({ ...original, fullName: 'Edited Name', email: 'edited@example.com', screenshotBase64: EDITED_IMAGE, hcaptchaToken: 'fresh' });
+  const result = await create({ ...original, fullName: 'Edited Name', email: 'edited@example.com', screenshotBase64: EDITED_IMAGE, turnstileToken: 'fresh' });
   assert.equal(result.success, false); assert.equal(result.code,'pending_submission_changed'); assert.equal(bodies.length,1);
-  const retryResult = await create({ ...original, hcaptchaToken:'fresh' });
+  const retryResult = await create({ ...original, turnstileToken:'fresh' });
   assert.equal(retryResult.success,true);
   for (const field of ['fullName', 'email', 'screenshotBase64', 'screenshotFileName']) {
     assert.equal(bodies[1][field], original[field]);
     assert.equal(retryResult.submission[field], original[field]);
   }
-  assert.equal(bodies[1].hcaptchaToken, 'fresh');
-  assert.equal(retryResult.submission.hcaptchaToken, undefined);
+  assert.equal(bodies[1].turnstileToken, 'fresh');
+  assert.equal(retryResult.submission.turnstileToken, undefined);
 });
 
 test('HTTP errors, malformed replies, mismatched IDs and timeout never become a saved review', async () => {
@@ -233,7 +239,7 @@ test('modal awaits deferred save, blocks close and double submit, and retains sc
   pending.find((node) => node.props['aria-label'] === 'Close').props.onClick();
   assert.equal(ui.closed, 0);
   assert.ok(pending.some((node) => node.type === 'img' && node.props.src === submitted.screenshotBase64));
-  assert.equal(submitted.fullName, fixture.fullName); assert.equal(submitted.hcaptchaToken, 'captcha-first');
+  assert.equal(submitted.fullName, fixture.fullName); assert.equal(submitted.turnstileToken, 'captcha-first');
   finish({ success: true }); await saving;
   assert.equal(ui.cleared, 1); assert.ok(!ui.render().some((node) => node.type === 'img'));
 });
@@ -244,19 +250,41 @@ test('failed save preserves the form/image, shows the exact alert, resets CAPTCH
   await ui.ready(); await ui.submit().props.onClick();
   const failed = ui.render();
   assert.equal(ui.closed, 0); assert.equal(ui.cleared, 0); assert.equal(ui.resets, 1);
-  assert.equal(textContent(failed.find((node) => node.props.role === 'alert')), SAVE_ERROR+' Contact support');
-  assert.ok(failed.some(node=>node.type==='a'&&node.props.href==='/support?issue=review_access'));
+  assert.equal(textContent(failed.find((node) => node.props.role === 'alert')), SAVE_ERROR);
+  assert.equal(failed.some(node=>node.type==='a'&&node.props.href==='/support?issue=review_access'),false);
   assert.ok(failed.some((node) => node.type === 'img' && node.props.src === attempts[0].screenshotBase64));
   ui.verify('captcha-retry'); await ui.submit().props.onClick();
   assert.equal(attempts[1].id, attempts[0].id); assert.equal(attempts[1].screenshotBase64, attempts[0].screenshotBase64);
-  assert.equal(attempts[1].hcaptchaToken, 'captcha-retry'); assert.equal(ui.cleared, 1);
+  assert.equal(attempts[1].turnstileToken, 'captcha-retry'); assert.equal(ui.cleared, 1);
 });
 
 test('a rejected submit promise keeps the draft and reports failure instead of resetting', async () => {
   const ui = reviewModal(async () => { throw new Error('Connection failed'); });
   await ui.ready(); await ui.submit().props.onClick();
   assert.equal(ui.cleared, 0); assert.equal(ui.closed, 0);
-  assert.equal(textContent(ui.render().find((node) => node.props.role === 'alert')), SAVE_ERROR+' Contact support');
+  assert.equal(textContent(ui.render().find((node) => node.props.role === 'alert')), SAVE_ERROR);
+});
+
+test('review cooldown disables both submission and repeat invocation while retaining the form', async () => {
+  let requests=0;
+  const ui=reviewModal(async()=>{requests++;return {success:false,code:'review_cooldown',retryAfter:600};});
+  await ui.ready();
+  await ui.submit().props.onClick();
+  assert.equal(ui.submit().props.disabled,true);
+  assert.match(textContent(ui.render()),/10:00/);
+  await ui.submit().props.onClick();
+  assert.equal(requests,1);
+  assert.equal(ui.closed,0);
+});
+
+test('a permanent review block replaces the form with the Support handoff', async () => {
+  const ui=reviewModal(async()=>({success:false,code:'review_blocked'}));
+  await ui.ready();
+  await ui.submit().props.onClick();
+  const tree=ui.render();
+  assert.match(textContent(tree),/maximum number of attempts/);
+  assert.ok(tree.some(node=>node.type==='a'&&node.props.href==='/support?issue=rate_limit'));
+  assert.equal(tree.some(node=>node.type==='fieldset'),false);
 });
 
 test('a reloaded pending modal restores the original screenshot and reuses its submission ID', async () => {
@@ -318,9 +346,9 @@ test('App keeps the form open and never opens a ghost drawer after a failed save
 test('App waits for a saved review, forwards CAPTCHA and opens the drawer only with the returned capability', async () => {
   let finish, submitted;
   const ui = app((payload) => { submitted = payload; return new Promise((resolve) => { finish = resolve; }); });
-  const pending = ui.getModal().props.onSubmit({ id: REVIEW_ID, ...fixture, hcaptchaToken: 'captcha-server-only' });
+  const pending = ui.getModal().props.onSubmit({ id: REVIEW_ID, ...fixture, turnstileToken: 'captcha-server-only' });
   assert.equal(ui.getModal().props.isOpen, true); assert.equal(ui.opened.length, 0);
-  assert.equal(submitted.hcaptchaToken, 'captcha-server-only');
+  assert.equal(submitted.turnstileToken, 'captcha-server-only');
   finish({ success: true, reviewId: REVIEW_ID, sessionId: SESSION_ID, accessToken: ACCESS_TOKEN });
   assert.equal((await pending).success, true); assert.equal(ui.getModal().props.isOpen, false);
   ui.timers.forEach((callback) => callback());
@@ -347,11 +375,11 @@ test('App opens the saved original profile after retry, including its original e
     return Response.json({ ok: true, reviewId: body.id, sessionId: body.sessionId });
   });
   const ui = app(create);
-  const payload = { id: REVIEW_ID, ...fixture, screenshotBase64: ORIGINAL_IMAGE, screenshotFileName: 'original.png', hcaptchaToken: 'first' };
+  const payload = { id: REVIEW_ID, ...fixture, screenshotBase64: ORIGINAL_IMAGE, screenshotFileName: 'original.png', turnstileToken: 'first' };
   assert.equal((await ui.getModal().props.onSubmit(payload)).success, false);
-  assert.equal((await ui.getModal().props.onSubmit({ ...payload, fullName: 'Edited', email: 'edited@example.com', hcaptchaToken: 'fresh' })).success, false);
+  assert.equal((await ui.getModal().props.onSubmit({ ...payload, fullName: 'Edited', email: 'edited@example.com', turnstileToken: 'fresh' })).success, false);
   assert.equal(ui.opened.length,0);
-  assert.equal((await ui.getModal().props.onSubmit({ ...payload, hcaptchaToken:'fresh' })).success,true);
+  assert.equal((await ui.getModal().props.onSubmit({ ...payload, turnstileToken:'fresh' })).success,true);
   ui.timers.forEach((callback) => callback());
   const profile = ui.opened[0][1].profileData;
   assert.equal(profile.name, fixture.fullName); assert.equal(profile.email, fixture.email);

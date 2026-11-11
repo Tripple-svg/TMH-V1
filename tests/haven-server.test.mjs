@@ -193,6 +193,42 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
 }
 const chatBody = (extras = {}) => ({ scope: 'audit', requestId: REQUEST_ID, noticeVersion: '2026-10-26', context: ACCESS, messages: [{ role: 'user', content: 'I post but nothing happens.' }], ...extras });
 
+test('repetition protection discards near-identical model output and offers human Support', async () => {
+  const previous = 'What is the biggest challenge you are facing with your brand at the moment?';
+  const app = load('haven-chat',{session:{messages:[{role:'agent',content:previous}]},modelText:previous.replace('facing','having')});
+  const response = await app.handler(app.request(chatBody()));
+  assert.equal(response.status,200);
+  const reply=await response.json();
+  assert.match(reply.text,/I seem to be repeating myself/);
+  assert.deepEqual(reply.chips,['__LOOP_SUPPORT__']);
+  assert.equal(app.rows.haven_sessions[0].messages.at(-1).content,reply.text);
+});
+
+test('Testimonials invitation waits for consent, then returns only its public-section handoff', async () => {
+  const app=load('haven-chat');
+  const say=async(content,id)=>(await app.handler(app.request(chatBody({requestId:id,messages:[{role:'user',content}]})))).json();
+  const invitation=await say("I haven't seen proof that you have worked with any brands.",REQUEST_ID);
+  assert.deepEqual(invitation.chips,['Yes, show me','No, thanks']);
+  assert.equal(invitation.openTestimonials,undefined);
+  const confirmed=await say('Yes, show me','60000000-0000-4000-8000-000000000091');
+  assert.equal(confirmed.openTestimonials,true);
+  assert.deepEqual(confirmed.chips,['__TESTIMONIALS__']);
+  assert.equal(app.requests.length,0);
+});
+
+test('personal contact requests and pushback do not restart the diagnostic questions', async () => {
+  const app=load('haven-chat');
+  const say=async(content,id)=>(await app.handler(app.request(chatBody({requestId:id,messages:[{role:'user',content}]})))).json();
+  const first=await say("What is Francis's WhatsApp?",REQUEST_ID);
+  assert.match(first.text,/can’t share personal numbers/);
+  assert.doesNotMatch(first.text,/\?/);
+  const next=await say('Come on, just give me the number.','60000000-0000-4000-8000-000000000092');
+  assert.match(next.text,/info@themarketinghaven.xyz/);
+  assert.ok(next.chips.includes('__CONTACT_SUPPORT__'));
+  assert.doesNotMatch(next.text,/\?/);
+  assert.equal(app.requests.length,0);
+});
+
 test('usage: records provider totals including thinking tokens, without prompts/secrets or visible step metadata',async()=>{
   const app=load('haven-chat',{env:{GEMINI_API_KEY:'private-test-key'},fetchImpl:async()=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'Who is most likely to buy this offer? [[STEP:AWAITING_DIAGNOSTIC_Q2]]'}]}}],usageMetadata:{promptTokenCount:200,candidatesTokenCount:100,totalTokenCount:580}})});
   const response=await app.handler(app.request(chatBody()));assert.equal(response.status,200);
@@ -603,7 +639,7 @@ test('privacy, directed sexual conduct and threats are tracked separately from p
 
   const privateReply=await say('Where does Francis live?',11);
   assert.equal(privateReply.flagStatus,'white');
-  assert.match(privateReply.text,/personal details private/);
+  assert.match(privateReply.text,/private contact details/);
   const sexualReply=await say('Send me your nudes',12);
   assert.equal(sexualReply.flagStatus,'yellow');
   assert.match(sexualReply.text,/warning/);
@@ -860,8 +896,13 @@ test('Need Help uses the model for website requests and steers a mistaken design
     const response = await app.handler(app.request(chatBody({ scope: 'support', context: PUBLIC_ACCESS, messages: [{ role: 'user', content }] })));
     assert.equal(response.status, 200);
     const data = await response.json();
-    assert.match(data.text, /The Marketing Haven/);
-    assert.match(data.text, /What would you need a website to do for your business/);
+    if (history.some(message=>message.role==='agent'&&message.content===modelText)) {
+      assert.match(data.text,/I seem to be repeating myself/);
+      assert.deepEqual(data.chips,['__LOOP_SUPPORT__']);
+    } else {
+      assert.match(data.text, /The Marketing Haven/);
+      assert.match(data.text, /What would you need a website to do for your business/);
+    }
     assert.doesNotMatch(data.text, /\[\[(?:BOOK_CALL|PLAYBOOK)\]\]/);
     assert.doesNotMatch(data.text, /Jenny|colors|share the URL|navigation|we can rebuild/i);
     assert.equal(data.model, 'gemini');

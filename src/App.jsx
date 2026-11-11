@@ -138,7 +138,7 @@ function AppInner() {
   const handleReviewSubmit = async (payload) => {
     const tracking = trackingRef.current || {};
 
-    const { success, reviewId, sessionId, accessToken, submission, error: submissionError, code: submissionCode } = await createBrandReview({
+    const { success, reviewId, sessionId, accessToken, submission, error: submissionError, code: submissionCode, retryAfter } = await createBrandReview({
       id: payload.id,
       fullName: payload.fullName,
       brandName: payload.brandName,
@@ -153,7 +153,7 @@ function AppInner() {
       screenshotFileName: payload.screenshotFileName,
       agreedToTerms: payload.agreedToTerms,
       agreedAt: payload.agreedAt,
-      hcaptchaToken: payload.hcaptchaToken,
+      turnstileToken: payload.turnstileToken,
       utmSource: tracking.utmSource || null,
       utmCampaign: tracking.utmCampaign || null,
       referrerUrl: tracking.referrerUrl || null,
@@ -166,7 +166,7 @@ function AppInner() {
     });
 
     if (!success || !reviewId || !sessionId || !/^[a-f\d]{64}$/i.test(accessToken || '')) {
-      return { success: false, error: submissionError?.message, code: submissionCode };
+      return { success: false, error: submissionError?.message, code: submissionCode, retryAfter };
     }
     try {
       localStorage.setItem(REVIEW_ID_KEY, reviewId);
@@ -228,13 +228,9 @@ function AppInner() {
           <AboutSection />
         </section>
         <ServiceGrid />
-        <section id="free-class">
-          <MasterclassBanner />
-        </section>
+        <MasterclassBanner />
         <ShopSection />
-        <section id="testimonials">
-          <TestimonialsSection />
-        </section>
+        <TestimonialsSection />
       </main>
 
       <Footer

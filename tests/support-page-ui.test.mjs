@@ -19,10 +19,11 @@ function supportPage({ issue = '', invoke = async () => ({ data: { ok: true, ref
     require(name) {
       if (name === 'react') return react;
       if (name === 'react-router-dom') return { Link: 'Link',useLocation:()=>({search:issue?'?issue='+encodeURIComponent(issue):''}) };
+      if (name === 'framer-motion') return { motion:{main:'main'}, useReducedMotion:()=>false };
       if(name.includes('HavenContext'))return {useHaven:()=>({openDrawer:scope=>opened.push(scope)})};
       if(name.includes('supportPrefill'))return {supportPrefill};
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => key });
-      if (name.includes('react-hcaptcha')) return { __esModule: true, default: 'HCaptcha' };
+      if (name.includes('TurnstileWidget')) return { __esModule: true, default: 'TurnstileWidget' };
       if (name.includes('havenIdentity')) return { getHavenIdentity: () => ({ visitorId: 'visitor', visitorToken: 'private-proof' }) };
       if (name.includes('tmhPublicInfo')) return { TMH_CONTACT: { email: 'info@themarketinghaven.xyz' } };
       if (name.includes('supabase')) return { supabase: { functions: { invoke(name, options) { calls.push({ name, body: options.body }); return invoke(name, options); } } } };
@@ -30,14 +31,14 @@ function supportPage({ issue = '', invoke = async () => ({ data: { ok: true, ref
     },
   };
   const source = readFileSync('src/pages/SupportPage.jsx', 'utf8');
-  vm.runInNewContext(transformSync(source, { loader: 'jsx', format: 'cjs', define: { 'import.meta.env.VITE_HCAPTCHA_SITE_KEY': '"fixture-captcha"' } }).code, context);
+  vm.runInNewContext(transformSync(source, { loader: 'jsx', format: 'cjs' }).code, context);
   function render() {
     cursor = 0;
     const nodes = [];
     function walk(node) {
       if (Array.isArray(node)) return node.forEach(walk);
       if (!node || typeof node !== 'object') return;
-      if (node.type === 'HCaptcha') node.props.ref.current = { resetCaptcha() { resets++; } };
+      if (node.type === 'TurnstileWidget') node.props.ref.current = { reset() { resets++; } };
       if(node.type==='h1'&&node.props.ref)node.props.ref.current={focus(){headingFocus++;}};
       nodes.push(node); walk(node.props.children);
     }
@@ -92,7 +93,7 @@ test('support sending remains disabled until consent and CAPTCHA, then submits t
   await tree.find(node => node.type === 'form').props.onSubmit({ preventDefault() {} });
   assert.equal(ui.calls.length, 0);
   tree = ui.render();
-  tree.find(node => node.type === 'HCaptcha').props.onVerify('captcha-token');
+  tree.find(node => node.type === 'TurnstileWidget').props.onVerify('captcha-token');
   assert.equal(submitButton(ui.render()).props.disabled, true);
   tree.find(node => node.type === 'input' && node.props.type === 'checkbox').props.onChange({ target: { checked: true } });
   assert.equal(submitButton(ui.render()).props.disabled, false);
@@ -109,7 +110,7 @@ test('a pending support submission prevents double sends and disables issue card
   const ui = supportPage({ invoke: () => new Promise(done => { resolve = done; }) });
   fill(ui);
   let tree = ui.render();
-  tree.find(node => node.type === 'HCaptcha').props.onVerify('captcha-token');
+  tree.find(node => node.type === 'TurnstileWidget').props.onVerify('captcha-token');
   tree.find(node => node.type === 'input' && node.props.type === 'checkbox').props.onChange({ target: { checked: true } });
   const onSubmit = ui.render().find(node => node.type === 'form').props.onSubmit;
   const pending = onSubmit({ preventDefault() {} });
@@ -128,7 +129,7 @@ test('failed support submission preserves the message and email fallback, requir
   const ui = supportPage({ invoke: async () => ({ data: { ok: false, error: 'Please wait before sending another request.' } }) });
   fill(ui);
   let tree = ui.render();
-  tree.find(node => node.type === 'HCaptcha').props.onVerify('captcha-token');
+  tree.find(node => node.type === 'TurnstileWidget').props.onVerify('captcha-token');
   tree.find(node => node.type === 'input' && node.props.type === 'checkbox').props.onChange({ target: { checked: true } });
   await ui.render().find(node => node.type === 'form').props.onSubmit({ preventDefault() {} });
   tree = ui.render();

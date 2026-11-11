@@ -17,6 +17,7 @@ export default function MasterclassBanner() {
   return (
     <section
       id="free-class"
+      tabIndex={-1}
       className="relative w-full py-16 sm:py-24 px-4 sm:px-6 lg:px-8 bg-[#09090b]"
     >
       <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-[#09090b] to-transparent pointer-events-none" />

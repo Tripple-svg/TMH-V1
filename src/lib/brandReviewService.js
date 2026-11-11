@@ -37,7 +37,7 @@ function creationCredentials(id, payload) {
   // A lost response may hide an already committed review. Retrying its id
   // must use the original details rather than silently creating a new profile.
   const submission = credentials.submission || { ...payload };
-  delete submission.hcaptchaToken;
+  delete submission.turnstileToken;
   delete submission.sessionId;
   delete submission.accessToken;
   submission.email = credentials.email ?? submission.email;
@@ -105,12 +105,14 @@ export async function createBrandReview(payload) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${anonKey}`, apikey: anonKey },
       body: JSON.stringify({
         ...credentials.submission,
-        hcaptchaToken: payload.hcaptchaToken,
+        turnstileToken: payload.turnstileToken,
         sessionId, accessToken,
       }),
       signal: AbortSignal.timeout(CREATION_TIMEOUT_MS),
     });
-    const result = await response.json();
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 429) return { success: false, error: new Error(result.error), code: result.code || 'review_cooldown',
+      retryAfter: result.retryAfter ?? Number(response.headers.get('Retry-After')) };
     if (!response.ok || result?.ok !== true || result.reviewId !== payload.id || result.sessionId !== sessionId) {
       throw new Error('Review was not saved');
     }

@@ -24,7 +24,7 @@ test('scorecard: unreadable content has a clear explanation and continue action 
 });
 test('scorecard: network failure offers retry and continue separately from bad data', () => {
   const html = render({ status: 'failed', retryCount: 0 });
-  assert.match(html, /Retry this source/); assert.match(html, /Continue to Chat/);
+  assert.match(html, /Retry Review/); assert.match(html, /Continue to Chat/);
   assert.match(html, /scoring service did not complete/); assert.doesNotMatch(html, /\/ 100/);
 });
 test('scorecard: genuine low and zero scores are rendered rather than treated as unavailable', () => {
@@ -56,5 +56,13 @@ test('scorecard: ownership recovery keeps correction controls unavailable', () =
   const html = renderToStaticMarkup(React.createElement(Scorecard, {
     preflight: { status: 'failed', error: 'This saved review needs access recovery.' }, onCorrect() {}, onRetry() {}, onProceed() {},
   }));
-  assert.match(html, /access recovery/); assert.doesNotMatch(html, /Wrong website|Review this source|Retry this source/);
+  assert.match(html, /access recovery/); assert.doesNotMatch(html, /Wrong website|Review this source|Retry Review/);
+});
+
+test('scorecard: third failed retry or insufficient evidence leaves Continue to Chat without a retry', () => {
+  for (const preflight of [{status:'failed',retryCount:3},{status:'insufficient_evidence',reason:'boilerplate_only'}]) {
+    const html=render(preflight);
+    assert.match(html,/Continue to Chat/);
+    assert.doesNotMatch(html,/Retry Review/);
+  }
 });

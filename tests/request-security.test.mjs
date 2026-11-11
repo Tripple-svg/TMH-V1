@@ -17,8 +17,8 @@ function endpoint(name,db,send=async()=>Response.json({success:false})){
   let handler;
   const code=buildSync({entryPoints:[`supabase/functions/${name}/index.ts`],bundle:true,write:false,format:'cjs',platform:'node',external:['https://*']}).outputFiles[0].text;
   vm.runInNewContext(code,{require:name=>name.includes('server.ts')?{serve:fn=>{handler=fn;}}:{createClient:()=>db},
-    Deno:{env:{get:name=>({SUPABASE_URL:'https://project.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'private-key',ADMIN_PASSWORD:'correct-secret',HCAPTCHA_SECRET:'captcha',RESEND_API_KEY:'resend'})[name]}},
-    fetch:send,crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,Request,Response,Headers,AbortSignal,URLSearchParams,console:{error(){}}});
+    Deno:{env:{get:name=>({SUPABASE_URL:'https://project.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'private-key',ADMIN_PASSWORD:'correct-secret',CLOUDFLARE_TURNSTILE_SECRET_KEY:'captcha',RESEND_API_KEY:'resend'})[name]}},
+    fetch:send,crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,Request,Response,Headers,AbortSignal,URL,URLSearchParams,console:{error(){}}});
   return body=>handler(new Request('https://project.supabase.co',{method:'POST',headers:{origin:'http://localhost:5173','x-forwarded-for':'192.0.2.5','content-type':'application/json',authorization:'Bearer test-admin-jwt'},body:JSON.stringify(body)}));
 }
 const {requireAdmin}=moduleExports('supabase/functions/_shared/admin-auth.ts');
@@ -45,13 +45,13 @@ test('admin Auth validates the JWT with Auth and requires trusted app_metadata, 
 test('public endpoints: a sixth attempt is rejected despite changing email, before more mail/CAPTCHA/intent writes',async()=>{
   for(const name of ['check-email-exists','capture-booking-lead','create-brand-review','request-data-deletion']){
     let requests=0,insertions=0,providerCalls=0;
-    const db={rpc:async()=>({data:++requests<=5}),from(){
+    const db={rpc:async(name)=>name==='review_attempt_gate'?({data:{allowed:true}}):({data:++requests<=5}),from(){
       const query={select(){return this;},eq(){return this;},ilike(){return this;},limit(){return this;},insert(){insertions++;return this;},
         async maybeSingle(){return{data:null};},then(resolve,reject){return Promise.resolve({data:[],error:null}).then(resolve,reject);}};return query;
     }};
     const handler=endpoint(name,db,async()=>{providerCalls++;return Response.json({success:false});});
     for(let i=0;i<6;i++){
-      const response=await handler({email:`person${i}@example.com`,serviceId:'web',id:'11111111-1111-4111-8111-111111111111',sessionId:'22222222-2222-4222-8222-222222222222',accessToken:'a'.repeat(64),fullName:'Ada',brandName:'Ada Studio',whatsapp:'+2347084232046',agreedToTerms:true,platformType:'none',hcaptchaToken:'fake'});
+      const response=await handler({email:`person${i}@example.com`,serviceId:'web',id:'11111111-1111-4111-8111-111111111111',sessionId:'22222222-2222-4222-8222-222222222222',accessToken:'a'.repeat(64),fullName:'Ada',brandName:'Ada Studio',whatsapp:'+2347084232046',agreedToTerms:true,platformType:'none',turnstileToken:'fake'});
       if(i===5){assert.equal(response.status,429,name);assert.equal(response.headers.get('Retry-After'),'600');}
     }
     assert.equal(requests,6,name);assert.ok(insertions<=5);assert.ok(providerCalls<=5);

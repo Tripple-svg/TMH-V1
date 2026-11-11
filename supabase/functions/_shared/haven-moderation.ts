@@ -71,6 +71,14 @@ const privateLocation = new RegExp(`^(?:please )?where (?:does|is) (?:${teamTarg
 const privateContact = new RegExp(`^(?:please |can you |could you )?(?:what is|what's|tell me|give me|send me|show me|i want|i need)\\b.{0,25}\\b(?:your|${teamTarget})(?:'s)?\\s+(?:home address|private phone|personal phone number|personal email)\\b`, 'i');
 const directedSexual = new RegExp(`^(?:(?:please )?(?:send|show|give) me (?:your|(?:${teamTarget})'s) nudes?\\b|i want to have sex with (?:you|${teamTarget})\\b)`, 'i');
 
+export const PRIVATE_CONTACT_REPLY = 'I can’t share personal numbers or private contact details. The team is at info@themarketinghaven.xyz, or you can use Contact Team Haven below.';
+const namedContact = new RegExp(`\\b(?:${teamTarget})'s\\s+(?:(?:personal|private)\\s+)?(?:whatsapp|phone(?: number)?|number|email|contact details)\\b`, 'i');
+export function requestsPrivateContact(text: string, lastReply: string) {
+  const value = text.toLowerCase().replaceAll('’', "'");
+  return namedContact.test(value)
+    || (lastReply.startsWith(PRIVATE_CONTACT_REPLY) && /\b(?:number|whatsapp|contact|email|give it|tell me|come on)\b/.test(value));
+}
+
 export function detectHavenAbuse(text: string) {
   const value = text.trim().toLowerCase().replaceAll('’', "'");
   if (/^you(?:'re| are)\s+(?:(?:so|an?|absolutely|really)\s+)*(?:stupid|idiot|moron|dumb|fuck\w*|bitch)\b/.test(value)
@@ -81,7 +89,7 @@ export function detectHavenAbuse(text: string) {
   return null;
 }
 export function moderationReply(category: string) {
-  if (category === 'PERSONAL_INFO') return 'I keep the team’s home addresses and personal details private. You can reach TMH at info@themarketinghaven.xyz. What can I help you with?';
+  if (category === 'PERSONAL_INFO') return PRIVATE_CONTACT_REPLY;
   if (category === 'SEXUAL') return 'Let us keep the conversation respectful. What would you like help with in your marketing?';
   return 'Let us keep this respectful. What happened that you want the team to address: the review, a response, or something else?';
 }

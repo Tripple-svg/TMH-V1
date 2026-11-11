@@ -48,7 +48,10 @@ export function parseScoringResult(raw: string, kind: 'website' | 'social', sour
   try {
     const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
     const value = JSON.parse(cleaned);
-    if (['bad_data', 'insufficient_evidence'].includes(value.state)) return { state: 'insufficient_evidence', rubricVersion: RUBRIC_VERSION, reason: kind === 'social' ? 'unreadable_profile' : 'insufficient_text', score: null, breakdown: null, biggestIssue: null, evidence: null };
+    if (['bad_data', 'insufficient_evidence'].includes(value.state)) {
+      const socialReason = ['not_a_profile','profile_missing_context'].includes(value.reason) ? value.reason : 'unreadable_profile';
+      return { state: 'insufficient_evidence', rubricVersion: RUBRIC_VERSION, reason: kind === 'social' ? socialReason : 'insufficient_text', score: null, breakdown: null, biggestIssue: null, evidence: null };
+    }
     if (value.rubricVersion !== RUBRIC_VERSION) return null;
     if (value.state !== 'valid' || !Number.isInteger(value.score) || value.score < 0 || value.score > 100) return null;
     const keys = Object.keys(kind === 'website' ? WEBSITE_RUBRIC : SOCIAL_RUBRIC);
@@ -103,8 +106,16 @@ export function lockedScoring(review: Record<string, any>) {
   };
 }
 
-export function websiteContentReason(summary: string) {
-  if (summary.length < 300 || (summary.match(/[\p{L}][\p{L}'’-]*/gu) || []).length < 45) return 'insufficient_text';
+export function websiteContentReason(summary: string, raw = '') {
+  if (/(?:youtube(?:-nocookie)?\.com\/(?:watch|embed)|youtu\.be\/|vimeo\.com\/|<video\b)/i.test(raw)
+    && summary.split(/\s+/).length < 45) return 'video_first';
+  if (!/\p{L}/u.test(summary)) return 'empty_content';
   if (/privacy|cookie|terms|all rights reserved/i.test(summary) && !hasMeaningfulBusinessText(summary)) return 'boilerplate_only';
+  if (summary.length < 300 || (summary.match(/[\p{L}][\p{L}'’-]*/gu) || []).length < 45) return 'insufficient_text';
   return 'unreadable_content';
+}
+
+export function websiteExcerpt(summary: string) {
+  return summary.replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g,' ')
+    .replace(/\s+/g,' ').replace(/^\s*[#*>_-]+\s*/,'').replaceAll('—', ',').trim().slice(0, 140);
 }

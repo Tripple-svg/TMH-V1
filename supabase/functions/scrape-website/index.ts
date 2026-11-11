@@ -13,7 +13,8 @@ import { verifyReviewAccess, ReviewAccessError } from '../_shared/review-access.
 import { HavenRequestError, responseHeaders, verifyOrigin, readBoundedJson } from '../_shared/haven-request.ts';
 import { SCORING_COPY } from '../_shared/haven-prompts.js';
 import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiText } from '../_shared/haven-model.ts';
-import { normalizeWebsiteUrl, extractWebsiteText, hasMeaningfulBusinessText, websiteContentReason, parseScoringResult, persistScoring, cachedScoring, lockedScoring } from '../_shared/haven-scoring.ts';
+import { normalizeWebsiteUrl, extractWebsiteText, hasMeaningfulBusinessText, websiteContentReason, websiteExcerpt, parseScoringResult, persistScoring, cachedScoring, lockedScoring } from '../_shared/haven-scoring.ts';
+import { scoreFailureCopy } from '../_shared/scoring-copy.js';
 
 const SCORING_PROMPT = scoringInstructions('website');
 
@@ -122,7 +123,8 @@ Deno.serve(observe('scrape-website',async (request,requestId) => {
     if (body.url && normalizeWebsiteUrl(body.url) !== targetUrl) throw new HavenRequestError('The website must match your saved review.');
     if (review.source_locked_at) return json({ ok: true, ...lockedScoring(review), url: targetUrl });
     const cached = body.force === true ? null : cachedScoring(review, 'website');
-    if (cached) return json({ ok: true, ...cached, summary: review.scraped_summary || '', url: targetUrl, cached: true });
+    if (cached) return json({ ok: true, ...cached, summary: review.scraped_summary || '', url: targetUrl, revision: review.scoring_revision || 0, cached: true,
+      ...(cached.state === 'insufficient_evidence' ? { message: scoreFailureCopy(cached.reason), excerpt: websiteExcerpt(review.scraped_summary || '') } : {}) });
     await enforceScoringLimits(supabase, request, key, review.id);
     started = true;
 
@@ -170,10 +172,11 @@ Deno.serve(observe('scrape-website',async (request,requestId) => {
       finally { await budget.settle(); }
     };
     const scoring = hasMeaningfulBusinessText(summary) ? await score(supabase, review.id)
-      : { state: 'insufficient_evidence' as const, rubricVersion: RUBRIC_VERSION, reason: websiteContentReason(summary), score: null, breakdown: null, biggestIssue: null };
+      : { state: 'insufficient_evidence' as const, rubricVersion: RUBRIC_VERSION, reason: websiteContentReason(summary, raw), score: null, breakdown: null, biggestIssue: null };
     if (!scoring) throw new HavenRequestError(SCORING_COPY.failed, 502);
     await persistScoring(supabase, review.id, scoring, summary, review.scoring_revision || 0);
-    return json({ ok: true, ...scoring, url: targetUrl, summary, chars: summary.length, revision: review.scoring_revision || 0 });
+    return json({ ok: true, ...scoring, url: targetUrl, summary, chars: summary.length, revision: review.scoring_revision || 0,
+      ...(scoring.state === 'insufficient_evidence' ? { message: scoreFailureCopy(scoring.reason), excerpt: websiteExcerpt(summary) } : {}) });
   } catch (error) {
     if (error instanceof HavenRequestError && ['ai_paused','ai_daily_budget_exceeded','ai_budget_unavailable'].includes((error as any).code)) {
       (headers as Record<string,string>)['Retry-After']=String(error.retryAfter || 60);

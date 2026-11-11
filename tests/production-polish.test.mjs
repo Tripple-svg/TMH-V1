@@ -23,6 +23,17 @@ test('support prefill accepts the Haven rate-limit category and safe text withou
   assert.equal(supportPrefill('?issue=review_access&message=My%20saved%20review').message,'My saved review');
   assert.equal(supportPrefill('?issue=%3Cscript%3E').category,'other');assert.equal(supportPrefill('?issue=%3Cscript%3E').message,'<script>');
 });
+
+test('after an admin cooldown three credential failures require password recovery without a permanent ban',()=>{
+  const values=new Map(),storage={getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+  clearAdminLockout(storage);
+  for(let i=0;i<5;i++)recordAdminFailure({code:'invalid_credentials'},storage,1000);
+  for(let i=0;i<2;i++)assert.equal(recordAdminFailure({code:'invalid_credentials'},storage,1001+ADMIN_LOCKOUT_MS).resetRequired,false);
+  assert.equal(recordAdminFailure({code:'invalid_credentials'},storage,1001+ADMIN_LOCKOUT_MS).resetRequired,true);
+  assert.equal(readAdminLockout(storage,1001+ADMIN_LOCKOUT_MS).remaining,0);
+  clearAdminLockout(storage);
+  assert.equal(readAdminLockout(storage).resetRequired,false);
+});
 test('CSV redaction removes contact values from notes; SLA and calendar use actual timestamps and Lagos day',()=>{
   assert.equal(redactContact('Call +234 708 423 2046 or owner@example.com'),'Call [redacted phone] or [redacted email]');
   const now=Date.parse('2026-11-03T12:00:00Z'),row={created_at:'2026-11-02T11:00:00Z',status:'new'};

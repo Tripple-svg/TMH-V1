@@ -28,6 +28,8 @@ export async function prepareConversation(supabase: any, scope: string, context:
     if (error?.code === '42501') throw new ReviewAccessError('Chat access denied.', 403);
     throw new HavenRequestError('Could not save your chat. Please try again.', 500);
   }
+  // This identity comes from the verified visitor capability, across all chat scopes.
+  if (data.visitor.flag_status === 'red') return { session: data.session, visitor: data.visitor, review: verified?.review || null, flagStatus: 'red' };
   let review = verified?.review || null;
   if (!review && data.visitor.review_id) {
     // A previously verified server-side link may enforce restrictions even if a
@@ -36,7 +38,7 @@ export async function prepareConversation(supabase: any, scope: string, context:
     if (linkedError) throw new HavenRequestError('Could not verify chat access.', 500);
     review = linked;
   }
-  const flagStatus = review?.flag_status === 'red' || data.visitor.flag_status === 'red' ? 'red'
+  const flagStatus = review?.flag_status === 'red' ? 'red'
     : review?.flag_status === 'yellow' || data.visitor.flag_status === 'yellow' ? 'yellow' : 'white';
   return { session: data.session, visitor: data.visitor, review, flagStatus };
 }

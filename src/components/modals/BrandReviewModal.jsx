@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import HCaptcha from '@hcaptcha/react-hcaptcha';
+import TurnstileWidget from '../TurnstileWidget';
 import { reviewScreenshotError, reviewScreenshotFileError } from '../../lib/reviewScreenshot';
+import { clearReviewCooldown, formatCountdown, readReviewCooldown, REVIEW_BLOCKED_MESSAGE, saveReviewCooldown } from '../../lib/reviewCooldown';
 import {
   ArrowRight, Building2, Camera, CheckCircle2, ChevronDown, Globe, Play,
   Share2, Upload, Video, X,
@@ -15,9 +16,18 @@ import {
   DEFAULT_FORM_DATA,
 } from '../haven/utils/reviewPersistence';
 
-const HCAPTCHA_SITE_KEY = '2506b35e-f496-40aa-a6e4-32cc1eb84e4c';
 const SUBMISSION_ID_KEY = 'tmh_review_submission_id_v1';
 const SAVE_ERROR = 'Something went wrong saving your review. Please try again.';
+
+function checkReviewAccess(body, signal) {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  return fetch(`${url}/functions/v1/check-email-exists`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, apikey: key },
+    body: JSON.stringify(body), signal,
+  });
+}
 
 const goals = [
   'More Leads & Enquiries',
@@ -136,11 +146,52 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
   const [captchaExpired, setCaptchaExpired] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
+  const [limit, setLimit] = useState(readReviewCooldown);
+  const [now, setNow] = useState(Date.now);
+  const remaining = Math.max(0, Math.ceil(((limit?.until || 0) - now) / 1000));
+  const countingDown = remaining > 0;
+  const blocked = limit?.blocked === true;
+  const rateLimited = blocked || remaining > 0;
   const fileInputRef = useRef(null);
   const captchaRef = useRef(null);
   const submittingRef = useRef(false);
   const submissionIdRef = useRef(null);
   const pendingImageRequiredRef = useRef(false);
+  const emailCheckRef = useRef(false);
+
+  useEffect(() => {
+    const update = () => {
+      setLimit(readReviewCooldown());
+      setNow(Date.now());
+    };
+    window.addEventListener('storage', update);
+    return () => window.removeEventListener('storage', update);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || !countingDown) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [isOpen, countingDown]);
+
+  useEffect(() => {
+    if (!isOpen || !limit) return;
+    const controller = new AbortController();
+    void checkReviewAccess({ action: 'review-limit-status' }, controller.signal).then(async response => {
+      if (!response.ok) return;
+      const result = await response.json();
+      if (!controller.signal.aborted && result.allowed === true) {
+        clearReviewCooldown();
+        setLimit(null);
+      }
+    }).catch(() => { /* A failed check leaves the previous lock in place. */ });
+    return () => controller.abort();
+  }, [isOpen, limit]);
+
+  const applyLimit = (result) => {
+    setLimit(saveReviewCooldown(result));
+    setNow(Date.now());
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -205,7 +256,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
     try {
       sessionStorage.removeItem(SUBMISSION_ID_KEY);
     } catch { /* Browser storage is optional. */ }
-    captchaRef.current?.resetCaptcha();
+    captchaRef.current?.reset();
     clearReviewFormData();
   };
 
@@ -253,31 +304,27 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
     }
     const screenshotError = reviewScreenshotError(screenshotBase64);
     if (screenshotError) next.screenshot = screenshotError;
-    if (!captchaToken) next.captcha = 'Please complete the verification check above.';
+    if (!captchaToken) next.captcha = 'Please wait for the security check to finish.';
     return next;
   };
 
   const continueToPlatform = async () => {
+    if (rateLimited || readReviewCooldown() || emailCheckRef.current) return;
     const next = validateStepOne();
     setErrors(next);
     if (Object.keys(next).length || checkingEmail) return;
 
+    emailCheckRef.current = true;
     setCheckingEmail(true);
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const response = await fetch(`${supabaseUrl}/functions/v1/check-email-exists`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${supabaseAnonKey}`,
-          apikey: supabaseAnonKey,
-        },
-        body: JSON.stringify({ email: formData.email.trim() }),
-      });
-
+      const response = await checkReviewAccess({ email: formData.email.trim() });
+      if (response.status === 429) {
+        const result = await response.json().catch(() => ({}));
+        applyLimit({ ...result, retryAfter: result.retryAfter ?? Number(response.headers.get('Retry-After')) });
+        return;
+      }
       if (!response.ok) {
-        setErrors({email:response.status===429?'Too many email checks. Please wait 10 minutes, then try again.':'We could not check your email. Please try again shortly.'});
+        setErrors({email:'We could not check your email. Please try again shortly.'});
         return;
       }
 
@@ -293,6 +340,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
       setErrors({email:'We could not check your email. Check your connection and try again.'});
       return;
     } finally {
+      emailCheckRef.current = false;
       setCheckingEmail(false);
     }
 
@@ -338,7 +386,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
   };
 
   const submit = async () => {
-    if (submittingRef.current) return;
+    if (submittingRef.current || rateLimited || readReviewCooldown()) return;
 
     const firstStepErrors = validateStepOne();
     const next = { ...firstStepErrors, ...validateStepTwo() };
@@ -366,11 +414,17 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
         id: submissionIdRef.current,
         agreedToTerms,
         agreedAt: new Date().toISOString(),
-        hcaptchaToken: captchaToken,
+        turnstileToken: captchaToken,
         screenshotBase64,
         screenshotFileName,
       });
       if (result?.success !== true) {
+        if (['review_cooldown','review_blocked'].includes(result?.code)) {
+          applyLimit(result);
+          setCaptchaToken(null);
+          captchaRef.current?.reset();
+          return;
+        }
         const error = new Error(result?.error || SAVE_ERROR);
         error.code = result?.code;
         throw error;
@@ -380,7 +434,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
       setErrors({ submit: error.code === 'pending_submission_changed' ? error.message : SAVE_ERROR, pendingChanged: error.code === 'pending_submission_changed' });
       setCaptchaToken(null);
       setCaptchaExpired(false);
-      captchaRef.current?.resetCaptcha();
+      captchaRef.current?.reset();
     } finally {
       submittingRef.current = false;
       setVerifying(false);
@@ -436,9 +490,17 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
               </p>
             </header>
 
+            {blocked && <div role="alert" className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
+              <p>{REVIEW_BLOCKED_MESSAGE}</p>
+              <a href="/support?issue=rate_limit" className="inline-flex min-h-10 items-center rounded-lg border border-current px-3 font-medium">Contact Support</a>
+            </div>}
+            {!blocked && remaining > 0 && <div role="status" className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
+              <p>Too many attempts. Try again in</p><time aria-live="off" className="font-mono font-semibold tabular-nums">{formatCountdown(remaining)}</time>
+            </div>}
+            {!blocked && <>
             {errors.submit && (
               <div role="alert" className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-                {errors.submit} <a href="/support?issue=review_access" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">Contact support</a>
+                {errors.submit}
               </div>
             )}
 
@@ -488,7 +550,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
               </div>
             </div>
 
-            <fieldset disabled={verifying} className="min-w-0">
+            <fieldset disabled={verifying || rateLimited} className="min-w-0">
             {step === 1 && (
               <div className="space-y-4">
                 {[
@@ -565,7 +627,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                 <button
                   type="button"
                   onClick={continueToPlatform}
-                  disabled={checkingEmail}
+                  disabled={checkingEmail || rateLimited}
                   className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 py-3.5 text-xs font-semibold tracking-wide text-white dark:text-zinc-950 transition-colors hover:bg-zinc-700 dark:hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500"
                 >
                   {checkingEmail ? 'Checking…' : (
@@ -742,11 +804,9 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                     Verification
                   </p>
                   <div className="flex justify-center sm:justify-start">
-                    <HCaptcha
+                    <TurnstileWidget
                       ref={captchaRef}
-                      sitekey={HCAPTCHA_SITE_KEY}
-                      theme="dark"
-                      size="normal"
+                      action="brand_review"
                       onVerify={(token) => {
                         setCaptchaToken(token);
                         setCaptchaExpired(false);
@@ -764,7 +824,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                   </div>
                   {captchaExpired && !errors.captcha && (
                     <span className="mt-1.5 block text-xs text-amber-600 dark:text-amber-400">
-                      Verification expired. Please check the box again.
+                      Renewing your security check. Please wait a moment.
                     </span>
                   )}
                   {errors.captcha && (
@@ -779,7 +839,6 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                   try { sessionStorage.removeItem(SUBMISSION_ID_KEY); } catch { /* Optional storage. */ }
                   setErrors({});
                 }} className="w-full rounded-xl border border-zinc-400 px-4 py-3 text-sm text-zinc-800 dark:text-zinc-200">Start a new submission with these details</button>}
-                {Object.keys(errors).length>0 && <p className="text-xs text-zinc-500">Still stuck? <a href="/support?issue=review_access" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">Contact Team Haven</a> without clearing your saved browser data.</p>}
                 <div className="flex gap-2 pt-2">
                   <button
                     type="button"
@@ -794,7 +853,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                   </button>
                   <button
                     type="button"
-                    disabled={imageLoading || verifying}
+                    disabled={imageLoading || verifying || rateLimited}
                     onClick={submit}
                     className="flex w-2/3 items-center justify-center gap-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 py-3.5 text-xs font-semibold tracking-wide text-white dark:text-zinc-950 transition-colors hover:bg-zinc-700 dark:hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500"
                   >
@@ -808,6 +867,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
               </div>
             )}
             </fieldset>
+            </>}
           </motion.div>
         </div>
       )}
