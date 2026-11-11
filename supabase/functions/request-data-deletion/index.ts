@@ -1,5 +1,4 @@
 import {logEvent} from '../_shared/logger.ts';
-import {edgeClientAddress} from '../_shared/edge-client-address.ts';
 import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
@@ -7,6 +6,7 @@ import { publicRequestLimit } from '../_shared/abuse-limits.ts';
 import { HavenRequestError,readBoundedJson } from '../_shared/haven-request.ts';
 import {verifyOrigin} from '../_shared/haven-request.ts';
 import {privacyEmail,emailFooterText} from '../_shared/email-template.js';
+import { deletionEmailHash, deletionNetworkHash, DELETION_ALREADY_PROCESSED, reviewDeletionStatus } from '../_shared/deletion-tombstone.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -54,11 +54,6 @@ function createToken() {
   return `${crypto.randomUUID()}${suffix}`;
 }
 
-function clientIp(req: Request) {
-  const value=edgeClientAddress(req);
-  return value==='unknown'?null:value;
-}
-
 serve(observe('request-data-deletion',async (req,requestId) => {
   const origin = req.headers.get('origin');
 
@@ -80,7 +75,7 @@ serve(observe('request-data-deletion',async (req,requestId) => {
       return success(origin);
     }
 
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !RESEND_API_KEY) {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       logEvent('error','request-data-deletion.diagnostic_1',requestId);
       return success(origin);
     }
@@ -89,6 +84,14 @@ serve(observe('request-data-deletion',async (req,requestId) => {
       auth: { persistSession: false },
     });
     await publicRequestLimit(supabase,req,SUPABASE_SERVICE_ROLE_KEY,'deletion-email');
+    const emailHash = await deletionEmailHash(email, SUPABASE_SERVICE_ROLE_KEY);
+    if (await reviewDeletionStatus(supabase, email, emailHash, null) === 'email') {
+      return json({ ok: false, code: 'deletion_already_processed', error: DELETION_ALREADY_PROCESSED }, origin, 409);
+    }
+    if (!RESEND_API_KEY) {
+      logEvent('error','request-data-deletion.email_unconfigured',requestId);
+      return success(origin);
+    }
     const { data: reviews, error: reviewError } = await supabase
       .from('brand_reviews')
       .select('id, email')
@@ -119,7 +122,7 @@ serve(observe('request-data-deletion',async (req,requestId) => {
         token,
         expires_at: expiresAt,
         status: 'pending',
-        ip_address: clientIp(req),
+        network_hash: await deletionNetworkHash(req, SUPABASE_SERVICE_ROLE_KEY),
       });
 
     if (requestError) {
@@ -138,8 +141,8 @@ serve(observe('request-data-deletion',async (req,requestId) => {
         from: FROM_ADDRESS,
         to: [storedEmail],
         subject: 'Confirm your saved review deletion request',
-        text: emailFooterText(`We received a request to remove your matching saved brand review, its linked chat sessions and stored screenshots. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.\n\nTo confirm the request, open this link within 24 hours:\n\n${confirmationUrl}\n\nIf you did not make this request, ignore this email.`),
-        html: privacyEmail({title:'Your review. Your choice.',paragraphs:['We received a request to remove your matching saved brand review, its linked chat sessions and stored screenshots.','Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.','Open the secure page and confirm only if you requested deletion. This link expires in 24 hours. If you did not request this, ignore this email.'],button:{label:'Review deletion request',href:confirmationUrl}}),
+        text: emailFooterText(`We received a request to remove your saved brand review, linked chat sessions and support requests, and stored screenshots. We retain a limited record to prevent repeat free reviews. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.\n\nTo confirm the request, open this link within 24 hours:\n\n${confirmationUrl}\n\nIf you did not make this request, ignore this email.`),
+        html: privacyEmail({title:'Your review. Your choice.',paragraphs:['We received a request to remove your saved brand review, linked chat sessions and support requests, and stored screenshots.','We retain a limited record to prevent repeat free reviews. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.','Open the secure page and confirm only if you requested deletion. This link expires in 24 hours. If you did not request this, ignore this email.'],button:{label:'Review deletion request',href:confirmationUrl}}),
       }),
     });
 

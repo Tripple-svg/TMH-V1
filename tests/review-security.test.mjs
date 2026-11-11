@@ -17,7 +17,7 @@ const request = (body, method = 'POST') => new Request('https://project.supabase
   ...(method === 'POST' ? { body: JSON.stringify(body) } : {}),
 });
 
-function database({ present = true, failTable, rpcError, uploadError } = {}) {
+function database({ present = true, failTable, rpcError, uploadError, deletionStatus = null, concurrentDeletionStatus = null } = {}) {
   const rows = {
     brand_reviews: present ? [{ id: reviewId, email: 'owner@example.com', platform_type:'website', website_url:'https://example.com/', screenshot_url: null }] : [],
     haven_sessions: present ? [{ id: sessionId, review_id: reviewId, scope: 'audit', current_step: 'AWAITING_DIAGNOSTIC_Q1' }] : [],
@@ -28,13 +28,16 @@ function database({ present = true, failTable, rpcError, uploadError } = {}) {
     from(table) {
       const filters = [];
       return { select() { return this; }, eq(key, value) { filters.push((row) => row[key] === value); return this; },
+        ilike() { return this; }, async limit() { return { data: rows[table] || [], error: null }; },
         async maybeSingle() { return { data: rows[table]?.find((row) => filters.every((f) => f(row))) || null, error: failTable === table ? { message: 'database unavailable' } : null }; },
       };
     },
     async rpc(name, args) {
+      if (name === 'review_deletion_status') return { data: deletionStatus };
       calls.push({ name, args });
       if (rpcError) return { error: rpcError };
-      if (name === 'create_haven_review') {
+      if (name === 'create_haven_review_after_deletion_check') {
+        if (concurrentDeletionStatus) return { data: { deletionBlock: concurrentDeletionStatus } };
         rows.brand_reviews.push(args.p_review);
         rows.haven_sessions.push({ id: args.p_session_id, review_id: args.p_review.id, scope: 'audit' });
         rows.review_access_tokens.push({ review_id: args.p_review.id, session_id: args.p_session_id, token_hash: args.p_token_hash });
@@ -131,9 +134,28 @@ test('creation validates CAPTCHA on the server and atomically creates review, se
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true, reviewId, sessionId });
   assert.equal(captchaCalls, 1);
-  assert.equal(db.calls[0].name, 'create_haven_review');
+  assert.equal(db.calls[0].name, 'create_haven_review_after_deletion_check');
   assert.equal(db.calls[0].args.p_token_hash, tokenHash);
   assert.equal(JSON.stringify(db.rows).includes(accessToken), false);
+});
+
+test('review lookup and creation deny a deleted email with the same copy', async () => {
+  const db = database({ present: false, deletionStatus: 'email' });
+  const denied = 'This email has already utilized its free review and deleted its data. Please contact Team Haven.';
+  for (const [name, body] of [['check-email-exists', { email: 'OWNER@example.com' }], ['create-brand-review', creationPayload()]]) {
+    const response = await load(name, db, { fetch: () => assert.fail('A blocked email must not consume Turnstile') })(request(body));
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error, denied);
+  }
+  assert.equal(db.calls.length, 0);
+});
+
+test('creation also denies a deletion committed after the initial review check', async () => {
+  const db = database({ present: false, concurrentDeletionStatus: 'email' });
+  const response = await load('create-brand-review', db)(request(creationPayload()));
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).code, 'review_email_deleted');
+  assert.equal(db.rows.brand_reviews.length, 0);
 });
 
 test('failed or missing CAPTCHA and invalid required fields never create a review', async () => {

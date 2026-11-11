@@ -5,12 +5,15 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
 import {privacyEmail,emailFooterText} from '../_shared/email-template.js';
 import { HavenRequestError, readBoundedJson, responseHeaders, verifyOrigin } from '../_shared/haven-request.ts';
+import { deletionEmailHash, deletionNetworkHash } from '../_shared/deletion-tombstone.ts';
 
 const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[0-9a-f]{32}$/i;
 
 async function sendDeletionConfirmation(email: string,requestId:string) {
   const key = Deno.env.get('RESEND_API_KEY')?.trim();
   if (!key) { logEvent('error','confirm-data-deletion.diagnostic_1',requestId); return; }
+  const removed = 'Your request removed matching saved brand reviews, linked chat sessions and support requests, and stored screenshots.';
+  const remaining = 'We retain a limited record to prevent repeat free reviews. You can keep using the site. Contact info@themarketinghaven.xyz to discuss another review or remaining records, including purchase, booking and delivery records and unlinked guest chats.';
   try {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST', signal: AbortSignal.timeout(10000),
@@ -18,8 +21,8 @@ async function sendDeletionConfirmation(email: string,requestId:string) {
       body: JSON.stringify({
         from: 'info@themarketinghaven.xyz', to: [email],
         subject: 'Your saved review deletion is complete',
-        html:privacyEmail({title:'Your saved review has been removed.',paragraphs:['Your confirmed request removed matching saved brand reviews, their linked chat sessions and stored screenshots.','Purchase, booking, deletion-request, security and email-delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review remaining records or exercise your privacy rights. We may need to verify ownership and explain any lawful retention reason.']}),
-        text: emailFooterText('Your confirmed request removed matching saved brand reviews, their linked chat sessions and stored screenshots.\n\nPurchase, booking, deletion-request, security and email-delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review remaining records or exercise your privacy rights. We may need to verify ownership and explain any lawful retention reason.\n\nYour friends over at Team Haven'),
+        html:privacyEmail({title:'Your saved review has been removed.',paragraphs:[removed, remaining]}),
+        text: emailFooterText(`${removed}\n\n${remaining}\n\nYour friends over at Team Haven`),
       }),
     });
     // Provider bodies may contain recipient details. Log only a safe status.
@@ -42,9 +45,15 @@ serve(observe('confirm-data-deletion',async (request,requestId) => {
     if (!url || !key) throw new HavenRequestError('Unable to complete deletion. Please try again shortly.', 503);
     const db = createClient(url, key, { auth: { persistSession: false } });
     await publicRequestLimit(db, request, key, 'confirm-deletion', 10, 600);
+    const { data: deletion, error: lookupError } = await db.from('data_deletion_requests').select('email').eq('token', token).maybeSingle();
+    if (lookupError) throw new HavenRequestError('Unable to prepare deletion. Please try again shortly.', 503);
+    if (!deletion?.email) return json({ ok: false, error: 'Invalid token' }, 400);
+    const [emailHash, networkHash] = await Promise.all([deletionEmailHash(deletion.email, key), deletionNetworkHash(request, key)]);
     // Atomically snapshot cleanup paths and remove reviews/chats. Retry resumes
     // those paths even when the original review row has already been removed.
-    const { data: prepared, error } = await db.rpc('prepare_saved_review_deletion', { p_token: token });
+    const { data: prepared, error } = await db.rpc('prepare_saved_review_deletion', {
+      p_token: token, p_email_hash: emailHash, p_network_hash: networkHash,
+    });
     if (error || !prepared) throw new HavenRequestError('Unable to prepare deletion. Please contact the team if this continues.', 503);
     if (prepared.error) return json({ ok: false, error: prepared.error }, 400);
     if (!Array.isArray(prepared.paths) || !Number.isSafeInteger(prepared.deleted) || typeof prepared.requestId !== 'string' || typeof prepared.email !== 'string') {
@@ -57,7 +66,7 @@ serve(observe('confirm-data-deletion',async (request,requestId) => {
     const { data: completed, error: completionError } = await db.rpc('complete_saved_review_deletion', { p_request: prepared.requestId });
     if (completionError) throw new HavenRequestError('Deletion cleanup finished, but confirmation could not be saved. Retry this confirmation.', 503);
     if (completed === true) await sendDeletionConfirmation(prepared.email,requestId);
-    return json({ ok: true, deleted: prepared.deleted });
+    return json({ ok: true, deleted: prepared.deleted, reviewIds: prepared.reviewIds || [], visitorIds: prepared.visitorIds || [] });
   } catch (error) {
     if (error instanceof HavenRequestError) {
       if (error.status === 429) headers['Retry-After'] = String(error.retryAfter || 600);

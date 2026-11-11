@@ -45,7 +45,11 @@ test('admin Auth validates the JWT with Auth and requires trusted app_metadata, 
 test('public endpoints: a sixth attempt is rejected despite changing email, before more mail/CAPTCHA/intent writes',async()=>{
   for(const name of ['check-email-exists','capture-booking-lead','create-brand-review','request-data-deletion']){
     let requests=0,insertions=0,providerCalls=0;
-    const db={rpc:async(name)=>name==='review_attempt_gate'?({data:{allowed:true}}):({data:++requests<=5}),from(){
+    const db={async rpc(name){
+      if(name==='review_attempt_gate')return {data:{allowed:true}};
+      if(name==='review_deletion_status')return {data:null};
+      return {data:++requests<=5};
+    },from(){
       const query={select(){return this;},eq(){return this;},ilike(){return this;},limit(){return this;},insert(){insertions++;return this;},
         async maybeSingle(){return{data:null};},then(resolve,reject){return Promise.resolve({data:[],error:null}).then(resolve,reject);}};return query;
     }};

@@ -296,6 +296,7 @@ export default function HavenDrawer() {
   }, [currentSession?.failedTurn?.retryAt]);
 
   const viewportFollowRef = useRef(null);
+  const pendingSectionRef = useRef(null);
   const viewportRef = useDrawerViewport(isOpen, viewportFollowRef);
 
   const scrollRef         = useRef(null);
@@ -437,13 +438,26 @@ export default function HavenDrawer() {
     setShowScrollBtn(false);
   }, []);
 
+  const scrollAfterDrawerExit = useCallback(() => {
+    const section = pendingSectionRef.current;
+    pendingSectionRef.current = null;
+    if (!section) return;
+    const target = document.getElementById(section);
+    if (!target) {
+      navigate('/#' + section);
+      return;
+    }
+    target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    target.focus?.({ preventScroll: true });
+  }, [navigate, reduceMotion]);
+
   const handleChipSelect = useCallback((text) => {
     if (isRestricted) return;
     const action=Object.hasOwn(PLATFORM_ACTIONS,text)?PLATFORM_ACTIONS[text]:null;
     if(action){
+      pendingSectionRef.current = action.section || null;
       closeDrawer();
       if(action.path)navigate(action.path);
-      else if(action.section){const target=document.getElementById(action.section);if(target)requestAnimationFrame(()=>{target.scrollIntoView({behavior:reduceMotion?'auto':'smooth',block:'start'});target.focus?.({preventScroll:true});});else navigate('/#'+action.section);}
       else if(action.dialog==='data-deletion'){if(document.getElementById('footer'))window.dispatchEvent(new CustomEvent('open-data-deletion'));else navigate('/?privacy=delete#footer');}
       return;
     }
@@ -477,7 +491,7 @@ export default function HavenDrawer() {
 
     armForceScroll();
     sendMessage(text);
-  }, [sendMessage, closeDrawer, openDrawer, armForceScroll, updateUserProfile, isRestricted,activeScope,activeService,currentSession,navigate,reduceMotion]);
+  }, [sendMessage, closeDrawer, openDrawer, armForceScroll, updateUserProfile, isRestricted,activeScope,activeService,currentSession,navigate]);
 
   useEffect(() => {
     if (!playbookHandoff) return;
@@ -546,11 +560,11 @@ export default function HavenDrawer() {
 
   return createPortal(
     <div data-haven-overlay>
-      <AnimatePresence>
+      <AnimatePresence onExitComplete={scrollAfterDrawerExit}>
         {isOpen && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              transition={{ duration: 0.25 }}
+              transition={{ duration: reduceMotion ? 0 : 0.25 }}
               onClick={() => { setShowHistorySidebar(false); setShowOptionsMenu(false); closeDrawer(); }}
               className="fixed inset-0 z-40 bg-zinc-950 sm:bg-black/60 touch-none" />
 

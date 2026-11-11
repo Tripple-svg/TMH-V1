@@ -4,6 +4,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { enforceReviewRequestBudget, reviewAttemptGate, reviewLimitDetails } from '../_shared/review-attempts.ts';
 import { HavenRequestError,readBoundedJson } from '../_shared/haven-request.ts';
+import { deletionEmailHash, deletionNetworkHash, deletionReviewDenial, reviewDeletionStatus } from '../_shared/deletion-tombstone.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -76,6 +77,12 @@ serve(observe('check-email-exists',async (req,requestId) => {
       auth: { persistSession: false },
     });
     await enforceReviewRequestBudget(supabase,req,SUPABASE_SERVICE_ROLE_KEY,'email-lookup');
+    const [emailHash, networkHash] = await Promise.all([
+      deletionEmailHash(email, SUPABASE_SERVICE_ROLE_KEY), deletionNetworkHash(req, SUPABASE_SERVICE_ROLE_KEY),
+    ]);
+    const deletionStatus = await reviewDeletionStatus(supabase, email, emailHash, networkHash);
+    const emailDenial = deletionStatus === 'email' && deletionReviewDenial(deletionStatus);
+    if (emailDenial) return deletionDenied(origin, emailDenial);
 
     // ILIKE with escaped wildcards is an exact case-insensitive comparison:
     // lower(email) = lower(trimmed input).
@@ -95,6 +102,8 @@ serve(observe('check-email-exists',async (req,requestId) => {
     const matched = reviews as unknown as Array<{id:string;flag_status?:string}> | null;
     const flagStatus = includeFlag ? matched?.[0]?.flag_status || 'white' : undefined;
     if (reviews?.length) await reviewAttemptGate(supabase,req,SUPABASE_SERVICE_ROLE_KEY,true);
+    const networkDenial = !reviews?.length && deletionReviewDenial(deletionStatus);
+    if (networkDenial) return deletionDenied(origin, networkDenial);
     return response(Boolean(reviews?.length), origin, flagStatus);
   } catch (error) {
     if(error instanceof HavenRequestError){
@@ -105,3 +114,9 @@ serve(observe('check-email-exists',async (req,requestId) => {
     return response(false, origin, undefined, includeFlag ? 503 : 200);
   }
 }));
+
+function deletionDenied(origin: string | null, denial: { code: string; error: string }) {
+  return Response.json({ exists: false, ...denial }, {
+    status: 403, headers: { ...corsHeaders(origin), 'Cache-Control': 'no-store' },
+  });
+}

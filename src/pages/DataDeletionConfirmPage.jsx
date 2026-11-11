@@ -2,6 +2,31 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, LoaderCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { clearReviewFormData } from '../components/haven/utils/reviewPersistence';
+
+function clearDeletedBrowserData({ reviewIds, visitorIds }) {
+  const storage = window.localStorage;
+  const reviewId = storage.getItem('haven_review_id');
+  let visitorId;
+  try { visitorId = JSON.parse(storage.getItem('haven_chat_identity_v1') || 'null')?.visitorId; }
+  catch { /* A malformed browser identity cannot match a deleted visitor. */ }
+  const reviewRemoved = reviewIds?.includes(reviewId);
+  const visitorRemoved = visitorIds?.includes(visitorId);
+  if (reviewRemoved || (!reviewId && visitorRemoved)) {
+    for (const key of ['haven_review_id', 'haven_session_id', 'tmh_haven_user_profile_v1', 'tmh_haven_audit_sessions', 'tmh_haven_audit_preflight_v1']) {
+      storage.removeItem(key);
+    }
+    clearReviewFormData();
+    const pendingId = window.sessionStorage.getItem('tmh_review_submission_id_v1');
+    if (pendingId) window.sessionStorage.removeItem(`haven_review_creation_${pendingId}`);
+    window.sessionStorage.removeItem('tmh_review_submission_id_v1');
+  }
+  if (visitorRemoved) {
+    for (const key of ['haven_chat_identity_v1', 'tmh_haven_support_sessions', 'tmh_haven_service_sessions', 'tmh_haven_last_support_session', 'tmh_haven_last_site_support_session']) {
+      storage.removeItem(key);
+    }
+  }
+}
 
 export default function DataDeletionConfirmPage() {
   const [searchParams] = useSearchParams();
@@ -34,7 +59,7 @@ export default function DataDeletionConfirmPage() {
       }
 
       try {
-        for (const key of ['tmh_haven_user_profile_v1','tmh_haven_audit_sessions','tmh_haven_audit_preflight_v1']) window.localStorage.removeItem(key);
+        clearDeletedBrowserData(data);
       } catch { /* Browser storage may be disabled. Server deletion already succeeded. */ }
       setResult({ token, status: 'success', error: '' });
     } catch {
@@ -57,7 +82,7 @@ export default function DataDeletionConfirmPage() {
           <div className="py-4">
             <AlertTriangle className="mx-auto h-12 w-12 text-amber-500" />
             <h1 className="mt-5 text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">Delete your saved review?</h1>
-            <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">This permanently removes the matching saved review, its linked chats and stored screenshots. Purchase access and booking records remain separate. This action cannot be undone.</p>
+            <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">This permanently removes the matching saved review, linked chats and support requests, and stored screenshots. Purchase access and booking records remain separate. This action cannot be undone.</p>
             <button type="button" onClick={confirmDeletion} className="mt-6 rounded-xl bg-red-700 px-4 py-3 text-sm font-semibold text-white hover:bg-red-800">Delete my saved review</button>
           </div>
         )}
@@ -80,8 +105,9 @@ export default function DataDeletionConfirmPage() {
               Saved review deletion completed.
             </h1>
             <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-              This request removed matching saved reviews, their linked chat sessions and stored screenshots. Purchase, booking, deletion-request, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review remaining records or a privacy concern.
+              Your saved review, linked chats and support requests, and stored screenshots were removed. You can keep using the site and Support. Contact Team Haven if you need another review.
             </p>
+            <p className="mt-3 text-xs leading-5 text-zinc-600 dark:text-zinc-300">We keep a limited record to prevent repeat free reviews. Purchase, booking, deletion-request, security and delivery records, and unlinked guest chats, are outside this automated flow.</p>
           </div>
         )}
 

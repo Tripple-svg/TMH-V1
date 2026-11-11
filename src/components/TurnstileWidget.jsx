@@ -32,6 +32,7 @@ export default function TurnstileWidget({ action, onVerify, onExpire, onError, r
           appearance: 'interaction-only',
           'response-field': false,
           'refresh-expired': 'auto',
+          'refresh-timeout': 'auto',
           callback: token => {
             if (disposed) return;
             setUnavailable(false);
@@ -40,6 +41,7 @@ export default function TurnstileWidget({ action, onVerify, onExpire, onError, r
           'expired-callback': () => { if (!disposed) handlers.current.onExpire?.(); },
           'error-callback': fail,
           'timeout-callback': fail,
+          'unsupported-callback': fail,
         });
         clearTimeout(deadline);
       } catch { fail(); }
@@ -60,6 +62,6 @@ export default function TurnstileWidget({ action, onVerify, onExpire, onError, r
 
   return <div>
     <div ref={container} />
-    {(!sitekey || unavailable) && <p role="status" className="text-xs text-amber-600 dark:text-amber-300">The security check could not load. Refresh this page to try again.</p>}
+    {(!sitekey || unavailable) && <p role="status" className="text-xs text-amber-600 dark:text-amber-300">If the security check stays stuck, refresh this page to try again.</p>}
   </div>;
 }

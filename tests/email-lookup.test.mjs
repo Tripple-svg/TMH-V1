@@ -24,6 +24,10 @@ function database(seed = [{ id: 'review-1', email: 'Owner@Example.com', flag_sta
   const rows = structuredClone(seed);
   const writes = [], reads = [], authTokens = [], notifications = [], alerts = [];
   const client = {
+    async rpc(name) {
+      assert.equal(name, 'review_deletion_status');
+      return { data: null };
+    },
     auth: { async getUser(token) {
       authTokens.push(token);
       return options.authResult || { data: { user: null }, error: { message: 'Invalid token' } };

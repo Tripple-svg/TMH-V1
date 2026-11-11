@@ -63,8 +63,9 @@ function drawer() {
     while (effects.length) effects.shift()();
     return nodes;
   }
-  return { state, failedTurn, calls, render };
+  return { state, failedTurn, calls, render, document: context.document };
 }
+const finishDrawerExit = ui => ui.render().find(node => node.type === 'presence' && node.props.onExitComplete).props.onExitComplete();
 const text = node => Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props.children) : typeof node === 'string' || typeof node === 'number' ? String(node) : '';
 const retry = tree => tree.find(node => node.type === 'button' && text(node) === 'Retry saved message');
 const thinking = tree => tree.some(node => node.type?.name === 'ThinkingIndicator');
@@ -110,7 +111,9 @@ test('confirmed Playbook handoff goes straight to the public section once, only 
   assert.deepEqual(ui.calls, []);
   ui.state.playbookHandoff = { scope: 'support', sessionId: 'session' };
   ui.render();
-  ui.render();
+  assert.deepEqual(ui.calls, ['close']);
+  finishDrawerExit(ui);
+  finishDrawerExit(ui);
   assert.deepEqual(ui.calls, ['close', '/#shop']);
 });
 
@@ -119,7 +122,23 @@ test('confirmed testimonial handoff navigates to Testimonials from Support witho
   ui.state.activeScope='support';
   ui.state.playbookHandoff={scope:'support',sessionId:'session',chip:'__TESTIMONIALS__'};
   ui.render();
+  assert.deepEqual(ui.calls, ['close']);
+  finishDrawerExit(ui);
   assert.deepEqual(ui.calls,['close','/#testimonials']);
+});
+
+test('the testimonial chip scrolls and focuses the home section only after the drawer exits', () => {
+  const ui = drawer();
+  ui.state.activeScope = 'support';
+  ui.state.messages = [{ role: 'agent', content: 'Want to see our testimonials?' }];
+  ui.document.getElementById = id => id === 'testimonials' ? {
+    scrollIntoView: options => ui.calls.push(options.behavior),
+    focus: options => ui.calls.push(options.preventScroll),
+  } : null;
+  ui.render().find(node => node.type === 'ChatMessage').props.onChipSelect('__TESTIMONIALS__');
+  assert.deepEqual(ui.calls, ['close']);
+  finishDrawerExit(ui);
+  assert.deepEqual(ui.calls, ['close', 'smooth', true]);
 });
 
 test('a started review stays in chat and shows its score even with a stale scorecard state', () => {

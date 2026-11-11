@@ -4,6 +4,7 @@ import { CheckCircle2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ALREADY_PROCESSED = 'A deletion request has already been processed for this email. Please contact Team Haven for further assistance.';
 
 export default function DataDeletionModal({ isOpen, onClose }) {
   if (!isOpen) return null;
@@ -57,6 +58,11 @@ function DataDeletionDialog({ onClose }) {
       const { data, error: requestError } = await supabase.functions.invoke('request-data-deletion', {
         body: { email: normalizedEmail },
       });
+      const detail = requestError?.context?.status === 409 ? await requestError.context.json().catch(() => null) : data;
+      if (detail?.code === 'deletion_already_processed') {
+        setError(ALREADY_PROCESSED);
+        return;
+      }
       if (requestError || data?.ok !== true) throw new Error('Deletion request failed');
       setEmail(normalizedEmail);
       setRequested(true);
@@ -117,10 +123,10 @@ function DataDeletionDialog({ onClose }) {
                   Delete a Saved Review
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-                  Confirming by email removes the matching saved review, its linked chats and stored screenshots. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review those records.
+                  Confirming by email removes the matching saved review, linked chats and support requests, and stored screenshots. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz to review those records.
                 </p>
                 <p className="mt-3 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                  Requesting a link keeps this device&apos;s chat access keys intact. After confirmation, this browser removes the saved review profile; unlinked guest chat keys remain available for ownership checks. Clearing browser data does not delete server records.
+                  If you confirm on the browser you used for your review, we clear its linked chat history here too. We keep a limited record to prevent repeat free reviews. You can keep using the website and Support.
                 </p>
 
                 <form className="mt-6" onSubmit={handleSubmit} noValidate>
@@ -144,8 +150,9 @@ function DataDeletionDialog({ onClose }) {
                     aria-describedby={error ? 'data-deletion-error' : undefined}
                   />
                   {error && (
-                    <p id="data-deletion-error" className="mt-2 text-xs text-red-600 dark:text-red-400">
+                    <p id="data-deletion-error" role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">
                       {error}
+                      {error === ALREADY_PROCESSED && <> <a href="/support?issue=review_access" className="underline underline-offset-4">Contact Support</a></>}
                     </p>
                   )}
 

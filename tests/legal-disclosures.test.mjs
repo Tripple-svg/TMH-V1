@@ -95,13 +95,15 @@ test('deletion disclosures: policies and request/confirmation pages describe the
   const privacy = text(pages[0]);
   assert.match(privacy, /session ID alone is not proof of ownership/);
   assert.match(privacy, /Never send private access keys in an ordinary email/);
-  assert.match(text(pages[2]), /Requesting a link keeps this device/);
+  assert.match(text(pages[2]), /If you confirm on the browser you used for your review/);
+  assert.match(privacy, /protected email hash/);
 });
 
-function deletionHandler(name) {
+function deletionHandler(name, deletionStatus = null) {
   let handler;
   const emails = [];
   const client = { async rpc(name) {
+    if (name === 'review_deletion_status') return { data: deletionStatus };
     if (name === 'prepare_saved_review_deletion') return { data: { requestId: 'request-1', email: 'owner@example.com', paths: [], deleted: 0 } };
     if (name === 'complete_saved_review_deletion') return { data: true };
     throw new Error('Unexpected RPC: ' + name);
@@ -135,8 +137,19 @@ test('deletion emails: request and completion messages avoid promising every rec
     assert.equal(emails.length, 1);
     assert.match(emails[0].subject, /saved review deletion/i);
     assert.match(emails[0].text, /linked chat sessions/);
-    assert.match(emails[0].text, /Purchase, booking/);
+    assert.match(emails[0].text, /purchase, booking/i);
     assert.match(emails[0].text, /unlinked guest chats/);
     assert.ok(!emails[0].text.includes('All records'));
   }
+});
+
+test('a repeated deletion request returns the processed message without sending another email', async () => {
+  const { handler, emails } = deletionHandler('request-data-deletion', 'email');
+  const response = await handler(new Request('https://project.supabase.co/functions/v1/delete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', origin: 'https://themarketinghaven.xyz' },
+    body: JSON.stringify({ email: 'owner@example.com' }),
+  }));
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, 'A deletion request has already been processed for this email. Please contact Team Haven for further assistance.');
+  assert.equal(emails.length, 0);
 });

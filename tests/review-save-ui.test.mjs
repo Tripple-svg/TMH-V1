@@ -121,12 +121,12 @@ function reviewModal(onSubmit, saved = new Map()) {
     },
   });
   ui.mount();
-  async function ready({ chooseImage = true } = {}) {
+  async function ready({ chooseImage = true, solve = true } = {}) {
     ui.render().find((node) => node.type === 'input' && node.props.type === 'checkbox').props.onChange({ target: { checked: true } });
     const next = ui.render().find((node) => node.type === 'button' && textContent(node).includes('Continue to Step 2'));
     await next.props.onClick();
     if (chooseImage) ui.render().find((node) => node.type === 'input' && node.props.type === 'file').props.onChange({ target: { files: [{ name: 'profile.png', type: 'image/png', size: 100 }] } });
-    verify('captcha-first');
+    if (solve) verify('captcha-first');
   }
   function verify(token) {
     const captcha = ui.render().find((node) => node.type === 'captcha');
@@ -136,6 +136,22 @@ function reviewModal(onSubmit, saved = new Map()) {
   const submit = () => ui.render().find((node) => node.type === 'button' && /Start Free Brand Review|Saving…/.test(textContent(node)));
   return { ...ui, ready, verify, submit, get closed() { return closed; }, get cleared() { return cleared; }, get resets() { return resets; } };
 }
+
+test('the review submit stays disabled until Turnstile verifies and after expiry or error', async () => {
+  const ui = reviewModal(() => {});
+  await ui.ready({ solve: false });
+  assert.equal(ui.submit().props.disabled, true);
+  assert.ok(ui.render().some(node => node.props.role === 'status' && textContent(node).includes('Waiting for the security check')));
+  for (const callback of ['onExpire', 'onError']) {
+    ui.verify('captcha-first');
+    assert.equal(ui.submit().props.disabled, false);
+    ui.render().find(node => node.type === 'captcha').props[callback]();
+    assert.equal(ui.submit().props.disabled, true);
+    assert.ok(ui.render().some(node => node.props.role === 'status' && textContent(node) === 'Renewing security check...'));
+  }
+  ui.verify('captcha-fresh');
+  assert.equal(ui.submit().props.disabled, false);
+});
 
 test('creation sends CAPTCHA and screenshot only to server, with a bounded request and private stable credentials', async () => {
   const saved = new Map();

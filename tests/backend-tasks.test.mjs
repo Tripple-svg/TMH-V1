@@ -30,7 +30,10 @@ const response = (body, status = 200) => new Response(JSON.stringify(body), { st
 
 test('Task 6: email lookup trims input, matches case-insensitively and escapes SQL wildcards', async () => {
   let lookedUp = '';
-  const handler = loadHandler('check-email-exists', { client: { from: (table) => {
+  const handler = loadHandler('check-email-exists', { client: { rpc: async name => {
+    assert.equal(name, 'review_deletion_status');
+    return { data: null };
+  }, from: (table) => {
     assert.equal(table, 'brand_reviews');
     return { select: () => ({ ilike: (column, pattern) => {
       assert.equal(column, 'email'); lookedUp = pattern;

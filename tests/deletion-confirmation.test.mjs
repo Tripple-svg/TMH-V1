@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { webcrypto } from 'node:crypto';
 import vm from 'node:vm';
 import { buildSync, transformSync } from 'esbuild';
-import { PGlite } from '@electric-sql/pglite';
+import { productionDb, rpc, scalar, seedReview } from './helpers/production-db.mjs';
 
 const token = '11111111-1111-4111-8111-111111111111' + 'a'.repeat(32);
 const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
@@ -15,6 +15,7 @@ const request = (body = { token }, origin = 'https://themarketinghaven.xyz', met
 function fixture({ storageFails = false, denied = false, preparedError, sendStatus = 200 } = {}) {
   let handler; const calls = [], emails = [], logs = [];
   const db = {
+    from: () => ({ select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: { email: 'owner@example.com' } }; } }),
     async rpc(name, args) {
       calls.push({ name, args });
       if (name === 'consume_playbook_limit') return { data: !denied };
@@ -65,7 +66,10 @@ test('completion sends a scoped receipt; provider rejection logs exclude email b
   const f = fixture({ sendStatus: 403 }); const response = await f.handler(request());
   assert.equal(response.status, 200); assert.equal(response.headers.get('Cache-Control'), 'no-store');
   assert.equal((await response.json()).deleted, 1); assert.equal(f.emails.length, 1);
-  assert.match(f.emails[0].text, /Purchase, booking/); assert.match(f.emails[0].text, /unlinked guest chats/);
+  assert.match(f.emails[0].text, /purchase, booking/i); assert.match(f.emails[0].text, /unlinked guest chats/);
+  const prepare = f.calls.find(call => call.name === 'prepare_saved_review_deletion');
+  assert.match(prepare.args.p_email_hash, /^[a-f0-9]{64}$/);
+  assert.equal(prepare.args.p_network_hash, null);
   assert.match(f.logs.join(' '), /403/); assert.doesNotMatch(f.logs.join(' '), /owner@example|private-recipient|11111111/);
 });
 
@@ -76,7 +80,11 @@ test('opening the deletion page only renders confirmation; double clicking start
     module: { exports: {} }, React: { Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) },
     useState: value => [value, () => {}], useRef: value => ({ current: value }), useEffect: fn => effects.push(fn),
     useSearchParams: () => [new URLSearchParams({ token })], Link: 'link', AlertTriangle: 'icon', CheckCircle2: 'icon', LoaderCircle: 'icon',
-    window: { scrollTo() {}, localStorage: { removeItem: key => removed.push(key) } },
+    clearReviewFormData: () => removed.push('review-draft'),
+    window: { scrollTo() {}, localStorage: {
+      getItem: key => ({ haven_review_id: 'review-1', haven_chat_identity_v1: '{"visitorId":"visitor-1"}' })[key],
+      removeItem: key => removed.push(key),
+    }, sessionStorage: { getItem: () => 'pending-1', removeItem: key => removed.push(key) } },
     supabase: { functions: { invoke: (...args) => { calls.push(args); return new Promise(resolve => { release = resolve; }); } } },
   };
   vm.runInNewContext(code, context); const tree = context.module.exports(); effects.forEach(fn => fn());
@@ -84,41 +92,57 @@ test('opening the deletion page only renders confirmation; double clicking start
   const button = find(tree).find(n => n.type === 'button' && n.props.children.includes('Delete my saved review'));
   assert.ok(button); assert.equal(calls.length, 0);
   const pending = button.props.onClick(); await button.props.onClick(); assert.equal(calls.length, 1);
-  release({ data: { ok: true }, error: null }); await pending;
-  assert.equal(removed.length, 3); assert.ok(!removed.some(key => /playbook|purchase/i.test(key)));
+  release({ data: { ok: true, reviewIds: ['review-1'], visitorIds: ['visitor-1'] }, error: null }); await pending;
+  for (const key of ['haven_review_id', 'tmh_haven_support_sessions', 'tmh_haven_service_sessions', 'haven_review_creation_pending-1']) {
+    assert.ok(removed.includes(key));
+  }
+  assert.ok(!removed.some(key => /playbook|purchase/i.test(key)));
 });
 
 test('PostgreSQL deletion is atomic, service-only and preserves retry paths after expiry', async () => {
-  const db = new PGlite();
-  const call = async (name, value) => (await db.query(`select public.${name}($1) as result`, [value])).rows[0].result;
+  const db = await productionDb({ baselineOnly: true });
+  const emailHash = 'a'.repeat(64), networkHash = 'b'.repeat(64);
+  const prepare = value => rpc(db, 'prepare_saved_review_deletion', [value, emailHash, networkHash]);
   try {
-    await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;
-      create function auth.role() returns text language sql as $$select current_setting('request.jwt.claim.role',true)$$;
-      create table brand_reviews(id text primary key,email text,screenshot_url text);
-      create table haven_sessions(id text primary key,review_id text references brand_reviews(id));
-      select set_config('request.jwt.claim.role','service_role',false);`);
-    await db.exec(read('supabase/migrations/20261013000000_create_data_deletion_requests.sql'));
-    await db.exec(read('supabase/migrations/20261031000001_deletion_cleanup.sql'));
-    await db.query("insert into brand_reviews values('review-1','OWNER@example.com','review-1/screenshot.png')");
-    await db.query("insert into haven_sessions values('session-1','review-1')");
+    await seedReview(db, 'review-1', 'OWNER@example.com');
+    await db.exec(`update brand_reviews set screenshot_url = 'review-1/screenshot.png' where id = 'review-1';
+      insert into haven_chat_visitors(id,token_hash,review_id) values ('visitor-1',repeat('a',64),'review-1'),('guest',repeat('b',64),null);
+      insert into haven_sessions(id,review_id,scope,visitor_id) values
+        ('session-1','review-1','audit','visitor-1'),('session-2',null,'support','visitor-1'),
+        ('session-3',null,'service','visitor-1'),('guest-session',null,'support','guest');
+      insert into support_requests(id,category,email,message,visitor_id) values
+        (gen_random_uuid(),'other','owner@EXAMPLE.com','Synthetic support ticket',null),
+        (gen_random_uuid(),'other','alternate@example.com','Synthetic support ticket','visitor-1'),
+        (gen_random_uuid(),'other','guest@example.com','Synthetic support ticket','guest');`);
     await db.query("insert into data_deletion_requests(email,token,expires_at) values('owner@example.com',$1,now()+interval '1 hour')", [token]);
     await db.exec("select set_config('request.jwt.claim.role','authenticated',false)");
-    await assert.rejects(() => call('prepare_saved_review_deletion', token), e => e.code === '42501');
+    await assert.rejects(() => prepare(token), e => e.code === '42501');
+    assert.equal(await scalar(db, "select has_table_privilege('anon','deleted_visitor_emails','select')"), false);
     await db.exec("select set_config('request.jwt.claim.role','service_role',false)");
-    const first = await call('prepare_saved_review_deletion', token);
+    const first = await prepare(token);
     assert.deepEqual(first.paths, ['review-1/screenshot.png']); assert.equal(first.deleted, 1);
+    assert.deepEqual(first.visitorIds, ['visitor-1']);
     assert.equal((await db.query('select count(*)::int n from brand_reviews')).rows[0].n, 0);
-    assert.equal((await db.query('select count(*)::int n from haven_sessions')).rows[0].n, 0);
+    assert.deepEqual((await db.query('select id from haven_sessions')).rows, [{ id: 'guest-session' }]);
+    assert.deepEqual((await db.query('select email from support_requests')).rows, [{ email: 'guest@example.com' }]);
+    assert.equal(await scalar(db, 'select email_hash from deleted_visitor_emails'), emailHash);
+    assert.equal(await rpc(db, 'review_deletion_status', ['OWNER@EXAMPLE.COM', 'c'.repeat(64), null]), 'email');
+    assert.equal(await rpc(db, 'review_deletion_status', ['new@example.com', 'c'.repeat(64), networkHash]), 'network');
+    assert.deepEqual(await rpc(db, 'create_haven_review_after_deletion_check', [{ email: 'owner@example.com' }, 'another-session', emailHash, emailHash, null]), { deletionBlock: 'email' });
+    await db.exec("update deleted_review_networks set blocked_until = now() - interval '1 minute'");
+    assert.equal(await rpc(db, 'review_deletion_status', ['new@example.com', 'c'.repeat(64), networkHash]), null);
+    await rpc(db, 'production_private_retention');
+    assert.equal(await scalar(db, 'select count(*)::int from deleted_review_networks'), 0);
     await db.query("update data_deletion_requests set expires_at=now()-interval '1 hour'");
-    const retry = await call('prepare_saved_review_deletion', token); assert.deepEqual(retry, first);
-    assert.equal(await call('complete_saved_review_deletion', first.requestId), true);
-    assert.equal(await call('complete_saved_review_deletion', first.requestId), false);
-    assert.equal((await call('prepare_saved_review_deletion', token)).error, 'Already used');
+    const retry = await prepare(token); assert.deepEqual(retry, first);
+    assert.equal(await rpc(db, 'complete_saved_review_deletion', [first.requestId]), true);
+    assert.equal(await rpc(db, 'complete_saved_review_deletion', [first.requestId]), false);
+    assert.equal((await prepare(token)).error, 'Already used');
     assert.deepEqual((await db.query('select cleanup_paths from data_deletion_requests')).rows[0].cleanup_paths, []);
-    await db.query("insert into brand_reviews values('review-2','other@example.com','other-review/screenshot.png')");
-    await db.query("insert into haven_sessions values('session-2','review-2')");
+    await seedReview(db, 'review-2', 'other@example.com');
+    await db.exec("update brand_reviews set screenshot_url='other-review/screenshot.png' where id='review-2'; insert into haven_sessions(id,review_id,scope) values('session-2','review-2','audit')");
     await db.query("insert into data_deletion_requests(email,token,expires_at) values('other@example.com','other-token',now()+interval '1 hour')");
-    await assert.rejects(() => call('prepare_saved_review_deletion', 'other-token'), e => e.code === '22023');
+    await assert.rejects(() => rpc(db, 'prepare_saved_review_deletion', ['other-token', 'c'.repeat(64), networkHash]), e => e.code === '22023');
     assert.equal((await db.query("select count(*)::int n from haven_sessions where id='session-2'")).rows[0].n, 1);
     assert.equal((await db.query("select count(*)::int n from brand_reviews where id='review-2'")).rows[0].n, 1);
   } finally { await db.close(); }

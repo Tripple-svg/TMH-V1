@@ -9,6 +9,7 @@ import { enforceReviewRequestBudget, reviewAttemptGate, reviewLimitDetails } fro
 import { verifyTurnstile } from '../_shared/turnstile.ts';
 import { decodeScreenshotDataUrl, ScreenshotValidationError } from '../_shared/screenshot-validation.ts';
 import {PUBLIC_ORIGINS as ORIGINS} from '../_shared/cors.ts';
+import { deletionEmailHash, deletionNetworkHash, deletionReviewDenial, reviewDeletionStatus } from '../_shared/deletion-tombstone.ts';
 
 function headers(origin: string | null) {
   const allowed = origin && ORIGINS.includes(origin);
@@ -32,8 +33,9 @@ serve(observe('create-brand-review',async (req,requestId) => {
     if (!url || !key) return json({ ok: false, error: 'Review service is not configured' }, 500);
     const body = await readBoundedJson(req, 7_100_000);
     const { id, sessionId, accessToken } = body;
+    const email = text(body.email, 254).toLowerCase();
     if (!validReviewCredentials(sessionId, id, accessToken)) return json({ ok: false, error: 'Invalid review credentials' }, 400);
-    if (!text(body.fullName) || !text(body.brandName) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text(body.email, 254))
+    if (!text(body.fullName) || !text(body.brandName) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
       || text(body.whatsapp, 40).replace(/\D/g, '').length < 10 || body.agreedToTerms !== true
       || !['website', 'social', 'none'].includes(body.platformType)) {
       return json({ ok: false, error: 'Please complete the required review fields and accept the terms' }, 400);
@@ -60,6 +62,9 @@ serve(observe('create-brand-review',async (req,requestId) => {
       }
     } else {
       await enforceReviewRequestBudget(supabase,req,key,'review-submit');
+      const [emailHash, networkHash] = await Promise.all([deletionEmailHash(email, key), deletionNetworkHash(req, key)]);
+      const deletionDenial = deletionReviewDenial(await reviewDeletionStatus(supabase, email, emailHash, networkHash));
+      if (deletionDenial) return json({ ok: false, ...deletionDenial }, 403);
       try {
         await verifyTurnstile(req,body.turnstileToken,'brand_review');
       } catch (error) {
@@ -70,7 +75,7 @@ serve(observe('create-brand-review',async (req,requestId) => {
       const firstVisit = Date.parse(body.firstVisitAt);
       const review = {
         id, full_name: text(body.fullName, 150), brand_name: text(body.brandName, 200),
-        email: text(body.email, 254).toLowerCase(), whatsapp: text(body.whatsapp, 40),
+        email, whatsapp: text(body.whatsapp, 40),
         main_goal: text(body.mainGoal), platform_type: body.platformType,
         social_platform: body.platformType === 'social' ? text(body.socialPlatform, 50) : null, social_link: body.platformType === 'social' ? text(body.socialLink, 1000) : null,
         website_url: websiteUrl, screenshot_url: screenshotPath,
@@ -80,9 +85,12 @@ serve(observe('create-brand-review',async (req,requestId) => {
         first_visit_at: Number.isFinite(firstVisit) ? new Date(firstVisit).toISOString() : null,
         days_to_convert: boundedInt(body.daysToConvert, 0, 100000), country: text(body.country, 100), city: text(body.city, 100),
       };
-      const { error } = await supabase.rpc('create_haven_review', {
+      const { data, error } = await supabase.rpc('create_haven_review_after_deletion_check', {
         p_review: review, p_session_id: sessionId, p_token_hash: await hashReviewToken(accessToken),
+        p_email_hash: emailHash, p_network_hash: networkHash,
       });
+      const concurrentDeletionDenial = deletionReviewDenial(data?.deletionBlock);
+      if (concurrentDeletionDenial) return json({ ok: false, ...concurrentDeletionDenial }, 403);
       if (error?.code === '23505') {
         await reviewAttemptGate(supabase,req,key,true);
         return json({ ok: false, error: 'This email already has a review. Contact the team for help.' },409);

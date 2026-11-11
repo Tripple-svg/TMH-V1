@@ -18,6 +18,7 @@ import {
 
 const SUBMISSION_ID_KEY = 'tmh_review_submission_id_v1';
 const SAVE_ERROR = 'Something went wrong saving your review. Please try again.';
+const DELETION_DENIAL_CODES = ['review_email_deleted', 'review_network_deleted'];
 
 function checkReviewAccess(body, signal) {
   const url = import.meta.env.VITE_SUPABASE_URL;
@@ -199,6 +200,8 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore the saved browser form when this modal reopens.
       setStep(loadReviewFormStep());
       setErrors({});
+      setCaptchaToken(null);
+      setCaptchaExpired(false);
       try {
         const pendingId = sessionStorage.getItem(SUBMISSION_ID_KEY);
         const pending = JSON.parse(sessionStorage.getItem(`haven_review_creation_${pendingId}`) || 'null');
@@ -324,6 +327,11 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
         return;
       }
       if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 403 && DELETION_DENIAL_CODES.includes(result?.code)) {
+          setErrors({ email: result.error, contactSupport: true });
+          return;
+        }
         setErrors({email:'We could not check your email. Please try again shortly.'});
         return;
       }
@@ -344,6 +352,8 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
       setCheckingEmail(false);
     }
 
+    setCaptchaToken(null);
+    setCaptchaExpired(false);
     setStep(2);
   };
 
@@ -431,9 +441,11 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
       }
       hardReset();
     } catch (error) {
-      setErrors({ submit: error.code === 'pending_submission_changed' ? error.message : SAVE_ERROR, pendingChanged: error.code === 'pending_submission_changed' });
+      const deletionDenied = DELETION_DENIAL_CODES.includes(error.code);
+      const pendingChanged = error.code === 'pending_submission_changed';
+      setErrors({ submit: deletionDenied || pendingChanged ? error.message : SAVE_ERROR, pendingChanged, contactSupport: deletionDenied });
       setCaptchaToken(null);
-      setCaptchaExpired(false);
+      setCaptchaExpired(true);
       captchaRef.current?.reset();
     } finally {
       submittingRef.current = false;
@@ -503,6 +515,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                 {errors.submit}
               </div>
             )}
+            {errors.contactSupport && <a href="/support?issue=review_access" className="mb-4 inline-flex min-h-10 items-center text-sm font-medium underline underline-offset-4">Contact Team Haven</a>}
 
             {/* Step indicator */}
             <div className="mb-7 flex items-center gap-2.5">
@@ -822,9 +835,9 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                       }}
                     />
                   </div>
-                  {captchaExpired && !errors.captcha && (
-                    <span className="mt-1.5 block text-xs text-amber-600 dark:text-amber-400">
-                      Renewing your security check. Please wait a moment.
+                  {!captchaToken && (
+                    <span role="status" className="mt-1.5 block text-xs text-zinc-600 dark:text-zinc-300">
+                      {captchaExpired ? 'Renewing security check...' : 'Waiting for the security check...'}
                     </span>
                   )}
                   {errors.captcha && (
@@ -853,7 +866,7 @@ export default function BrandReviewModal({ isOpen, onClose, onSubmit }) {
                   </button>
                   <button
                     type="button"
-                    disabled={imageLoading || verifying || rateLimited}
+                    disabled={imageLoading || verifying || rateLimited || !captchaToken}
                     onClick={submit}
                     className="flex w-2/3 items-center justify-center gap-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 py-3.5 text-xs font-semibold tracking-wide text-white dark:text-zinc-950 transition-colors hover:bg-zinc-700 dark:hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500"
                   >

@@ -111,6 +111,9 @@ export async function createBrandReview(payload) {
       signal: AbortSignal.timeout(CREATION_TIMEOUT_MS),
     });
     const result = await response.json().catch(() => ({}));
+    if (response.status === 403 && ['review_email_deleted', 'review_network_deleted'].includes(result.code)) {
+      return { success: false, error: new Error(result.error), code: result.code };
+    }
     if (response.status === 429) return { success: false, error: new Error(result.error), code: result.code || 'review_cooldown',
       retryAfter: result.retryAfter ?? Number(response.headers.get('Retry-After')) };
     if (!response.ok || result?.ok !== true || result.reviewId !== payload.id || result.sessionId !== sessionId) {
