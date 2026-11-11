@@ -40,7 +40,7 @@ export default function Footer({ onOpenReview, onOpenDataDeletion }) {
   const { openDrawer } = useHaven();
 
   const handleSupportClick = () => {
-    openDrawer('support');
+    openDrawer('need_help');
   };
 
   const handleNav = (e, href) => {

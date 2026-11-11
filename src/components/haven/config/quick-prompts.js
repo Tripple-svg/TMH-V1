@@ -1,5 +1,11 @@
 // These are real user questions, scoped to the entry point, rather than offers.
-export function quickPrompts(scope, serviceId) {
+export function quickPrompts(scope, serviceId, needHelp = false) {
+  if (needHelp) return [
+    ['Website help', 'Show website help'],
+    ['Saved review', 'How can I reopen my saved brand review?'],
+    ['Marketing help', 'I have a marketing question.'],
+    ['Contact support', 'I need to speak to a human about a platform issue.'],
+  ];
   if (serviceId === 'team-inquiry') return [
     ['Discuss a project','I would like to discuss a project with your team.'],
     ['Find the right service','Which TMH service fits the work I need?'],

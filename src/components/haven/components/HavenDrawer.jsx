@@ -11,7 +11,7 @@ import { Link,useNavigate } from 'react-router-dom';
 import {PLATFORM_ACTIONS} from '../../../../supabase/functions/_shared/platform-navigation.js';
 import {
   X, Menu, Plus, MoreVertical, Pin, MessageSquare, Sparkles,
-   Target,  Trash2, RotateCcw, Settings, ExternalLink,
+  Compass, ClipboardList, Target, Trash2, RotateCcw, Settings, ExternalLink,
   ChevronDown,
 } from 'lucide-react';
 import useDrawerViewport from '../hooks/useDrawerViewport';
@@ -26,16 +26,14 @@ const LOGO_SRC = '/Tmhh.jpeg';
 const CALENDLY_URL = 'https://calendly.com/themarketinghaven01/30min';
 const TIKTOK_URL = 'https://www.tiktok.com/@the_marketing_haven?_r=1&_t=ZS-99cNCs01SWj';
 const CALENDLY_CLICKED_KEY = 'tmh_calendly_clicked_at';
-const FRESH_MS = 3000;
 const READING_PHASE_MS = 1500;
 
-function isFreshMessage(msg) {
-  return msg?.role === 'agent' && Date.now() - (msg.timestamp || 0) < FRESH_MS;
-}
-
-function getScopeLabel(scope, service) {
+function getScopeLabel(scope, service, serviceId, needHelp) {
   if (scope === 'audit') return 'Brand Review';
   if (scope === 'service') return service?.title || 'Service Enquiry';
+  if (needHelp) return 'Need Help';
+  if (serviceId === 'team-inquiry') return 'Talk to Our Team';
+  if (serviceId === 'site-support') return 'Site Support';
   return 'Customer Support';
 }
 
@@ -117,12 +115,14 @@ function ThinkingIndicator() {
   );
 }
 
-const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt, scope, serviceId }) {
+const starterIcons = [Compass, ClipboardList, Target, MessageSquare];
+
+const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt, scope, serviceId, needHelp, animateIntro }) {
   const reduceMotion=useReducedMotion();
   const [err, setErr] = useState(false);
-  const prompts = quickPrompts(scope,serviceId).map(([title,desc])=>({title,desc,icon:Target}));
+  const prompts = quickPrompts(scope, serviceId, needHelp);
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    <motion.div initial={animateIntro && !reduceMotion ? { opacity: 0, y: 8 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
       className="flex flex-col items-center justify-center min-h-[75%] text-center px-2 py-6 space-y-8">
       <div className="flex flex-col items-center space-y-4">
         <div className="relative">
@@ -137,18 +137,18 @@ const QuickPromptCards = React.memo(function QuickPromptCards({ onSelectPrompt, 
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 w-full max-w-sm">
-        {prompts.map((p, i) => {
-          const Icon = p.icon;
+        {prompts.map(([title, prompt], i) => {
+          const Icon = needHelp ? starterIcons[i] : Target;
           return (
-            <motion.button key={i} whileHover={reduceMotion?undefined:{ scale: 1.02, y: -2 }} whileTap={reduceMotion?undefined:{ scale: 0.98 }}
-              onClick={() => onSelectPrompt(p.desc)}
+            <button type="button" key={title}
+              onClick={() => onSelectPrompt(prompt)}
               className="group flex flex-col items-start p-4 text-left rounded-xl bg-zinc-900/80 border border-white/[0.08] hover:border-white/[0.18] hover:bg-zinc-800/70 transition-colors cursor-pointer">
               <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.08] mb-3">
-                <Icon className="w-4 h-4 text-zinc-300" />
+                <Icon aria-hidden="true" className="w-4 h-4 text-zinc-300" />
               </div>
-              <span className="text-sm font-medium text-zinc-200 line-clamp-1">{p.title}</span>
-              <span className="text-xs text-zinc-400 line-clamp-2 mt-1">{p.desc}</span>
-            </motion.button>
+              <span className="text-sm font-medium text-zinc-200">{title}</span>
+              <span className="text-xs text-zinc-400 mt-1">{prompt}</span>
+            </button>
           );
         })}
       </div>
@@ -268,7 +268,7 @@ export default function HavenDrawer() {
   const navigate=useNavigate();
   const reduceMotion = useReducedMotion();
   const {
-    isOpen, closeDrawer, openDrawer, activeScope, activeService, viewState,
+    isOpen, closeDrawer, openDrawer, activeScope, activeService, viewState, canStartNewChat, animateIntro,
     sessions = [], activeSessionId, currentSession, messages = [],
     createNewSession, switchSession, togglePinSession, deleteSession,
     sendMessage, sendNavChipIntent, isThinking, userProfile = {},
@@ -280,8 +280,6 @@ export default function HavenDrawer() {
   } = useHaven();
 
   const [showHistorySidebar, setShowHistorySidebar] = useState(false);
-  const [checkingAccess, setCheckingAccess] = useState(false);
-  const [accessError, setAccessError] = useState('');
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [modalType, setModalType] = useState(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
@@ -297,7 +295,8 @@ export default function HavenDrawer() {
 
   const viewportFollowRef = useRef(null);
   const pendingSectionRef = useRef(null);
-  const viewportRef = useDrawerViewport(isOpen, viewportFollowRef);
+  const isRestricted = userProfile.flag_status === 'red';
+  const viewportRef = useDrawerViewport(isOpen && !isRestricted, viewportFollowRef);
 
   const scrollRef         = useRef(null);
   const dialogRef         = useRef(null);
@@ -310,14 +309,15 @@ export default function HavenDrawer() {
 
   const forceScrollOnNextAgentMsg = useRef(false);
   const openedSessionRef = useRef(null);
+  const restrictionCheckedRef = useRef(null);
 
   const isSupportScope = activeScope === 'support';
-  const isRestricted = userProfile.flag_status === 'red';
   const needsReviewRecovery = activeScope === 'audit'
     && (!userProfile.reviewId || !userProfile.sessionId || !userProfile.accessToken);
-  const scopeLabel     = getScopeLabel(activeScope, activeService);
+  const scopeLabel = getScopeLabel(activeScope, activeService, currentSession?.serviceId, canStartNewChat);
 
   const hasUserMessage = messages.some((m) => m.role === 'user');
+  const hasSavedAccess = Boolean(currentSession?.serverSessionId || (activeScope === 'audit' && userProfile.accessToken));
   const showPreflight = !hasUserMessage && userProfile.businessDomain !== 'none' && activeScope === 'audit'
     && auditPreflight
     && !auditPreflight.dismissed
@@ -329,15 +329,23 @@ export default function HavenDrawer() {
 
   // A saved failed turn stays attached to its conversation while the source is open.
   // Only the chat view can display or retry it; scoring has its own loading state.
-  const showChat = !showPreflight && viewState !== 'landing';
+  const showStarterCards = viewState === 'landing' || (canStartNewChat && !currentSession?.failedTurn && messages.every(m => m.isSeedGreeting));
+  const showChat = !showPreflight && !showStarterCards;
   const showConsentLine = !hasUserMessage && !showPreflight;
 
   useDialogFocus(isOpen&&!isRestricted&&!modalType&&!showBookingModal&&!bookingNoticeOpen,dialogRef,closeDrawer);
   useDialogFocus(isOpen&&isRestricted,restrictionRef,closeDrawer);
 
+  useEffect(() => {
+    if (!isOpen) { restrictionCheckedRef.current = null; return; }
+    if ((!isRestricted && !hasSavedAccess) || restrictionCheckedRef.current === activeSessionId) return;
+    restrictionCheckedRef.current = activeSessionId;
+    void recheckHavenAccess().catch(() => {});
+  }, [isOpen, isRestricted, hasSavedAccess, activeSessionId, recheckHavenAccess]);
+
 
   useEffect(() => {
-    if (!isOpen) { openedSessionRef.current = null; return; }
+    if (!isOpen || isRestricted) { openedSessionRef.current = null; return; }
     if (openedSessionRef.current === activeSessionId) return;
     openedSessionRef.current = activeSessionId;
     requestAnimationFrame(() => {
@@ -352,7 +360,7 @@ export default function HavenDrawer() {
       if (!hasOverflow) return;
       el.scrollTop = el.scrollHeight;
     });
-  }, [isOpen, activeSessionId, messages.length]);
+  }, [isOpen, isRestricted, activeSessionId, messages.length]);
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
@@ -561,16 +569,16 @@ export default function HavenDrawer() {
   return createPortal(
     <div data-haven-overlay>
       <AnimatePresence onExitComplete={scrollAfterDrawerExit}>
-        {isOpen && (
+        {isOpen && !isRestricted && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            <motion.div initial={animateIntro && !reduceMotion ? { opacity: 0 } : false} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               transition={{ duration: reduceMotion ? 0 : 0.25 }}
               onClick={() => { setShowHistorySidebar(false); setShowOptionsMenu(false); closeDrawer(); }}
               className="fixed inset-0 z-40 bg-zinc-950 sm:bg-black/60 touch-none" />
 
             <div ref={viewportRef} className="fixed right-0 top-0 z-50 h-dvh w-full max-w-md">
             <motion.div
-              initial={{ x: reduceMotion ? 0 : '100%', opacity: reduceMotion ? 0 : 1 }}
+              initial={animateIntro && !reduceMotion ? { x: '100%' } : false}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: reduceMotion ? 0 : '100%', opacity: reduceMotion ? 0 : 1 }}
               transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
@@ -624,12 +632,13 @@ export default function HavenDrawer() {
                 <div className="flex items-center gap-0.5">
                   {isSupportScope && (
                     <>
-                      <button
-                        onClick={() => { createNewSession('support'); setShowHistorySidebar(false); }}
+                      {canStartNewChat && <button
+                        type="button"
+                        onClick={() => { createNewSession(); setShowHistorySidebar(false); }}
                         aria-label="Start a new support chat"
                         className="p-2 rounded-xl text-zinc-400 hover:text-white bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] transition-colors cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                         <Plus className="w-5 h-5" />
-                      </button>
+                      </button>}
                       <div className="relative">
                         <button ref={optsBtnRef}
                           onClick={() => setShowOptionsMenu(p => !p)}
@@ -716,11 +725,12 @@ export default function HavenDrawer() {
                       className="absolute top-[3.25rem] left-0 bottom-0 w-3/4 max-w-[280px] z-40 bg-zinc-950 border-r border-white/[0.08] p-4 flex flex-col space-y-4 shadow-2xl shadow-black/60">
                       <div className="flex items-center justify-between pb-2 border-b border-white/[0.05]">
                         <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium">Chat History</span>
-                        <button
-                          onClick={() => { createNewSession('support'); setShowHistorySidebar(false); }}
+                        {canStartNewChat && <button
+                          type="button"
+                          onClick={() => { createNewSession(); setShowHistorySidebar(false); }}
                           className="p-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-zinc-300 hover:bg-white/[0.08] text-[11px] font-medium flex items-center gap-1 px-2.5 cursor-pointer">
                           <Plus className="w-3 h-3" /> New
-                        </button>
+                        </button>}
                       </div>
                       <div className="flex-1 overflow-y-auto space-y-4 pr-1">
                         {pinned.length > 0 && (
@@ -758,15 +768,15 @@ export default function HavenDrawer() {
                       onRetry={retryScrape}
                       onCorrect={correctReviewSource}
                     />
-                  ) : viewState === 'landing' ? (
-                    <QuickPromptCards onSelectPrompt={handleQuickPrompt} scope={activeScope} serviceId={currentSession?.serviceId || activeService?.id} />
+                  ) : showStarterCards ? (
+                    <QuickPromptCards key={activeSessionId} onSelectPrompt={handleQuickPrompt} scope={activeScope} serviceId={currentSession?.serviceId || activeService?.id} needHelp={canStartNewChat} animateIntro={animateIntro} />
                   ) : (
                     messages.map((msg, idx) => (
                       <ChatMessage
                         key={msg.id || idx}
                         message={msg}
                         size="full"
-                        animateEntry={idx === messages.length - 1 && (msg.reveal === true || isFreshMessage(msg))}
+                        animateEntry={animateIntro && idx === 0 && msg.role === 'agent'}
                         shouldShowChips={idx === messages.length - 1}
                         onChipSelect={handleChipSelect}
                         onNavChipSelect={handleNavChipSelect}
@@ -845,25 +855,16 @@ export default function HavenDrawer() {
       </AnimatePresence>
 
       {isOpen && isRestricted && <div className="fixed inset-0 z-[80] grid place-items-center bg-black/75 p-5">
-        <section ref={restrictionRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="haven-restriction-title" className="w-full max-w-sm space-y-4 rounded-2xl border border-white/15 bg-zinc-950 p-6 text-zinc-100 shadow-2xl">
-          <h2 id="haven-restriction-title" className="text-lg font-semibold">Haven access restricted</h2>
-          <p className="text-sm leading-relaxed text-zinc-300">This restriction applies to all Haven chats. You can email Team Haven to ask for a review.</p>
-          <div className="flex flex-wrap gap-3">
-            <a href="mailto:info@themarketinghaven.xyz?subject=Haven%20restriction%20appeal" className="rounded-lg bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-950">Appeal restriction</a>
-            <button type="button" onClick={closeDrawer} className="rounded-lg border border-white/15 px-4 py-2 text-sm">Cancel</button>
-          </div>
-          <button type="button" disabled={checkingAccess} className="text-xs text-zinc-300 underline underline-offset-2 disabled:opacity-50" onClick={async () => {
-            setCheckingAccess(true); setAccessError('');
-            try {
-              if (await recheckHavenAccess() === 'red') setAccessError('Your restriction is still active.');
-            } catch { setAccessError('Could not check access. Please try again.'); }
-            finally { setCheckingAccess(false); }
-          }}>{checkingAccess ? 'Checking…' : 'Check access again'}</button>
-          {accessError && <p role="status" className="text-xs text-zinc-300">{accessError}</p>}
+        <section ref={restrictionRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="haven-restriction-title" className="relative w-full max-w-sm space-y-4 rounded-2xl border border-white/15 bg-zinc-950 p-6 text-zinc-100 shadow-2xl">
+          <button type="button" onClick={closeDrawer} aria-label="Close Haven chat" className="absolute right-3 top-3 rounded-lg p-2 text-zinc-400 hover:text-white"><X className="h-5 w-5" /></button>
+          <h2 id="haven-restriction-title" className="pr-8 text-lg font-semibold">Haven access restricted</h2>
+          <p className="text-sm leading-relaxed text-zinc-300">{userProfile.restrictionReason || 'A violation of Haven’s chat rules was recorded.'} Contact Team Haven if you’d like us to review the restriction.</p>
+          <a href={`mailto:info@themarketinghaven.xyz?subject=Haven%20restriction%20appeal&body=${encodeURIComponent(`Hi Team Haven,\n\nPlease review my Haven chat restriction.\n${userProfile.appealReference ? `\nHaven reference: ${userProfile.appealReference}\n` : ''}\nEmail I used on the site (if any):\nWhat happened:\n`)}`}
+            className="inline-flex min-h-11 items-center rounded-lg bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-950">Contact Team Haven</a>
         </section>
       </div>}
 
-      <ActionModals modalType={modalType} onClose={() => setModalType(null)}
+      <ActionModals modalType={isRestricted ? null : modalType} onClose={() => setModalType(null)}
         onConfirm={() => {
           if (modalType === 'delete_confirm') deleteSession(activeSessionId);
           if (modalType === 'clear_confirm') clearChat();
@@ -873,7 +874,7 @@ export default function HavenDrawer() {
       />
 
       <BookingModal
-        isOpen={showBookingModal || bookingNoticeOpen}
+        isOpen={!(isOpen && isRestricted) && (showBookingModal || bookingNoticeOpen)}
         onClose={() => { setShowBookingModal(false); setBookingNoticeOpen(false); }}
       />
     </div>, document.body

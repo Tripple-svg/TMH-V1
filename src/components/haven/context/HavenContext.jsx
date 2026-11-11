@@ -23,6 +23,7 @@ const PREFLIGHT_STORAGE_KEY      = 'tmh_haven_audit_preflight_v1';
 const LAST_SUPPORT_SESSION_KEY   = 'tmh_haven_last_support_session';
 const LAST_SITE_SUPPORT_SESSION_KEY = 'tmh_haven_last_site_support_session';
 const SITE_SUPPORT_ID = 'site-support';
+const TEAM_INQUIRY_ID = 'team-inquiry';
 const REVIEW_RECOVERY_MESSAGE = 'This saved review needs access recovery. Please contact info@themarketinghaven.xyz to continue.';
 
 const DEFAULT_USER_PROFILE = {
@@ -39,6 +40,8 @@ const DEFAULT_USER_PROFILE = {
   clickedBookingLink: false,
   clickedPlaybookLink: false,
   flag_status: 'white',
+  restrictionReason: null,
+  appealReference: null,
   reviewId: null, sessionId: null, accessToken: null,
 };
 
@@ -116,7 +119,7 @@ function makeDefaultSupportSession() {
 function supportGreeting(siteSupport) {
   return {
     id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
-    isSeedGreeting: true, reveal: true,
+    isSeedGreeting: true,
     ...(siteSupport ? {
       content: "Hi, I'm Haven. You're in TMH Support. I can help with your saved review, Playbook purchase, booking, or a problem using the site.\n\nWhat can I help you with?",
       chips: ['I can’t open my saved review', 'I need help with my Playbook download', 'How do I contact support?'],
@@ -289,15 +292,21 @@ export function HavenProvider({ children, siteSupport = false }) {
   const [activeScope, setActiveScope]         = useState('support');
   const [activeSessionId, setActiveSessionId] = useState('session-default');
   const [viewState, setViewState]             = useState('landing');
+  const [supportEntry, setSupportEntry]       = useState(null);
+  const [introSessionId, setIntroSessionId]   = useState(null);
   const [userProfile, setUserProfile]         = useState({ ...DEFAULT_USER_PROFILE });
   const [auditPreflight, setAuditPreflight]   = useState({ ...DEFAULT_PREFLIGHT });
   const [sessionSaveState, setSessionSaveState] = useState('saved');
   const [playbookHandoff, setPlaybookHandoff] = useState(null);
   const consumePlaybookHandoff = useCallback(() => setPlaybookHandoff(null), []);
   const lastSupportKey = siteSupport ? LAST_SITE_SUPPORT_SESSION_KEY : LAST_SUPPORT_SESSION_KEY;
-  const visibleSupportSessions = useMemo(() => supportSessions.filter(
-    session => (session.serviceId === SITE_SUPPORT_ID) === siteSupport,
+  const generalSupportSessions = useMemo(() => supportSessions.filter(
+    session => siteSupport ? session.serviceId === SITE_SUPPORT_ID : !session.serviceId,
   ), [supportSessions, siteSupport]);
+  const visibleSupportSessions = useMemo(() => supportEntry === 'team_inquiry'
+    ? supportSessions.filter(session => session.serviceId === TEAM_INQUIRY_ID)
+    : generalSupportSessions, [supportEntry, supportSessions, generalSupportSessions]);
+  const canStartNewChat = !siteSupport && activeScope === 'support' && supportEntry === 'need_help';
 
   const abortControllerRef = useRef(null);
   const activeRequestRef = useRef(null);
@@ -334,11 +343,11 @@ export function HavenProvider({ children, siteSupport = false }) {
 
   useEffect(() => {
     if (!mounted) return;
-    if (!isOpen || activeScope !== 'support' || !visibleSupportSessions.some(session => session.id === activeSessionId)) return;
+    if (!isOpen || activeScope !== 'support' || !generalSupportSessions.some(session => session.id === activeSessionId)) return;
     try {
       localStorage.setItem(lastSupportKey, activeSessionId);
     } catch { /* Optional browser storage may be unavailable. */ }
-  }, [isOpen, activeScope, activeSessionId, lastSupportKey, mounted, visibleSupportSessions]);
+  }, [isOpen, activeScope, activeSessionId, lastSupportKey, mounted, generalSupportSessions]);
 
   // Sync only the owned conversation snapshot and click metadata. AI results stay server-owned.
   useEffect(() => {
@@ -399,7 +408,7 @@ export function HavenProvider({ children, siteSupport = false }) {
   const addMessage = useCallback((role, content, image = null, extraProps = {}) => {
     const newMessage = {
       id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      role, content, image, timestamp: Date.now(), reveal: role === 'agent', ...extraProps,
+      role, content, image, timestamp: Date.now(), ...extraProps,
     };
     setSessionsForScope(activeScope, prev =>
       prev.map(session => {
@@ -424,8 +433,8 @@ export function HavenProvider({ children, siteSupport = false }) {
       id: providedId || `session-${scope}-${serviceId || 'gen'}-${crypto.randomUUID()}`,
       title: title || 'New Chat', scope, serviceId,
       isPinned: false, createdAt: Date.now(),
-      messages: initialMessage ? [{ ...initialMessage, reveal: true }] : [],
-      hasGreeted: Boolean(initialMessage),
+      messages: initialMessage ? [initialMessage] : [],
+      hasGreeted: true,
       currentStep: scope === 'audit' ? STEPS.AWAITING_DIAGNOSTIC_Q1
         : scope === 'service' ? STEPS.SERVICE_GRID_OPEN
           : serviceId === 'team-inquiry' ? STEPS.TEAM_INQUIRY : STEPS.CUSTOMER_SUPPORT_OPEN,
@@ -434,6 +443,7 @@ export function HavenProvider({ children, siteSupport = false }) {
       ? prev : [newSession, ...prev]);
     setActiveScope(scope);
     setActiveSessionId(newSession.id);
+    setIntroSessionId(newSession.id);
     setViewState(initialMessage ? 'chatting' : 'landing');
     return newSession.id;
   }, [setSessionsForScope]);
@@ -587,7 +597,13 @@ export function HavenProvider({ children, siteSupport = false }) {
 
   const openDrawer = useCallback((targetMode = 'support', payload = {}) => {
     const { profileData, serviceData } = payload;
+    if (targetMode === 'booking') {
+      setBookingContext({ source: payload.source ?? null, serviceId: payload.serviceId ?? null });
+      setBookingNoticeOpen(true);
+      return;
+    }
     setMode(targetMode);
+    setIntroSessionId(null);
 
     if (serviceData) setActiveService(serviceData);
     else setActiveService(null);
@@ -676,25 +692,23 @@ export function HavenProvider({ children, siteSupport = false }) {
         initialMessage: {
           id: `agent-${Date.now()}`, role: 'agent',
           content: greetingContent, image: null, timestamp: Date.now(),
-          isSeedGreeting: true, reveal: true,
+          isSeedGreeting: true,
         },
       });
-    } else if (targetMode === 'booking') {
-      setBookingContext({ source: payload.source ?? null, serviceId: payload.serviceId ?? null });
-      setBookingNoticeOpen(true);
-      return;
     } else {
       setActiveScope('support');
       const isTeamInquiry = !siteSupport && profileData?.entryContext === 'team_inquiry';
+      const isNeedHelp = !siteSupport && targetMode === 'need_help' && !isTeamInquiry;
+      setSupportEntry(isTeamInquiry ? 'team_inquiry' : isNeedHelp ? 'need_help' : null);
 
       if (isTeamInquiry) {
-        const existingTeam = supportSessions.find(s => s.serviceId === 'team-inquiry' && s.messages.length > 0);
+        const existingTeam = supportSessions.find(s => s.serviceId === TEAM_INQUIRY_ID);
         if (existingTeam) {
           setActiveSessionId(existingTeam.id);
-          setViewState('chatting');
+          setViewState(existingTeam.messages.length ? 'chatting' : 'landing');
         } else {
           createSession('support', {
-            title: 'Talk to Our Team', serviceId: 'team-inquiry',
+            title: 'Talk to Our Team', serviceId: TEAM_INQUIRY_ID,
             initialMessage: {
               id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
               content: `Hey there! I'm Haven - I help connect people to the right TMH team member.\n\nBefore I do, what's this about? Tell me a bit about your brand and what you're looking to discuss, and I'll make sure we route you properly.`,
@@ -709,21 +723,22 @@ export function HavenProvider({ children, siteSupport = false }) {
         } catch { /* Optional browser storage may be unavailable. */ }
 
         const lastSupport = lastSupportId
-          ? visibleSupportSessions.find((s) => s.id === lastSupportId)
+          ? generalSupportSessions.find((s) => s.id === lastSupportId)
           : null;
 
-        const defaultSupport = visibleSupportSessions.find((s) => s.id === 'session-default');
-        const target = lastSupport || defaultSupport || visibleSupportSessions.find((s) => !s.serviceId) || visibleSupportSessions[0];
+        const defaultSupport = generalSupportSessions.find((s) => s.id === 'session-default');
+        const target = lastSupport || defaultSupport || generalSupportSessions[0];
 
         if (target) {
           setActiveSessionId(target.id);
           if (target.messages.length === 0 && !target.hasGreeted) {
-            const greeting = supportGreeting(siteSupport);
+            const messages = isNeedHelp ? [] : [supportGreeting(siteSupport)];
             setSessionsForScope('support', prev =>
               prev.map(s => s.id === target.id && !s.hasGreeted && s.messages.length === 0
-                ? { ...s, messages: [greeting], hasGreeted: true } : s)
+                ? { ...s, messages, hasGreeted: true } : s)
             );
-            setViewState('chatting');
+            setIntroSessionId(target.id);
+            setViewState(isNeedHelp ? 'landing' : 'chatting');
           } else {
             setViewState(target.messages.length === 0 ? 'landing' : 'chatting');
           }
@@ -731,27 +746,28 @@ export function HavenProvider({ children, siteSupport = false }) {
           createSession('support', {
             ...(siteSupport ? { id: 'session-site-support', serviceId: SITE_SUPPORT_ID } : {}),
             title: siteSupport ? 'TMH Support' : 'General Support Chat',
-            initialMessage: supportGreeting(siteSupport),
+            initialMessage: isNeedHelp ? null : supportGreeting(siteSupport),
           });
         }
       }
     }
 
     setIsOpen(true);
-  }, [createSession, userProfile, serviceSessions, supportSessions, auditSessions, setSessionsForScope, runScraper, runSocialScorer, resetPreflight, siteSupport, lastSupportKey, visibleSupportSessions]);
+  }, [createSession, userProfile, serviceSessions, supportSessions, auditSessions, setSessionsForScope, runScraper, runSocialScorer, resetPreflight, siteSupport, lastSupportKey, generalSupportSessions]);
 
-  const closeDrawer  = useCallback(() => setIsOpen(false), []);
+  const closeDrawer  = useCallback(() => { setIntroSessionId(null); setIsOpen(false); }, []);
   const toggleDrawer = useCallback(() => setIsOpen(prev => !prev), []);
 
   const switchSession = useCallback((sessionId, scope = activeScope) => {
     const target = getSessionsForScope(scope).find(s => s.id === sessionId);
     if (target) {
+      if (target.id !== activeSessionId || scope !== activeScope) setIntroSessionId(null);
       setActiveScope(scope);
       setActiveSessionId(sessionId);
       setViewState(target.messages.length === 0 ? 'landing' : 'chatting');
     }
     setActiveMenuSessionId(null);
-  }, [activeScope, getSessionsForScope]);
+  }, [activeScope, activeSessionId, getSessionsForScope]);
 
   const togglePinSession = useCallback((sessionId) => {
     setSessionsForScope(activeScope, prev =>
@@ -765,8 +781,8 @@ export function HavenProvider({ children, siteSupport = false }) {
       const filtered = prev.filter(s => s.id !== sessionId);
       const wasActive = activeSessionId === sessionId;
       if (activeScope === 'support') {
-        const remaining = filtered.filter(s => (s.serviceId === SITE_SUPPORT_ID) === siteSupport);
-        if (remaining.length === 0 && !siteSupport) {
+        const remaining = visibleSupportSessions.filter(s => s.id !== sessionId);
+        if (remaining.length === 0 && !siteSupport && supportEntry !== 'team_inquiry') {
           const fresh = makeDefaultSupportSession();
           if (wasActive) { setActiveSessionId(fresh.id); setViewState('landing'); }
           return [...filtered, fresh];
@@ -791,7 +807,7 @@ export function HavenProvider({ children, siteSupport = false }) {
     });
     setActiveMenuSessionId(null);
     triggerToast('Chat deleted');
-  }, [activeScope, activeSessionId, setSessionsForScope, siteSupport, visibleSupportSessions, triggerToast]);
+  }, [activeScope, activeSessionId, setSessionsForScope, siteSupport, supportEntry, visibleSupportSessions, triggerToast]);
 
   const stopResponse = useCallback(() => {
     const active = activeRequestRef.current;
@@ -809,22 +825,14 @@ export function HavenProvider({ children, siteSupport = false }) {
     triggerToast('Response stopped');
   }, [triggerToast, setSessionsForScope]);
 
-  const createNewSession = useCallback((scope = 'support') => {
+  const createNewSession = useCallback(() => {
+    if (!canStartNewChat || !isOpen) return;
     const previousRequest = activeRequestRef.current;
     if (previousRequest && !previousRequest.stopped) stopResponse();
-    const newId = createSession(scope, {
-      title: 'New Chat',
-      ...(scope === 'support' ? {
-        serviceId: siteSupport ? SITE_SUPPORT_ID : null,
-        initialMessage: supportGreeting(siteSupport),
-      } : {}),
-    });
-    setMode(scope);
-    setActiveService(null);
-    setIsOpen(true);
+    const newId = createSession('support', { title: 'New Chat' });
     triggerToast('New chat started');
     return newId;
-  }, [createSession, siteSupport, stopResponse, triggerToast]);
+  }, [canStartNewChat, isOpen, createSession, stopResponse, triggerToast]);
 
   const dismissFailedTurn = useCallback(() => {
     const key = `${activeScope}/${activeSessionId}`;
@@ -840,12 +848,9 @@ export function HavenProvider({ children, siteSupport = false }) {
   }, [addMessage]);
 
   const sendMessage = useCallback(async (content, image = null, options = {}) => {
-    if (!content?.trim() && !image) return;
+    if (userProfile.flag_status === 'red' || (!content?.trim() && !image)) return;
     const bucket = getSessionsForScope(activeScope);
-    if (!bucket.some(s => s.id === activeSessionId)) {
-      createSession('support', { title: 'New Chat' });
-      return;
-    }
+    if (!bucket.some(s => s.id === activeSessionId)) return;
 
     setViewState('chatting');
     const turnKey = `${activeScope}/${activeSessionId}`;
@@ -924,7 +929,8 @@ export function HavenProvider({ children, siteSupport = false }) {
       if (activeRequest.stopped) return;
 
       pendingTurnsRef.current.delete(turnKey);
-      if (result.flagStatus) setUserProfile(prev => ({ ...prev, flag_status: result.flagStatus }));
+      if (result.flagStatus) setUserProfile(prev => ({ ...prev, flag_status: result.flagStatus,
+        restrictionReason: result.restrictionReason || null, appealReference: result.appealReference || null }));
       const { step: newStep, cleanedText: textAfterStep } = parseStepMarker(result.text);
       const { lead: newLead, cleanedText: textAfterLead } = parseLeadMarker(textAfterStep);
       const { navChips: navChipsFromTag, cleanedText } = parseNavChipsFromText(textAfterLead);
@@ -949,7 +955,7 @@ export function HavenProvider({ children, siteSupport = false }) {
       if (result.text.includes('[[PLAYBOOK]]'))        specialChips.push('__PLAYBOOK__');
       if (result.text.includes('[[TIKTOK_CONTENT]]'))  specialChips.push('__TIKTOK_CONTENT__');
 
-      const agentExtraProps = { reveal: true };
+      const agentExtraProps = {};
       if (specialChips.length > 0) agentExtraProps.chips = specialChips;
       else if (regularChips.length > 0) agentExtraProps.chips = regularChips;
       if (navChipObjects.length > 0) agentExtraProps.navChips = navChipObjects;
@@ -989,12 +995,13 @@ export function HavenProvider({ children, siteSupport = false }) {
       if (activeRequestRef.current === activeRequest) activeRequestRef.current = null;
       if (abortControllerRef.current === controller) { setIsThinking(false); abortControllerRef.current = null; }
     }
-  }, [activeScope, activeSessionId, currentSession, getSessionsForScope, setSessionsForScope, createSession, addMessage, userProfile, activeService]);
+  }, [activeScope, activeSessionId, currentSession, getSessionsForScope, setSessionsForScope, addMessage, userProfile, activeService]);
 
   const clearChat = useCallback(() => {
+    setIntroSessionId(null);
     const greeting = activeScope === 'support' && siteSupport ? supportGreeting(true) : null;
     setSessionsForScope(activeScope, prev =>
-      prev.map(s => s.id === activeSessionId ? { ...s, messages: greeting ? [greeting] : [], hasGreeted: Boolean(greeting) } : s)
+      prev.map(s => s.id === activeSessionId ? { ...s, messages: greeting ? [greeting] : [], hasGreeted: true } : s)
     );
     setViewState(greeting ? 'chatting' : 'landing');
     triggerToast('Conversation cleared');
@@ -1048,13 +1055,14 @@ export function HavenProvider({ children, siteSupport = false }) {
       : { ...identity, ...linked, sessionId, serviceId: activeService?.id || currentSession?.serviceId || null, entryContext: supportEntryContext(currentSession?.serviceId) };
     const result = await callHavenAPI({ action: 'access', context, scope: activeScope });
     if (!['white','yellow','red'].includes(result.flagStatus)) throw new Error('Could not verify your access. Please try again.');
-    setUserProfile((previous) => ({ ...previous, flag_status: result.flagStatus }));
+    setUserProfile((previous) => ({ ...previous, flag_status: result.flagStatus,
+      restrictionReason: result.restrictionReason || null, appealReference: result.appealReference || null }));
     return result.flagStatus;
   }, [activeScope, activeSessionId, currentSession, userProfile, activeService]);
 
   const value = {
     isOpen, mode, setMode, toggleDrawer, openDrawer, closeDrawer,
-    activeScope, activeService, viewState,
+    activeScope, activeService, viewState, canStartNewChat, animateIntro: introSessionId === activeSessionId,
     sessions, activeSessionId, currentSession, messages,
     createNewSession, switchSession, togglePinSession, deleteSession, clearChat,
     addMessage, sendMessage, sendNavChipIntent, isThinking, setIsThinking, stopResponse, dismissFailedTurn,

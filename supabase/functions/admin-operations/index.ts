@@ -23,9 +23,10 @@ import {
 } from "../_shared/admin-operations.ts";
 import { deliverEmail, mailConfiguration } from "../_shared/resend-delivery.js";
 import { editorialEmail } from "../_shared/email-template.js";
+import { createDeletionToken, sendDeletionConfirmation, sendDeletionLink } from "../_shared/deletion-mail.ts";
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 Deno.serve(
-  observe("admin-operations", async (request) => {
+  observe("admin-operations", async (request, requestId) => {
     const json = (body: unknown, status = 200) =>
       Response.json(body, {
         status,
@@ -306,6 +307,45 @@ Deno.serve(
           { ok: !result.missing, ...result },
           result.missing ? 404 : 200,
         );
+      }
+      if (body.action === 'privacyRequests') {
+        const query = typeof body.query === 'string' ? body.query.trim() : '';
+        const search = db.from('data_deletion_requests')
+          .select('id,email,requested_at,expires_at,status,records_removed_at,confirmed_at');
+        if (UUID.test(query)) search.eq('id', query);
+        else if (query.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(query)) {
+          search.ilike('email', query.replace(/[\\%_]/g, '\\$&'));
+        } else return json({ ok: false, error: 'Enter the full email address or request reference.' }, 400);
+        const { data, error } = await search.order('requested_at', { ascending: false }).limit(50);
+        if (error) throw Error('privacy lookup');
+        return json({ ok: true, requests: data });
+      }
+      if (body.action === 'assistPrivacyRequest') {
+        if (!UUID.test(body.id || '') || !['send_link', 'retry_cleanup'].includes(body.operation)) {
+          return json({ ok: false, error: 'Choose a privacy request and action.' }, 400);
+        }
+        const sending = body.operation === 'send_link';
+        const mailKey = Deno.env.get('RESEND_API_KEY')?.trim();
+        if (sending && !mailKey) return json({ ok: false, error: 'Email delivery is unavailable. Try again shortly.' }, 503);
+        const result = await rpc('prepare_admin_privacy_assistance', {
+          p_id: body.id, p_action: body.operation, p_network: network,
+          p_token: sending ? createDeletionToken() : null,
+        });
+        if (result.state === 'cooldown') return json({ ok: false, error: 'This request was just handled. Wait two minutes before trying again.' }, 409);
+        if (result.state !== 'ready') return json({ ok: false, error: 'This action is no longer available. Search for the request again to check its status.' }, 409);
+        if (sending) {
+          const status = await sendDeletionLink(mailKey!, result.email, result.token).catch(() => 503);
+          if (status < 200 || status >= 300) return json({ ok: false, error: 'The email service could not accept the link. Try again in two minutes.' }, 503);
+          return json({ ok: true, message: 'The email service accepted the confirmation link for the saved address.' });
+        }
+        if (result.paths.length) {
+          const removed = await db.storage.from('tmh-screenshots').remove(result.paths);
+          if (removed.error) return json({ ok: false, error: 'File cleanup is still pending. Try again in two minutes.' }, 503);
+        }
+        const completed = await db.rpc('complete_saved_review_deletion', { p_request: body.id });
+        if (completed.error) throw Error('privacy cleanup');
+        if (completed.data === true) await sendDeletionConfirmation(result.email, requestId);
+        return json({ ok: true, message: 'File cleanup is complete.' });
       }
       if (body.action === "approvals") {
         const result = await db

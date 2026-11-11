@@ -5,7 +5,6 @@ import React, { memo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { User, Sparkles, Calendar, ArrowRight, BookOpen, Music2 } from 'lucide-react';
 
-import useTypingReveal from '../../hooks/useTypingReveal';
 import {PLATFORM_ACTIONS} from '../../../../../supabase/functions/_shared/platform-navigation.js';
 
 const LOGO_SRC = "/Tmhh.jpeg";
@@ -141,8 +140,6 @@ const ChatMessage = memo(function ChatMessage({
   const [attachmentLoading, setAttachmentLoading] = useState(Boolean(message.image) && !message.image?.startsWith('data:'));
 
   const fullText = stripTagArtifacts(message.content || '');
-  const reveal = useTypingReveal(message.id, fullText, !isUser && animateEntry, reduceMotion);
-  const displayedText = reveal.text;
 
   const rawChips    = message.chips || [];
   const rawNavChips = message.navChips || [];
@@ -165,7 +162,7 @@ const ChatMessage = memo(function ChatMessage({
   const timeTextSize   = isCompact ? 'text-[9px]' : 'text-[10px]';
   const gapSize        = isCompact ? 'gap-2.5' : 'gap-3';
 
-  const showChipRows = reveal.complete && !isUser && shouldShowChips && (chips.length > 0 || rawNavChips.length > 0);
+  const showChipRows = !isUser && shouldShowChips && (chips.length > 0 || rawNavChips.length > 0);
   const hasBubbleContent = Boolean(fullText) || Boolean(message.image);
 
   return (
@@ -222,11 +219,9 @@ const ChatMessage = memo(function ChatMessage({
                   />
                 </div>
               )}
-              {!reveal.complete && <span className="sr-only">{fullText}</span>}
-              {!displayedText && !reveal.complete && <span aria-hidden="true" className="inline-block animate-pulse text-zinc-500 motion-reduce:animate-none">•••</span>}
-              {displayedText && (
-                <span aria-hidden={!reveal.complete} className="whitespace-pre-wrap break-words">
-                  {renderInlineMarkdown(displayedText)}
+              {fullText && (
+                <span className="whitespace-pre-wrap break-words">
+                  {renderInlineMarkdown(fullText)}
                 </span>
               )}
             </div>

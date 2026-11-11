@@ -3,33 +3,11 @@ import {observe} from '../_shared/observability.ts';
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
-import {privacyEmail,emailFooterText} from '../_shared/email-template.js';
+import {sendDeletionConfirmation} from '../_shared/deletion-mail.ts';
 import { HavenRequestError, readBoundedJson, responseHeaders, verifyOrigin } from '../_shared/haven-request.ts';
 import { DELETION_ALREADY_PROCESSED, deletionEmailHash, deletionNetworkHash } from '../_shared/deletion-tombstone.ts';
 
 const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[0-9a-f]{32}$/i;
-
-async function sendDeletionConfirmation(email: string,requestId:string) {
-  const key = Deno.env.get('RESEND_API_KEY')?.trim();
-  if (!key) { logEvent('error','confirm-data-deletion.diagnostic_1',requestId); return; }
-  const removed = 'Your request removed matching saved brand reviews, linked chat sessions and support requests, and stored screenshots.';
-  const remaining = 'We retain a limited record to prevent repeat free reviews. You can keep using the site. Contact info@themarketinghaven.xyz to discuss another review or remaining records, including purchase, booking and delivery records and unlinked guest chats.';
-  try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST', signal: AbortSignal.timeout(10000),
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: 'info@themarketinghaven.xyz', to: [email],
-        subject: 'Your saved review deletion is complete',
-        html:privacyEmail({title:'Your saved review has been removed.',paragraphs:[removed, remaining]}),
-        text: emailFooterText(`${removed}\n\n${remaining}\n\nYour friends over at Team Haven`),
-      }),
-    });
-    // Provider bodies may contain recipient details. Log only a safe status.
-    if (!response.ok) logEvent('error','confirm-data-deletion.email_http_'+response.status,requestId);
-    await response.body?.cancel();
-  } catch { logEvent('error','confirm-data-deletion.diagnostic_3',requestId); }
-}
 
 serve(observe('confirm-data-deletion',async (request,requestId) => {
   const headers: Record<string, string> = responseHeaders(request);

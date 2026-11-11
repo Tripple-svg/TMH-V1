@@ -5,20 +5,18 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { publicRequestLimit } from '../_shared/abuse-limits.ts';
 import { HavenRequestError,readBoundedJson } from '../_shared/haven-request.ts';
 import {verifyOrigin} from '../_shared/haven-request.ts';
-import {privacyEmail,emailFooterText} from '../_shared/email-template.js';
+import {createDeletionToken,sendDeletionLink} from '../_shared/deletion-mail.ts';
 import { deletionEmailHash, deletionNetworkHash, DELETION_ALREADY_PROCESSED, reviewDeletionStatus } from '../_shared/deletion-tombstone.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')?.trim();
 
 const ALLOWED_ORIGINS = [
   'https://themarketinghaven.xyz',
   'https://www.themarketinghaven.xyz',
   'http://localhost:5173',
 ];
-const SITE_URL = 'https://themarketinghaven.xyz';
-const FROM_ADDRESS = 'info@themarketinghaven.xyz';
 const EMAIL_PATTERN = /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i;
 
 function corsHeaders(origin: string | null) {
@@ -48,14 +46,6 @@ function success(origin: string | null) {
 
 function unavailable(origin: string | null) {
   return json({ ok: false, error: 'We could not submit your request. Please try again.' }, origin, 503);
-}
-
-function createToken() {
-  const suffix = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-
-  return `${crypto.randomUUID()}${suffix}`;
 }
 
 serve(observe('request-data-deletion',async (req,requestId) => {
@@ -117,7 +107,7 @@ serve(observe('request-data-deletion',async (req,requestId) => {
       return unavailable(origin);
     }
 
-    const token = createToken();
+    const token = createDeletionToken();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const { error: requestError } = await supabase
       .from('data_deletion_requests')
@@ -134,24 +124,8 @@ serve(observe('request-data-deletion',async (req,requestId) => {
       return unavailable(origin);
     }
 
-    const confirmationUrl = `${SITE_URL}/data-deletion/confirm?token=${encodeURIComponent(token)}`;
-    const resendResponse = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      signal: AbortSignal.timeout(10000),
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: FROM_ADDRESS,
-        to: [storedEmail],
-        subject: 'Confirm your saved review deletion request',
-        text: emailFooterText(`We received a request to remove your saved brand review, linked chat sessions and support requests, and stored screenshots. We retain a limited record to prevent repeat free reviews. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.\n\nTo confirm the request, open this link within 24 hours:\n\n${confirmationUrl}\n\nIf you did not make this request, ignore this email.`),
-        html: privacyEmail({title:'Your review. Your choice.',paragraphs:['We received a request to remove your saved brand review, linked chat sessions and support requests, and stored screenshots.','We retain a limited record to prevent repeat free reviews. Purchase, booking, security and delivery records, and unlinked guest chats, are outside this automated flow. Contact info@themarketinghaven.xyz about other records.','Open the secure page and confirm only if you requested deletion. This link expires in 24 hours. If you did not request this, ignore this email.'],button:{label:'Review deletion request',href:confirmationUrl}}),
-      }),
-    });
-
-    if (!resendResponse.ok) {
+    const deliveryStatus = await sendDeletionLink(RESEND_API_KEY, storedEmail, token);
+    if (deliveryStatus < 200 || deliveryStatus >= 300) {
       logEvent('error','request-data-deletion.diagnostic_5',requestId);
       return unavailable(origin);
     }

@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
+import { webcrypto } from 'node:crypto';
 import { PLATFORM_ACTIONS } from '../supabase/functions/_shared/platform-navigation.js';
+import { quickPrompts } from '../src/components/haven/config/quick-prompts.js';
+import { STEPS } from '../src/components/haven/config/prompts.js';
 
 // Render the real drawer while retaining its session across scorecard/chat changes.
 function drawer() {
@@ -15,6 +18,8 @@ function drawer() {
     userProfile: { businessDomain: 'website', reviewId: 'review', sessionId: 'session', accessToken: 'private' },
     auditPreflight: { status: 'ready', dismissed: false },
     sendMessage: (...args) => calls.push(args),
+    createNewSession: () => calls.push('new chat'),
+    recheckHavenAccess: async () => state.userProfile.flag_status || 'white',
     closeDrawer: () => calls.push('close'),
     consumePlaybookHandoff() { state.playbookHandoff = null; },
     proceedFromPreflight() { state.auditPreflight = { ...state.auditPreflight, dismissed: true }; },
@@ -44,31 +49,138 @@ function drawer() {
       if (name.includes('useDialogFocus')) return { useDialogFocus() {} };
       if (name.includes('/useHaven')) return { useHaven: () => state };
       if (name.includes('useDrawerViewport')) return { __esModule: true, default: () => ({ current: null }) };
-      if (name.includes('quick-prompts')) return { quickPrompts: () => [] };
+      if (name.includes('quick-prompts')) return { quickPrompts };
       if (name.includes('platform-navigation')) return { PLATFORM_ACTIONS };
       return { __esModule: true, default: name.split('/').at(-1) };
     },
   };
   const source = readFileSync(new URL('../src/components/haven/components/HavenDrawer.jsx', import.meta.url), 'utf8');
   vm.runInNewContext(transformSync(source, { loader: 'jsx', format: 'cjs' }).code, context);
-  function render() {
-    cursor = 0;
+  function walkTree(tree) {
     const nodes = [];
     function walk(node) {
       if (Array.isArray(node)) return node.forEach(walk);
       if (!node || typeof node !== 'object') return;
       nodes.push(node); walk(node.props.children);
     }
-    walk(context.module.exports.default());
+    walk(tree);
+    return nodes;
+  }
+  function render() {
+    cursor = 0;
+    const nodes = walkTree(context.module.exports.default());
     while (effects.length) effects.shift()();
     return nodes;
   }
-  return { state, failedTurn, calls, render, document: context.document };
+  return { state, failedTurn, calls, render, walkTree, document: context.document };
 }
 const finishDrawerExit = ui => ui.render().find(node => node.type === 'presence' && node.props.onExitComplete).props.onExitComplete();
 const text = node => Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props.children) : typeof node === 'string' || typeof node === 'number' ? String(node) : '';
 const retry = tree => tree.find(node => node.type === 'button' && text(node) === 'Retry saved message');
 const thinking = tree => tree.some(node => node.type?.name === 'ThinkingIndicator');
+
+test('only Need Help has a new-chat control and restores the four starter actions', () => {
+  const ui = drawer();
+  const newChat = tree => tree.find(node => node.props['aria-label'] === 'Start a new support chat');
+  for (const [scope, serviceId] of [['audit', 'brand-audit'], ['service', 'web'], ['support', 'site-support'], ['support', 'team-inquiry'], ['support', null]]) {
+    ui.state.activeScope = scope;
+    ui.state.currentSession = { serviceId };
+    assert.equal(newChat(ui.render()), undefined);
+  }
+  ui.state.canStartNewChat = true;
+  ui.state.animateIntro = true;
+  ui.state.messages = [{ role: 'agent', content: 'Old intro', isSeedGreeting: true }];
+  const tree = ui.render();
+  newChat(tree).props.onClick();
+  const starter = tree.find(node => node.props.needHelp === true);
+  const nodes = ui.walkTree(starter.type(starter.props));
+  assert.ok(nodes.some(node => node.type === 'img' && node.props.alt === 'Haven'));
+  assert.equal(nodes.filter(node => node.type === 'button').length, 4);
+  nodes.find(node => node.type === 'button' && text(node).includes('Website help')).props.onClick();
+  assert.deepEqual(ui.calls, ['new chat', ['Show website help']]);
+});
+
+test('a restricted chat only offers an email appeal with the Haven reference', () => {
+  const ui = drawer();
+  ui.state.userProfile = { flag_status: 'red', restrictionReason: 'Harassment or threats in chat.', appealReference: 'visitor-reference' };
+  const tree = ui.render();
+  assert.ok(tree.some(node => text(node).includes('Harassment or threats in chat.')));
+  assert.ok(tree.some(node => node.type === 'a' && text(node) === 'Contact Team Haven' && decodeURIComponent(node.props.href).includes('visitor-reference')));
+  assert.ok(!tree.some(node => node.type === 'ChatInput' || node.type === 'HavenScoreCard' || text(node) === 'Check access again'));
+});
+
+test('Haven animates new sessions once and can start another chat only from Need Help', () => {
+  function provider(siteSupport = false) {
+    let cursor = 0;
+    const slots = [], storage = new Map();
+    const react = {
+      createContext: () => ({ Provider: 'provider' }),
+      createElement: (type, props) => ({ type, props }),
+      useState(initial) {
+        const index = cursor++;
+        if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial;
+        return [slots[index], value => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }];
+      },
+      useRef(initial) { return slots[cursor++] ||= { current: initial }; },
+      useEffect() {}, useCallback: fn => fn, useMemo: fn => fn(),
+    };
+    const context = {
+      module: { exports: {} }, React: react, crypto: webcrypto, setTimeout() {},
+      localStorage: { getItem: key => storage.get(key) },
+      require: name => name === 'react' ? react : name.endsWith('/config/prompts') ? { STEPS } : {},
+    };
+    const source = readFileSync(new URL('../src/components/haven/context/HavenContext.jsx', import.meta.url), 'utf8');
+    vm.runInNewContext(transformSync(source, { loader: 'jsx', format: 'cjs' }).code, context);
+    const render = () => { cursor = 0; return context.module.exports.HavenProvider({ siteSupport }).props.value; };
+    return { render, storage };
+  }
+
+  const home = provider();
+  const render = home.render;
+  const team = () => render().openDrawer('support', { profileData: { entryContext: 'team_inquiry' } });
+  team();
+  const teamId = render().activeSessionId;
+  assert.equal(render().animateIntro, true);
+  assert.equal(render().createNewSession(), undefined);
+  home.storage.set('tmh_haven_last_support_session', teamId);
+  render().closeDrawer(); team();
+  assert.equal(render().activeSessionId, teamId);
+  assert.equal(render().animateIntro, false);
+
+  render().openDrawer('need_help');
+  assert.notEqual(render().activeSessionId, teamId);
+  assert.equal(render().animateIntro, true);
+  const fresh = render().createNewSession();
+  assert.equal(render().activeSessionId, fresh);
+  assert.equal(render().animateIntro, true);
+  assert.equal(render().messages.length, 0);
+  home.storage.set('tmh_haven_last_support_session', fresh);
+  render().closeDrawer(); render().openDrawer('need_help');
+  assert.equal(render().activeSessionId, fresh);
+  assert.equal(render().animateIntro, false);
+  render().clearChat(); render().closeDrawer(); render().openDrawer('need_help');
+  assert.equal(render().activeSessionId, fresh);
+  assert.equal(render().animateIntro, false);
+
+  const service = () => render().openDrawer('service_inquiry', { serviceData: { id: 'web', title: 'Web' } });
+  const profileData = { reviewId: 'review', sessionId: 'audit', accessToken: 'token', businessDomain: 'none' };
+  const audit = (isReturningUser = false) => render().openDrawer('audit', { profileData: { ...profileData, isReturningUser } });
+  for (const [open, reopen] of [[service, service], [audit, () => audit(true)]]) {
+    open(); assert.equal(render().animateIntro, true); assert.equal(render().createNewSession(), undefined);
+    const id = render().activeSessionId;
+    render().closeDrawer(); reopen();
+    assert.equal(render().activeSessionId, id); assert.equal(render().animateIntro, false);
+  }
+
+  const site = provider(true).render;
+  site().openDrawer('support');
+  assert.equal(site().currentSession.serviceId, 'site-support');
+  assert.equal(site().animateIntro, true);
+  assert.equal(site().createNewSession(), undefined);
+  site().closeDrawer(); site().openDrawer('support');
+  assert.equal(site().animateIntro, false);
+  assert.equal(site().sessions.length, 1);
+});
 
 test('review source hides chat retry without losing the saved turn, then returning to chat can retry it', () => {
   const ui = drawer();

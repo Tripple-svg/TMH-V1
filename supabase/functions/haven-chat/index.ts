@@ -10,7 +10,7 @@ import { enforceHavenLimits } from '../_shared/haven-limits.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
 import { buildHavenSystemPrompt, STEPS, LEADS } from '../_shared/haven-prompts.js';
 import { ReviewAccessError, hashReviewToken } from '../_shared/review-access.ts';
-import { prepareConversation, substantiveAnswer, explicitCallRequest, RESTRICTED_MESSAGE, REVIEW_CONTEXT_QUESTION, REVIEW_CONTEXT_MARKER, loadLinkedReviewContext } from '../_shared/haven-conversation.ts';
+import { prepareConversation, substantiveAnswer, explicitCallRequest, RESTRICTED_MESSAGE, restrictionDetails, REVIEW_CONTEXT_QUESTION, REVIEW_CONTEXT_MARKER, loadLinkedReviewContext } from '../_shared/haven-conversation.ts';
 import { resolveHavenRouting, supportHelpReply, acceptedCallInvitation, inferHavenNeed, isAffirmative, isPlainDecline, directPlaybookReply, CALL_HANDOFF, PLAYBOOK_CHOICES } from '../_shared/haven-routing.js';
 import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiText } from '../_shared/haven-model.ts';
 import { applyAutomaticFlag, ModerationError, detectHavenAbuse, moderationReply, requestsPrivateContact, PRIVATE_CONTACT_REPLY } from '../_shared/haven-moderation.ts';
@@ -25,7 +25,7 @@ import {
 
 type HavenMessage = { role?: string; content?: string };
 type ModelUsed = 'gemini' | 'groq';
-const GROQ_UNAVAILABLE_REPLY = "I'm having trouble connecting to my brain right now. Let's try that again in a moment.";
+const GROQ_UNAVAILABLE_REPLY = "I can't answer right now because the AI service is temporarily unavailable. Please try again in a few minutes.";
 const LOOP_SUPPORT_REPLY = 'I apologize, I am repeating myself. Please contact support below.';
 const GROQ_SYSTEM_PROMPT = `Gemini is unavailable. Reply with exactly this sentence: ${GROQ_UNAVAILABLE_REPLY}`;
 
@@ -115,7 +115,8 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
         if(error) throw new HavenRequestError('The stop request could not be saved. Please retry shortly.',503);
         return json({ok:true,cancelled:data===true});
       }
-      return json({ ok: true, flagStatus: access.flagStatus });
+      return json({ ok: true, flagStatus: access.flagStatus,
+        ...(access.flagStatus === 'red' ? restrictionDetails(access.visitor, access.review) : {}) });
     }
     const { scope, context, messages, screenshot } = validateChatBody(body);
     const requestId = body.requestId;
@@ -124,7 +125,8 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     if (!url || !key) throw new HavenRequestError('Haven is not configured.', 503);
     supabase = createClient(url, key, { auth: { persistSession: false } });
     const conversation = await prepareConversation(supabase, scope, context, body.noticeVersion);
-    if (conversation.flagStatus === 'red') return json({ ok: true, text: RESTRICTED_MESSAGE, chips: [], flagStatus: 'red', model: null });
+    if (conversation.flagStatus === 'red') return json({ ok: true, text: RESTRICTED_MESSAGE, chips: [], flagStatus: 'red', model: null,
+      ...restrictionDetails(conversation.visitor, conversation.review) });
     const latest = messages[messages.length-1].content || '';
     const {data:bookingStatus,error:bookingError}=await supabase.rpc('visitor_strategy_booking',{p_visitor:conversation.visitor.id});
     if(bookingError)throw new HavenRequestError('Booking status could not be checked. Please retry shortly.',503);
@@ -246,11 +248,12 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     let flagStatus = conversation.flagStatus;
     let warned = false;
     const flag = directAbuse || rawText.match(/\[\[FLAG:(SEXUAL|PERSONAL_INFO|HARASSMENT|ABUSE)\]\]/)?.[1];
-    if (flag) {
+    const moderationReason = flag ? `Haven detected ${flag.toLowerCase().replaceAll('_',' ')} in this conversation.` : undefined;
+    if (moderationReason) {
       const moderation = await applyAutomaticFlag(supabase, {
         reviewId: conversation.review?.id, visitorId: conversation.visitor.id,
         sessionId: session.id,
-        eventKey: `chat:${conversation.session.id}:${requestId}`, reason: `Haven detected ${flag.toLowerCase().replaceAll('_',' ')} in this conversation.`,
+        eventKey: `chat:${conversation.session.id}:${requestId}`, reason: moderationReason,
       });
       flagStatus = moderation.flagStatus;
       warned = moderation.changed && flagStatus === 'yellow';
@@ -297,7 +300,8 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     const routingState = { ...routed.routingState };
     if (proof?.chips && !flag) Object.assign(routingState,{testimonialOffered:true});
     else if (previousRoute?.testimonialOffered) Object.assign(routingState,{testimonialOffered:false});
-    const response = { ok: true, ...parsed, ...(openPlaybookSection ? { openPlaybookSection } : {}), ...(openTestimonials ? { openTestimonials } : {}), model, currentStep, leadTemperature, flagStatus, sessionId: session.id, routingState, platformState, providerDiagnostics:diagnostics };
+    const response = { ok: true, ...parsed, ...(openPlaybookSection ? { openPlaybookSection } : {}), ...(openTestimonials ? { openTestimonials } : {}), model, currentStep, leadTemperature, flagStatus, sessionId: session.id, routingState, platformState, providerDiagnostics:diagnostics,
+      ...(flagStatus === 'red' ? restrictionDetails(conversation.visitor, conversation.review, moderationReason) : {}) };
     const { error: completionError } = await supabase.rpc('finish_haven_turn', {
       p_session_id: session.id, p_turn_id: requestId, p_attempt_id:activeTurn.attemptId, p_response: { ...response, conversationMemory: repeated ? session.conversation_memory : captured.memory }, p_question: askedQuestion, p_step: currentStep,
     });

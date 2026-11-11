@@ -22,9 +22,11 @@ const code = [
     .replaceAll('import.meta.env.VITE_SUPABASE_URL', "'https://project.supabase.co'")
     .replaceAll('import.meta.env.VITE_SUPABASE_ANON_KEY', "'public-anon-key'"),
   extract('  const runScraper = useCallback(', '  const retryScrape = useCallback('),
-  extract('  const stopResponse = useCallback(', '  const sendNavChipIntent = useCallback('),
+  extract('  const stopResponse = useCallback(', '  const createNewSession = useCallback('),
+  extract('  const dismissFailedTurn = useCallback(', '  const sendNavChipIntent = useCallback('),
   extract('  const sendMessage = useCallback(', '  const clearChat = useCallback('),
-  'globalThis.callbacks = { runScraper, runSocialScorer, sendMessage, stopResponse, dismissFailedTurn, matchingAuditSession };',
+  extract('  const recheckHavenAccess = useCallback(', '  const value = {'),
+  'globalThis.callbacks = { runScraper, runSocialScorer, sendMessage, stopResponse, dismissFailedTurn, matchingAuditSession, recheckHavenAccess };',
 ].join('\n');
 const ACCESS = { reviewId: '7e4d80fa-a528-4d23-a13c-578240e3ba83', sessionId: 'c9727d76-8754-49ad-aa20-b56243badc31', accessToken: 'a'.repeat(64) };
 const IDENTITY = { visitorId: 'fc40998d-e854-4d7a-910a-bad281db7c15', visitorToken: 'b'.repeat(64) };
@@ -126,9 +128,14 @@ test('chat: audit sends credentials and bounded history, never a browser-generat
   assert.deepEqual(body.messages, [{ role: 'user', content: 'I post but nothing happens.' }]);
   assert.equal(ui.profile.currentStep, 'AWAITING_DIAGNOSTIC_Q2'); assert.deepEqual(ui.thinking, [true, false]);
 });
-test('chat: browser-cached red status does not replace the server decision', async () => {
-  const ui = harness({ profile: { flag_status: 'red' } }); await ui.sendMessage('Help me understand.');
-  assert.equal(ui.profile.flag_status, 'white'); assert.equal(ui.messages.at(-1)[1], 'Here is the next question.');
+test('chat: a restricted browser waits for the server to restore access before sending another turn', async () => {
+  const ui = harness({ profile: { flag_status: 'red' } });
+  await ui.sendMessage('Help me understand.');
+  assert.equal(ui.requests.length, 0);
+  assert.equal(await ui.recheckHavenAccess(), 'white');
+  assert.equal(ui.profile.flag_status, 'white');
+  assert.equal(ui.requests[0].payload.action, 'access');
+  assert.equal(ui.messages.length, 0);
 });
 test('chat: server restriction text is rendered and authoritative red status is retained', async () => {
   const ui = harness({ chat: { ok: true, text: 'Your access is currently restricted.', flagStatus: 'red' } });
@@ -137,7 +144,7 @@ test('chat: server restriction text is rendered and authoritative red status is 
 });
 test('chat: linked support and service carry ownership proof and separate public session IDs without score claims', async () => {
   for (const scope of ['support', 'service']) {
-    const ui = harness({ scope, profile: { auditScore: 99, flag_status: 'red' } }); await ui.sendMessage('What does TMH do?');
+    const ui = harness({ scope, profile: { auditScore: 99, flag_status: 'white' } }); await ui.sendMessage('What does TMH do?');
     const context = ui.requests[0].payload.context;
     assert.equal(context.accessToken, ACCESS.accessToken); assert.equal(context.reviewId, ACCESS.reviewId);
     assert.equal(context.reviewSessionId, ACCESS.sessionId); assert.notEqual(context.sessionId, ACCESS.sessionId);

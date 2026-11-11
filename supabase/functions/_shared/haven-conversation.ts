@@ -2,10 +2,25 @@ import { hashReviewToken, verifyReviewAccess, ReviewAccessError } from './review
 import { HavenRequestError, textValue } from './haven-request.ts';
 import { savedConversationMemory } from './haven-memory.js';
 export const CHAT_NOTICE_VERSION = '2026-10-26';
-export const RESTRICTED_MESSAGE = 'Your access is currently restricted due to a violation of our terms. Please contact info@themarketinghaven.xyz.';
+export const RESTRICTED_MESSAGE = 'Your Haven chat access is restricted. Contact Team Haven to ask for a review.';
 export const REVIEW_CONTEXT_QUESTION = 'Would you like me to use your saved Brand Review to answer this?';
 export const REVIEW_CONTEXT_MARKER = '[[REVIEW_CONTEXT:ASK]]';
 const UUID = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
+
+export function restrictionDetails(visitor: { id?: string; flag_reason?: string }, review?: { flag_status?: string; flag_reason?: string } | null, reason?: string) {
+  const storedReason = reason || (review?.flag_status === 'red' ? review.flag_reason : visitor.flag_reason);
+  const knownReasons: Record<string, string> = {
+    'Haven detected sexual in this conversation.': 'Sexual comments directed at Haven or the team.',
+    'Haven detected personal info in this conversation.': 'Requests for private personal information.',
+    'Haven detected harassment in this conversation.': 'Harassment or threats in chat.',
+    'Haven detected abuse in this conversation.': 'Abusive messages in chat.',
+  };
+  return {
+    restrictionReason: (storedReason && Object.hasOwn(knownReasons, storedReason) ? knownReasons[storedReason] : null)
+      || 'A violation of Haven’s chat rules was recorded.',
+    appealReference: visitor.id && UUID.test(visitor.id) ? visitor.id : null,
+  };
+}
 
 export async function prepareConversation(supabase: any, scope: string, context: Record<string, any>, noticeVersion: unknown) {
   if (noticeVersion !== CHAT_NOTICE_VERSION) throw new HavenRequestError('Please refresh Haven to review the current chat privacy notice.', 400);

@@ -287,7 +287,7 @@ test('Gemini 429 respects provider Retry-After and immediately tries the configu
     : Response.json({ choices: [{ finish_reason: 'stop', message: { content: 'You need the Playbook. [[PLAYBOOK]][[BOOK_CALL]][[LEAD:HOT]][[STEP:ROUTING_TO_CALL]][[FLAG:ABUSE]]' } }] }) });
   const body = await (await app.handler(app.request(chatBody()))).json();
   assert.equal(body.model, 'groq'); assert.equal(app.requests.length, 2);
-  assert.equal(body.text, "I'm having trouble connecting to my brain right now. Let's try that again in a moment.");
+  assert.equal(body.text, "I can't answer right now because the AI service is temporarily unavailable. Please try again in a few minutes.");
   assert.deepEqual(body.chips, []); assert.equal(body.leadTemperature, null); assert.equal(body.flagStatus, 'white');
   assert.equal(app.rpcCalls.find(call => call.name === 'finish_haven_turn').args.p_question, false);
   assert.ok(!app.rpcCalls.some(call => call.name === 'apply_haven_ai_flag'));
@@ -350,10 +350,15 @@ test('screenshot corrections upload privately and clean the appropriate object o
 });
 
 test('access refresh reads current restrictions without model calls or a new chat turn', async () => {
-  const app = load('haven-chat', { review: { flag_status: 'red' } });
+  const app = load('haven-chat', { review: { flag_status: 'red', flag_reason: 'Private staff note' } });
   const body = { action: 'access', scope: 'audit', context: ACCESS, noticeVersion: '2026-10-26' };
   const first = await app.handler(app.request(body));
-  assert.equal((await first.json()).flagStatus, 'red');
+  const restricted = await first.json();
+  assert.equal(restricted.flagStatus, 'red');
+  assert.equal(restricted.appealReference, ACCESS.visitorId);
+  assert.doesNotMatch(JSON.stringify(restricted), /Private staff note|visitorToken/);
+  app.rows.brand_reviews[0].flag_reason = 'Haven detected harassment in this conversation.';
+  assert.equal((await (await app.handler(app.request(body))).json()).restrictionReason, 'Harassment or threats in chat.');
   app.rows.brand_reviews[0].flag_status = 'white';
   const next = await app.handler(app.request(body));
   assert.equal((await next.json()).flagStatus, 'white');
@@ -419,7 +424,7 @@ test('server chat: authoritative red restriction returns exact text without a mo
   const app = load('haven-chat', { review: { flag_status: 'red' } });
   const response = await app.handler(app.request(chatBody({ context: { ...ACCESS, flag_status: 'white' } })));
   assert.equal(response.status, 200); const data = await response.json();
-  assert.equal(data.text, 'Your access is currently restricted due to a violation of our terms. Please contact info@themarketinghaven.xyz.');
+  assert.equal(data.text, 'Your Haven chat access is restricted. Contact Team Haven to ask for a review.');
   assert.equal(data.flagStatus, 'red'); assert.equal(app.requests.length, 0);
 });
 test('server chat: prompt uses saved brand, step, and valid low score; request facts cannot replace them', async () => {

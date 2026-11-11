@@ -1,5 +1,6 @@
 import VerificationAttemptsPanel from '../components/admin/VerificationAttemptsPanel';
 import SupportRequestsPanel from '../components/admin/SupportRequestsPanel';
+import PrivacyRequestsPanel from '../components/admin/PrivacyRequestsPanel';
 import AdminSecurityPanel from '../components/admin/AdminSecurityPanel';
 import AdminMfaPanel from '../components/admin/AdminMfaPanel';
 import BookingCalendar from '../components/admin/BookingCalendar';
@@ -1275,9 +1276,9 @@ export default function AdminDashboard() {
         if (!created || now - created > rangeDays * 86400000) return false;
       }
       if (filters.search) {
-        const q = filters.search.toLowerCase();
+        const q = filters.search.trim().toLowerCase();
         const hay = `${lead.full_name || ''} ${lead.brand_name || ''} ${lead.email || ''}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+        if (!hay.includes(q) && !lead.sessions?.some(session => session.visitor_id?.toLowerCase() === q)) return false;
       }
       return true;
     });
@@ -1423,7 +1424,14 @@ export default function AdminDashboard() {
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-200">{error}</p>}
         <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
         {activeTab==='guide'&&<AdminGuide onNavigate={section=>{setActiveTab(section);requestAnimationFrame(()=>document.getElementById('panel-'+section)?.focus());}}/>}
-        {activeTab === 'requests' && <SupportRequestsPanel onRequest={supportRequest} onAuthLost={handleAuthLost} refreshKey={lastRefreshed} />}
+        {activeTab === 'requests' && <>
+          <PrivacyRequestsPanel onRequest={operationsRequest} onAuthLost={handleAuthLost} />
+          <SupportRequestsPanel onRequest={supportRequest} onAuthLost={handleAuthLost} refreshKey={lastRefreshed} onFindReview={email => {
+            setFiltersState({ temperature: 'All', followup: 'All', dateRange: 'all', search: email });
+            setPage(1);
+            setActiveTab('leads');
+          }} />
+        </>}
         {activeTab==='insights'&&<InsightsPanel onRequest={operationsRequest} onAuthLost={handleAuthLost}/>}
         {activeTab==='activity'&&<ActivityPanel onRequest={operationsRequest} onAuthLost={handleAuthLost}/>}
         {activeTab === 'security' && (
