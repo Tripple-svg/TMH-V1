@@ -90,14 +90,40 @@ test('only Need Help has a new-chat control and restores the four starter action
   ui.state.canStartNewChat = true;
   ui.state.animateIntro = true;
   ui.state.messages = [{ role: 'agent', content: 'Old intro', isSeedGreeting: true }];
+  const initial = ui.render();
+  assert.match(text(initial), /Customer Support/);
+  assert.equal(initial.find(node => node.props.needHelp === true), undefined);
+  assert.equal(initial.find(node => node.type === 'ChatMessage').props.animateEntry, true);
+  newChat(initial).props.onClick();
+
+  ui.state.currentSession = { startedWithPlus: true };
+  ui.state.messages = [];
+  ui.state.viewState = 'landing';
   const tree = ui.render();
-  newChat(tree).props.onClick();
   const starter = tree.find(node => node.props.needHelp === true);
   const nodes = ui.walkTree(starter.type(starter.props));
   assert.ok(nodes.some(node => node.type === 'img' && node.props.alt === 'Haven'));
   assert.equal(nodes.filter(node => node.type === 'button').length, 4);
   nodes.find(node => node.type === 'button' && text(node).includes('Website help')).props.onClick();
   assert.deepEqual(ui.calls, ['new chat', ['Show website help']]);
+  const composer = tree.find(node => node.type === 'ChatInput');
+  composer.props.onTypingChange(true);
+  const typing = ui.render();
+  assert.equal(typing.find(node => node.props.needHelp === true), undefined);
+  assert.ok(typing.some(node => node.type === 'ChatInput'));
+  composer.props.onTypingChange(false);
+  assert.ok(ui.render().some(node => node.props.needHelp === true));
+});
+
+test('only a new Haven reply animates when a conversation already has messages', () => {
+  const ui = drawer();
+  ui.state.activeScope = 'support';
+  ui.state.animateIntro = false;
+  ui.state.messages = [{ id: 'old', role: 'agent' }, { id: 'question', role: 'user' }, { id: 'reply', role: 'agent' }];
+  const animations = () => ui.render().filter(node => node.type === 'ChatMessage').map(node => node.props.animateEntry);
+  assert.deepEqual(animations(), [false, false, false]);
+  ui.state.latestReplyId = 'reply';
+  assert.deepEqual(animations(), [false, false, true]);
 });
 
 test('a restricted chat only offers an email appeal with the Haven reference', () => {
@@ -110,7 +136,7 @@ test('a restricted chat only offers an email appeal with the Haven reference', (
 });
 
 test('Haven animates new sessions once and can start another chat only from Need Help', () => {
-  function provider(siteSupport = false) {
+  function provider(siteSupport = false, legacyEmptySupport = false) {
     let cursor = 0;
     const slots = [], storage = new Map();
     const react = {
@@ -118,7 +144,12 @@ test('Haven animates new sessions once and can start another chat only from Need
       createElement: (type, props) => ({ type, props }),
       useState(initial) {
         const index = cursor++;
-        if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial;
+        if (!(index in slots)) {
+          slots[index] = typeof initial === 'function' ? initial() : initial;
+          if (legacyEmptySupport && Array.isArray(initial) && initial[0]?.id === 'session-default') {
+            slots[index] = [{ ...initial[0], hasGreeted: true }];
+          }
+        }
         return [slots[index], value => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }];
       },
       useRef(initial) { return slots[cursor++] ||= { current: initial }; },
@@ -150,14 +181,24 @@ test('Haven animates new sessions once and can start another chat only from Need
   render().openDrawer('need_help');
   assert.notEqual(render().activeSessionId, teamId);
   assert.equal(render().animateIntro, true);
+  assert.equal(render().messages.length, 1);
+  assert.equal(render().currentSession.startedWithPlus, undefined);
+  const reply = render().addMessage('agent', 'New response');
+  assert.equal(render().latestReplyId, reply.id);
+  render().closeDrawer(); render().openDrawer('need_help');
+  assert.equal(render().latestReplyId, null);
+  assert.equal(render().animateIntro, false);
   const fresh = render().createNewSession();
   assert.equal(render().activeSessionId, fresh);
   assert.equal(render().animateIntro, true);
   assert.equal(render().messages.length, 0);
+  assert.equal(render().currentSession.startedWithPlus, true);
   home.storage.set('tmh_haven_last_support_session', fresh);
   render().closeDrawer(); render().openDrawer('need_help');
   assert.equal(render().activeSessionId, fresh);
   assert.equal(render().animateIntro, false);
+  render().addMessage('user', 'Where do I find my purchase?');
+  assert.equal(render().currentSession.startedWithPlus, false);
   render().clearChat(); render().closeDrawer(); render().openDrawer('need_help');
   assert.equal(render().activeSessionId, fresh);
   assert.equal(render().animateIntro, false);
@@ -180,6 +221,13 @@ test('Haven animates new sessions once and can start another chat only from Need
   site().closeDrawer(); site().openDrawer('support');
   assert.equal(site().animateIntro, false);
   assert.equal(site().sessions.length, 1);
+
+  const legacy = provider(false, true).render;
+  legacy().openDrawer('need_help');
+  assert.equal(legacy().messages.length, 1);
+  assert.equal(legacy().animateIntro, true);
+  legacy().closeDrawer(); legacy().openDrawer('need_help');
+  assert.equal(legacy().animateIntro, false);
 });
 
 test('review source hides chat retry without losing the saved turn, then returning to chat can retry it', () => {

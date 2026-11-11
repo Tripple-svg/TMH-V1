@@ -25,7 +25,11 @@ function harness({ dashboard = false, send = async () => ({ status: 200, ...sess
   let cursor = 0, refCursor = 0, effectCursor = 0, lost = 0;
   const context = {
     module: { exports: {} },
-    require(name) { return name.includes('adminWorkspace') ? workspace : name.includes('team-assignment-public') ? {SERVICE_NAMES:{web:'Brand & Web Engineering',growth:'Strategic Growth & Consulting',content:'Content & Social Architecture'}} : { __esModule:true, default:function InquiryWorkflow(){} }; },
+    require(name) {
+      if (name.endsWith('/PrivacyRequestsPanel')) return { __esModule: true, default: function PrivacyRequestsPanel() {} };
+      if (name.endsWith('/SupportRequestsPanel')) return { __esModule: true, default: function SupportRequestsPanel() {} };
+      return name.includes('adminWorkspace') ? workspace : name.includes('team-assignment-public') ? {SERVICE_NAMES:{web:'Brand & Web Engineering',growth:'Strategic Growth & Consulting',content:'Content & Social Architecture'}} : { __esModule:true, default:function InquiryWorkflow(){} };
+    },
     React: { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) },
     useState(initial) {
       const slot = cursor++;
@@ -70,12 +74,12 @@ function harness({ dashboard = false, send = async () => ({ status: 200, ...sess
   };
 }
 
-test('admin tabs: eleven sections switch panels, with counts only for loaded data', () => {
+test('admin tabs: sections switch panels, with counts only for loaded data', () => {
   const ui = harness({ dashboard: true });
   let tree = ui.render('AdminDashboard');
   const tabs = tree.filter((node) => node.props.role === 'tab');
-  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Start here', 'Leads', 'Playbook Purchases', 'Bookings', 'Team Inquiries', 'Support Chats', 'Support Requests', 'Service Chats','Security & AI','Insights','Activity']);
-  assert.ok(tabs.filter(node=>!['tab-guide','tab-requests','tab-security','tab-insights','tab-activity'].includes(node.props.id)).every((node) => node.props.children[1].props.children[0] === (['tab-bookings','tab-team'].includes(node.props.id) ? 0 : 1)));
+  assert.deepEqual(tabs.map((node) => node.props.children[0]), ['Start here', 'Leads', 'Playbook Purchases', 'Bookings', 'Team Inquiries', 'Support Chats', 'Support Requests', 'Privacy Requests', 'Service Chats','Security & AI','Insights','Activity']);
+  assert.ok(tabs.filter(node=>!['tab-guide','tab-requests','tab-privacy','tab-security','tab-insights','tab-activity'].includes(node.props.id)).every((node) => node.props.children[1].props.children[0] === (['tab-bookings','tab-team'].includes(node.props.id) ? 0 : 1)));
   assert.equal(tabs.find(node=>node.props.id==='tab-requests').props.children[1],false);
   assert.ok(tree.some((node) => node.type === 'table'));
   tree.find(node=>node.props.id==='tab-support').props.onClick();
@@ -91,6 +95,13 @@ test('admin tabs: eleven sections switch panels, with counts only for loaded dat
   tree.find(node=>node.props.id==='tab-requests').props.onClick();
   tree=ui.render('AdminDashboard');
   assert.ok(!tree.some(node=>node.type?.name==='PurchasesPanel'||node.type?.name==='SessionsPanel'));
+  assert.ok(tree.some(node => node.type?.name === 'SupportRequestsPanel'));
+  assert.ok(!tree.some(node => node.type?.name === 'PrivacyRequestsPanel'));
+  tree.find(node => node.props.id === 'tab-privacy').props.onClick();
+  tree = ui.render('AdminDashboard');
+  assert.ok(tree.some(node => node.props.role === 'tabpanel' && node.props['aria-labelledby'] === 'tab-privacy'));
+  assert.ok(tree.some(node => node.type?.name === 'PrivacyRequestsPanel'));
+  assert.ok(!tree.some(node => node.type?.name === 'SupportRequestsPanel'));
 });
 
 test('lead conversations: scope switcher keeps all linked scopes under one lead', () => {

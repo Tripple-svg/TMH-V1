@@ -43,8 +43,8 @@ export default function PrivacyRequestsPanel({ onRequest, onAuthLost }) {
     }
   };
 
-  return <details className="mb-6 rounded-2xl border border-white/10 bg-white/[0.025] p-4 sm:p-5">
-    <summary className="cursor-pointer text-sm font-medium text-zinc-100">Help with a deletion request</summary>
+  return <section aria-labelledby="privacy-requests-heading" className="mb-6 rounded-2xl border border-white/10 bg-white/[0.025] p-4 sm:p-5">
+    <h2 id="privacy-requests-heading" className="text-base font-medium text-zinc-100">Help with a deletion request</h2>
     <p className="mt-3 text-xs leading-6 text-zinc-400">Find a request by the saved email address or request reference. The visitor must confirm deletion from their inbox. You can resend the link or finish file cleanup after confirmation.</p>
     <form className="mt-4 flex flex-wrap items-end gap-3" onSubmit={event => { event.preventDefault(); setResults(null); void search(); }}>
       <label className="min-w-0 flex-1 text-xs text-zinc-300">Email address or request reference
@@ -68,5 +68,5 @@ export default function PrivacyRequestsPanel({ onRequest, onAuthLost }) {
         </button>}
       </article>)}
     </div>}
-  </details>;
+  </section>;
 }

@@ -1,7 +1,8 @@
 import {BookOpen,ArrowUpRight,CheckCircle2,ShieldCheck} from 'lucide-react';
 const AREAS=[
   ['leads','Leads','Read the review and conversation before contacting someone. Add a short private note, choose a next-step status, and save it. Hot, warm and cold help you prioritise; they do not guarantee a sale.'],
-  ['requests','Support requests','Search by name, email or reference. Open the saved review by email to check linked chats. For deletion help, find the request and resend the confirmation link or retry file cleanup. For an appeal, search Leads or the chat tabs with the Haven reference from the email.'],
+  ['requests','Support requests','Search by name, email or reference. Open the saved review by email to check linked chats. For an appeal, search Leads or the chat tabs with the Haven reference from the email.'],
+  ['privacy','Privacy requests','Find a deletion request by email or reference. Resend the confirmation link or retry file cleanup after the visitor confirms.'],
   ['support','Support chats','These are conversations with Haven about using the website. Read the context before helping. A chat is separate from a support form and does not automatically create a request reference.'],
   ['purchases','Playbook purchases','Check the saved receipt and email status. “Accepted” means the email service took the message. It may not have reached the inbox yet. A failed download is a recovery issue, not a reason to ask someone to pay again.'],
   ['bookings','Bookings','Use the calendar and list to check appointments in Lagos time. Customers manage their meeting through the Calendly confirmation email. Deleting a lead does not cancel a Calendly appointment.'],

@@ -18,6 +18,35 @@ function loadHook(file, extra = {}) {
   return { refs, effects, api: module.exports, render(...args) { stateCursor = 0; refCursor = 0; return module.exports.default(...args); } };
 }
 
+test('typing starts with a pause, reveals a reply progressively, and stops its timer', () => {
+  let now = 0, tick, cleared = 0;
+  const storage = new Map();
+  const hook = loadHook('useTypingReveal', { performance: { now: () => now }, setInterval(fn) { tick = fn; return 1; }, clearInterval() { cleared++; }, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) } });
+  const full = 'Here is a response that flows into the conversation.';
+  assert.equal(hook.render('new-reply', full, true, false).text, '');
+  const cleanup = hook.effects.shift()();
+  now = 500;
+  tick();
+  const part = hook.render('new-reply', full, true, false);
+  assert.ok(part.text.length > 0 && part.text.length < full.length);
+  assert.equal(part.complete, false);
+  now = 5000;
+  tick();
+  assert.equal(hook.render('new-reply', full, true, false).text, full);
+  cleanup();
+  assert.ok(cleared >= 2);
+  assert.ok([...storage.values()][0].includes('new-reply'));
+});
+
+test('typing leaves history and reduced-motion messages readable without replay', () => {
+  const ledger = JSON.stringify(['greeting-1']);
+  for (const [id, eligible, reduced] of [['greeting-1', true, false], ['history', false, false], ['new', true, true]]) {
+    const hook = loadHook('useTypingReveal', { localStorage: { getItem: () => ledger }, setInterval() { throw new Error('Unexpected animation'); } });
+    assert.equal(hook.render(id, 'Hello there', eligible, reduced).text, 'Hello there');
+    hook.effects.shift()();
+  }
+});
+
 test('mobile viewport: coalesces keyboard movement, sizes only the shell, restores scroll and removes listeners', () => {
   const listeners = new Map(), frames = new Map(), calls = [];
   let counter = 0;

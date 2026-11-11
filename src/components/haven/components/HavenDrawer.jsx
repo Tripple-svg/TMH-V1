@@ -28,10 +28,9 @@ const TIKTOK_URL = 'https://www.tiktok.com/@the_marketing_haven?_r=1&_t=ZS-99cNC
 const CALENDLY_CLICKED_KEY = 'tmh_calendly_clicked_at';
 const READING_PHASE_MS = 1500;
 
-function getScopeLabel(scope, service, serviceId, needHelp) {
+function getScopeLabel(scope, service, serviceId) {
   if (scope === 'audit') return 'Brand Review';
   if (scope === 'service') return service?.title || 'Service Enquiry';
-  if (needHelp) return 'Need Help';
   if (serviceId === 'team-inquiry') return 'Talk to Our Team';
   if (serviceId === 'site-support') return 'Site Support';
   return 'Customer Support';
@@ -268,7 +267,7 @@ export default function HavenDrawer() {
   const navigate=useNavigate();
   const reduceMotion = useReducedMotion();
   const {
-    isOpen, closeDrawer, openDrawer, activeScope, activeService, viewState, canStartNewChat, animateIntro,
+    isOpen, closeDrawer, openDrawer, activeScope, activeService, viewState, canStartNewChat, animateIntro, latestReplyId,
     sessions = [], activeSessionId, currentSession, messages = [],
     createNewSession, switchSession, togglePinSession, deleteSession,
     sendMessage, sendNavChipIntent, isThinking, userProfile = {},
@@ -283,6 +282,8 @@ export default function HavenDrawer() {
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [modalType, setModalType] = useState(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [typingSessionId, setTypingSessionId] = useState(null);
+  const handleTypingChange = useCallback(typing => setTypingSessionId(typing ? activeSessionId : null), [activeSessionId]);
 
   const [autoFollow, setAutoFollow] = useState(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -314,7 +315,7 @@ export default function HavenDrawer() {
   const isSupportScope = activeScope === 'support';
   const needsReviewRecovery = activeScope === 'audit'
     && (!userProfile.reviewId || !userProfile.sessionId || !userProfile.accessToken);
-  const scopeLabel = getScopeLabel(activeScope, activeService, currentSession?.serviceId, canStartNewChat);
+  const scopeLabel = getScopeLabel(activeScope, activeService, currentSession?.serviceId);
 
   const hasUserMessage = messages.some((m) => m.role === 'user');
   const hasSavedAccess = Boolean(currentSession?.serverSessionId || (activeScope === 'audit' && userProfile.accessToken));
@@ -329,8 +330,9 @@ export default function HavenDrawer() {
 
   // A saved failed turn stays attached to its conversation while the source is open.
   // Only the chat view can display or retry it; scoring has its own loading state.
-  const showStarterCards = viewState === 'landing' || (canStartNewChat && !currentSession?.failedTurn && messages.every(m => m.isSeedGreeting));
-  const showChat = !showPreflight && !showStarterCards;
+  const showStarterCards = canStartNewChat && currentSession?.startedWithPlus && messages.length === 0
+    && !currentSession.failedTurn && typingSessionId !== activeSessionId;
+  const showChat = !showPreflight && viewState !== 'landing' && !showStarterCards;
   const showConsentLine = !hasUserMessage && !showPreflight;
 
   useDialogFocus(isOpen&&!isRestricted&&!modalType&&!showBookingModal&&!bookingNoticeOpen,dialogRef,closeDrawer);
@@ -776,7 +778,7 @@ export default function HavenDrawer() {
                         key={msg.id || idx}
                         message={msg}
                         size="full"
-                        animateEntry={animateIntro && idx === 0 && msg.role === 'agent'}
+                        animateEntry={msg.role === 'agent' && ((animateIntro && idx === 0) || (latestReplyId != null && msg.id === latestReplyId))}
                         shouldShowChips={idx === messages.length - 1}
                         onChipSelect={handleChipSelect}
                         onNavChipSelect={handleNavChipSelect}
@@ -831,6 +833,7 @@ export default function HavenDrawer() {
                     key={activeSessionId}
                     ref={chatInputRef}
                     onSend={handleSend}
+                    onTypingChange={handleTypingChange}
                     onStop={stopResponse}
                     isThinking={isThinking}
                     disabled={needsReviewRecovery || isRestricted}

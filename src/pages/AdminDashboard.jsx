@@ -47,6 +47,7 @@ const ADMIN_TABS = [
   { id: 'team', label: 'Team Inquiries' },
   { id: 'support', label: 'Support Chats' },
   { id: 'requests', label: 'Support Requests' },
+  { id: 'privacy', label: 'Privacy Requests' },
   { id: 'service', label: 'Service Chats' },
   { id: 'security', label: 'Security & AI' },
   { id: 'insights', label: 'Insights' },
@@ -1385,9 +1386,9 @@ export default function AdminDashboard() {
         </header>
 
         <p role="status" className="mb-3 text-xs text-zinc-500">{liveStatus}{arrivals.support+arrivals.booking>0&&<button className="ml-3 min-h-11 rounded-lg border border-emerald-200/20 px-3 text-emerald-200" onClick={()=>{setArrivals({support:0,booking:0});void load();}}>{arrivals.support} new support · {arrivals.booking} new bookings · Refresh saved records</button>}</p>
-        <div role="tablist" aria-label="Admin sections" className="mb-6 grid grid-cols-2 gap-2 rounded-xl border border-white/[0.07] bg-white/[0.02] p-2 sm:flex sm:gap-1 sm:overflow-x-auto">
+        <div role="tablist" aria-label="Admin sections" className="mb-6 grid grid-cols-2 gap-2 rounded-xl border border-white/[0.07] bg-white/[0.02] p-2 sm:flex sm:flex-wrap sm:gap-1">
           {ADMIN_TABS.map((tab, index) => {
-            const count = ['guide','requests','security','insights','activity'].includes(tab.id) ? null : tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'bookings' ? bookings.length : tab.id === 'team' ? teamInquiries.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
+            const count = ['guide','requests','privacy','security','insights','activity'].includes(tab.id) ? null : tab.id === 'leads' ? leads.length : tab.id === 'purchases' ? purchases.length : tab.id === 'bookings' ? bookings.length : tab.id === 'team' ? teamInquiries.length : tab.id === 'support' ? supportSessions.length : serviceSessions.length;
             return <button key={tab.id} id={`tab-${tab.id}`} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1}
               onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
                 const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -1424,14 +1425,14 @@ export default function AdminDashboard() {
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-500/20 bg-red-500/[0.05] p-4 text-sm text-red-200">{error}</p>}
         <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
         {activeTab==='guide'&&<AdminGuide onNavigate={section=>{setActiveTab(section);requestAnimationFrame(()=>document.getElementById('panel-'+section)?.focus());}}/>}
-        {activeTab === 'requests' && <>
-          <PrivacyRequestsPanel onRequest={operationsRequest} onAuthLost={handleAuthLost} />
+        {activeTab === 'privacy' && <PrivacyRequestsPanel onRequest={operationsRequest} onAuthLost={handleAuthLost} />}
+        {activeTab === 'requests' && (
           <SupportRequestsPanel onRequest={supportRequest} onAuthLost={handleAuthLost} refreshKey={lastRefreshed} onFindReview={email => {
             setFiltersState({ temperature: 'All', followup: 'All', dateRange: 'all', search: email });
             setPage(1);
             setActiveTab('leads');
           }} />
-        </>}
+        )}
         {activeTab==='insights'&&<InsightsPanel onRequest={operationsRequest} onAuthLost={handleAuthLost}/>}
         {activeTab==='activity'&&<ActivityPanel onRequest={operationsRequest} onAuthLost={handleAuthLost}/>}
         {activeTab === 'security' && (
