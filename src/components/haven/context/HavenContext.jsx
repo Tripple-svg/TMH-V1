@@ -1,4 +1,5 @@
 import { scoreFailureCopy } from '../../../../supabase/functions/_shared/scoring-copy.js';
+import { NEED_HELP_NEW_CHAT, OPENING_QUESTIONS } from '../../../../supabase/functions/_shared/haven-opening-questions.js';
 // src/components/haven/context/HavenContext.jsx
 // VERSION 5.6 — Persists haven_score, score_breakdown, biggest_leak,
 // assessment_summary to brand_reviews alongside lead temperature
@@ -121,18 +122,20 @@ function supportGreeting(siteSupport) {
     id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
     isSeedGreeting: true,
     ...(siteSupport ? {
-      content: "Hi, I'm Haven. You're in TMH Support. I can help with your saved review, Playbook purchase, booking, or a problem using the site.\n\nWhat can I help you with?",
+      content: `Hi, I'm Haven. You're in TMH Support. I can help with your saved review, Playbook purchase, booking, or a problem using the site.\n\n${OPENING_QUESTIONS.siteSupport}`,
       chips: ['I can’t open my saved review', 'I need help with my Playbook download', 'How do I contact support?'],
     } : {
-      content: "Hi, I'm Haven, your digital marketing assistant at TMH. I help individual creators and business owners work through their marketing, and I can help you find your way around this website.\n\nDo you need help with your marketing or finding something on this website?",
+      content: `Hi, I'm Haven, your digital marketing assistant at TMH. I help individual creators and business owners work through their marketing, and I can help you find your way around this website.\n\n${OPENING_QUESTIONS.needHelp}`,
       chips: ['Show website help','I have a marketing question'],
     }),
   };
 }
 
-function supportEntryContext(serviceId) {
-  if (serviceId === SITE_SUPPORT_ID) return 'site_support';
-  return serviceId === 'team-inquiry' ? 'team_inquiry' : null;
+function supportEntryContext(session) {
+  if (session?.serviceId === SITE_SUPPORT_ID) return 'site_support';
+  if (session?.serviceId === 'team-inquiry') return 'team_inquiry';
+  // False marks a Plus chat whose starter cards were consumed by its first message.
+  return typeof session?.startedWithPlus === 'boolean' ? NEED_HELP_NEW_CHAT : null;
 }
 
 function loadSessionsForScope(scope) {
@@ -638,7 +641,7 @@ export function HavenProvider({ children, siteSupport = false }) {
           title: serviceData.title, serviceId: sid,
           initialMessage: {
             id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
-            content: `${greetingName}! I can see you're interested in our **${serviceData.title}** service.\n\nWhat would you like to improve, and what is getting in the way right now?`,
+            content: `${greetingName}! I can see you're interested in our **${serviceData.title}** service.\n\n${OPENING_QUESTIONS.service}`,
             chips: ['Getting people to notice us', 'Turning attention into sales', 'Not sure where we lose them'],
           },
         });
@@ -688,7 +691,7 @@ export function HavenProvider({ children, siteSupport = false }) {
 
       let greetingContent;
       if (businessDomain === 'none') {
-        greetingContent = `${greetingName}! I've received your details${brand}.\n\nBefore we go deeper - are you building from scratch, or do you already have customers and simply haven't set up a social space yet?`;
+        greetingContent = `${greetingName}! I've received your details${brand}.\n\n${OPENING_QUESTIONS.noPresence}`;
       } else {
         greetingContent = `${greetingName}! I've received your submission${brand}.\n\nBefore we dig into anything - what's the single biggest challenge you're facing with ${brandName || 'your brand'} at the moment?`;
       }
@@ -719,7 +722,7 @@ export function HavenProvider({ children, siteSupport = false }) {
             title: 'Talk to Our Team', serviceId: TEAM_INQUIRY_ID,
             initialMessage: {
               id: `agent-${Date.now()}`, role: 'agent', image: null, timestamp: Date.now(),
-              content: `Hey there! I'm Haven - I help connect people to the right TMH team member.\n\nBefore I do, what's this about? Tell me a bit about your brand and what you're looking to discuss, and I'll make sure we route you properly.`,
+              content: `Hey there! I'm Haven - I help connect people to the right TMH team member.\n\n${OPENING_QUESTIONS.team} Tell me a bit about your brand and what you're looking to discuss, and I'll make sure we route you properly.`,
               chips: ['I want to discuss a service', 'I have a general question', 'Something else'],
             },
           });
@@ -739,7 +742,7 @@ export function HavenProvider({ children, siteSupport = false }) {
 
         if (target) {
           setActiveSessionId(target.id);
-          if (target.messages.length === 0 && !target.startedWithPlus && (!target.hasGreeted || isNeedHelp)) {
+          if (target.messages.length === 0 && supportEntryContext(target) !== NEED_HELP_NEW_CHAT && (!target.hasGreeted || isNeedHelp)) {
             const greeting = supportGreeting(siteSupport);
             setSessionsForScope('support', prev =>
               prev.map(s => s.id === target.id && s.messages.length === 0
@@ -897,6 +900,8 @@ export function HavenProvider({ children, siteSupport = false }) {
       if (activeScope !== 'audit' && !publicSessionId) {
         publicSessionId = crypto.randomUUID();
         publicSessionIdsRef.current.set(turnKey, publicSessionId);
+      }
+      if (activeScope !== 'audit' && currentSession?.serverSessionId !== publicSessionId) {
         setSessionsForScope(activeScope, prev => prev.map(session => session.id === activeSessionId ? { ...session, serverSessionId: publicSessionId } : session));
       }
       const linkedAccess = userProfile.reviewId && userProfile.sessionId && userProfile.accessToken
@@ -905,7 +910,7 @@ export function HavenProvider({ children, siteSupport = false }) {
         ...identity, ...linkedAccess, sessionId: publicSessionId,
         userName: userProfile.name || 'there', brandName: userProfile.brandName || 'your business',
         serviceId: activeService?.id || currentSession?.serviceId || null,
-        entryContext: supportEntryContext(currentSession?.serviceId),
+        entryContext: supportEntryContext(currentSession),
         currentStep: currentSession?.currentStep,
       };
 
@@ -1014,7 +1019,7 @@ export function HavenProvider({ children, siteSupport = false }) {
   const clearChat = useCallback(() => {
     setIntroSessionId(null);
     setLatestReplyId(null);
-    const resetGreeting = activeScope === 'support' && (siteSupport || (canStartNewChat && !currentSession?.startedWithPlus));
+    const resetGreeting = activeScope === 'support' && (siteSupport || (canStartNewChat && typeof currentSession?.startedWithPlus !== 'boolean'));
     const greeting = resetGreeting ? supportGreeting(siteSupport) : null;
     setSessionsForScope(activeScope, prev =>
       prev.map(s => s.id === activeSessionId ? { ...s, messages: greeting ? [greeting] : [], hasGreeted: true } : s)
@@ -1068,7 +1073,7 @@ export function HavenProvider({ children, siteSupport = false }) {
     let sessionId = currentSession?.serverSessionId || publicSessionIdsRef.current.get(key);
     if (!sessionId) { sessionId = crypto.randomUUID(); publicSessionIdsRef.current.set(key, sessionId); }
     const context = activeScope === 'audit' ? { ...identity, ...reviewAccess(userProfile) }
-      : { ...identity, ...linked, sessionId, serviceId: activeService?.id || currentSession?.serviceId || null, entryContext: supportEntryContext(currentSession?.serviceId) };
+      : { ...identity, ...linked, sessionId, serviceId: activeService?.id || currentSession?.serviceId || null, entryContext: supportEntryContext(currentSession) };
     const moderationVersion = moderationVersionRef.current;
     const result = await callHavenAPI({ action: 'access', context, scope: activeScope });
     if (!['white','yellow','red'].includes(result.flagStatus)) throw new Error('Could not verify your access. Please try again.');

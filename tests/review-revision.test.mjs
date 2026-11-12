@@ -5,10 +5,33 @@ import { buildSync } from 'esbuild';
 import vm from 'node:vm';
 import { productionDb, seedReview, rpc, scalar } from './helpers/production-db.mjs';
 import { edgeDb } from './helpers/edge-db.mjs';
+import { NEED_HELP_NEW_CHAT, OPENING_QUESTIONS } from '../supabase/functions/_shared/haven-opening-questions.js';
 
 test('review source corrections stop when chat opens and leave the saved review intact', async t => {
   const db = await productionDb();
   try {
+    await t.test('Plus chats store the visitor first and remove only the legacy server greeting', async () => {
+      const visitor = randomUUID(), newChat = randomUUID(), olderChat = randomUUID();
+      const ensure = (id, service) => rpc(db, 'ensure_haven_conversation', [visitor, 'c'.repeat(64), id, 'support', null, service, '2026-10-26']);
+      const newSession = (await ensure(newChat, NEED_HELP_NEW_CHAT)).session;
+      assert.deepEqual(newSession.messages, []);
+      assert.equal(newSession.service_id, null);
+      assert.equal(newSession.diagnostic_questions_asked, 0);
+      const first = (await rpc(db, 'begin_haven_turn', [newChat, randomUUID(), 'I need help with my offer', false, true, false, 'fixture'])).session;
+      assert.deepEqual(first.messages.map(message => message.role), ['user']);
+      assert.equal(first.diagnostic_answers, 0);
+
+      const olderSession = (await ensure(olderChat, null)).session;
+      assert.equal(olderSession.messages[0].content, OPENING_QUESTIONS.needHelp);
+      await rpc(db, 'begin_haven_turn', [olderChat, randomUUID(), 'My saved message', false, true, false, 'fixture']);
+      const resumed = (await ensure(olderChat, NEED_HELP_NEW_CHAT)).session;
+      assert.deepEqual(resumed.messages.map(message => message.content), ['My saved message']);
+      assert.equal(resumed.message_count, 1);
+      assert.equal(resumed.diagnostic_questions_asked, 0);
+      assert.equal(resumed.diagnostic_answers, 0);
+      assert.equal((await ensure(olderChat, NEED_HELP_NEW_CHAT)).session.message_count, 1);
+    });
+
     const review = randomUUID(), session = randomUUID(), token = 'a'.repeat(64);
     const hash = createHash('sha256').update(token).digest('hex');
     await seedReview(db, review);

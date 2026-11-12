@@ -1,6 +1,7 @@
 import { hashReviewToken, verifyReviewAccess, ReviewAccessError } from './review-access.ts';
 import { HavenRequestError, textValue } from './haven-request.ts';
 import { savedConversationMemory } from './haven-memory.js';
+import { NEED_HELP_NEW_CHAT } from './haven-opening-questions.js';
 export const CHAT_NOTICE_VERSION = '2026-10-26';
 export const RESTRICTED_MESSAGE = 'Your Haven chat access is restricted. Contact Team Haven to ask for a review.';
 export const REVIEW_CONTEXT_QUESTION = 'Would you like me to use your saved Brand Review to answer this?';
@@ -36,7 +37,8 @@ export async function prepareConversation(supabase: any, scope: string, context:
     p_session_id: context.sessionId, p_scope: scope, p_review_id: verified?.review.id || null,
     p_service_id: scope === 'service' && ['web','growth','content'].includes(context.serviceId) ? context.serviceId
       : scope === 'support' && context.entryContext === 'site_support' ? 'site-support'
-        : scope === 'support' && context.entryContext === 'team_inquiry' ? 'team-inquiry' : null,
+        : scope === 'support' && context.entryContext === 'team_inquiry' ? 'team-inquiry'
+          : scope === 'support' && context.entryContext === NEED_HELP_NEW_CHAT ? NEED_HELP_NEW_CHAT : null,
     p_consent_version: CHAT_NOTICE_VERSION,
   });
   if (error || !data?.session || !data?.visitor) {

@@ -19,6 +19,7 @@ export default function Header({ onOpenReview }) {
   const reduceMotion = useReducedMotion();
   const menuButtonRef = useRef(null);
   const drawerRef = useRef(null);
+  const pendingNavigationRef = useRef(null);
 
   const isDark = theme === 'dark';
 
@@ -49,20 +50,32 @@ export default function Header({ onOpenReview }) {
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', onKeyDown);
-      if (panel?.contains(document.activeElement)) (previousFocus || menuButton)?.focus();
+      if (!pendingNavigationRef.current && panel?.contains(document.activeElement)) (previousFocus || menuButton)?.focus();
     };
   }, [drawerOpen]);
 
+  const finishNavigation = () => {
+    const navigate = pendingNavigationRef.current;
+    pendingNavigationRef.current = null;
+    navigate?.();
+  };
+
   const handleNavClick = (e, href) => {
+    const target = document.getElementById(href.slice(1));
+    if (!target) return;
     e.preventDefault();
-    setDrawerOpen(false);
     const behavior = reduceMotion ? 'auto' : 'smooth';
-    if (href === '#hero') {
-      window.scrollTo({ top: 0, behavior });
-    } else {
-      const el = document.querySelector(href);
-      if (el) el.scrollIntoView({ behavior, block: 'start' });
+    const navigate = () => {
+      target.focus({ preventScroll: true });
+      if (href === '#hero') window.scrollTo({ top: 0, behavior });
+      else target.scrollIntoView({ behavior, block: 'start' });
+    };
+    if (drawerOpen) {
+      pendingNavigationRef.current = navigate;
+      setDrawerOpen(false);
+      return;
     }
+    navigate();
   };
 
   return (
@@ -159,7 +172,7 @@ export default function Header({ onOpenReview }) {
         </div>
       </header>
 
-      <AnimatePresence>
+      <AnimatePresence onExitComplete={finishNavigation}>
         {drawerOpen && (
           <>
             <motion.div

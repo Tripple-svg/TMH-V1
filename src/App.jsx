@@ -221,12 +221,10 @@ function AppInner() {
       />
 
       <main className="relative w-full">
-        <section id="hero">
+        <section id="hero" tabIndex={-1}>
           <HeroSection onOpenReview={handleOpenReview} />
         </section>
-        <section id="about" tabIndex={-1}>
-          <AboutSection />
-        </section>
+        <AboutSection />
         <ServiceGrid />
         <MasterclassBanner />
         <ShopSection />

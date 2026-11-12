@@ -61,6 +61,7 @@ export default function AboutSection() {
   return (
     <section
       id="about"
+      tabIndex={-1}
       className="relative w-full py-24 sm:py-32 px-4 sm:px-6 lg:px-8 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-300 overflow-hidden"
     >
       <div className="max-w-7xl mx-auto relative z-10">

@@ -323,6 +323,7 @@ SAVED ROUTING STATE: ${JSON.stringify(auditData.routingState || { version: 2, ne
 Saved pending permission takes priority for a short 'yes / please do': continue that
 specific invitation, not a fresh diagnosis. A number of asked/answered questions is
 historical context only: asked=${Number(auditData.questionsAsked) || 0}; substantive answers=${Number(auditData.diagnosticAnswers) || 0}.
+${isAudit && context.openingQuestion ? `The Brand Review opened with this question: ${context.openingQuestion}\nRead the visitor's first message in that context.` : ''}
 
 ${isAudit ? scoringInstruction : ''}
 ${getStepInstructions(currentStep, entryPoint)}

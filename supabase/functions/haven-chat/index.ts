@@ -8,7 +8,8 @@ import { enforceHavenLimits } from '../_shared/haven-limits.ts';
 // supabase/functions/haven-chat/index.ts
 // Server-owned instructions and verified private audit context.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
-import { buildHavenSystemPrompt, STEPS, LEADS } from '../_shared/haven-prompts.js';
+import { buildAuditGreeting, buildHavenSystemPrompt, STEPS, LEADS } from '../_shared/haven-prompts.js';
+import { OPENING_QUESTIONS, publicOpeningQuestion } from '../_shared/haven-opening-questions.js';
 import { ReviewAccessError, hashReviewToken } from '../_shared/review-access.ts';
 import { prepareConversation, substantiveAnswer, explicitCallRequest, RESTRICTED_MESSAGE, restrictionDetails, REVIEW_CONTEXT_QUESTION, REVIEW_CONTEXT_MARKER, loadLinkedReviewContext } from '../_shared/haven-conversation.ts';
 import { resolveHavenRouting, supportHelpReply, acceptedCallInvitation, inferHavenNeed, isAffirmative, isPlainDecline, directPlaybookReply, CALL_HANDOFF, PLAYBOOK_CHOICES } from '../_shared/haven-routing.js';
@@ -183,6 +184,11 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
       promptContext = {
         userName: textValue(review.full_name, 120, 'there'), brandName: textValue(review.brand_name, 200, 'your business'),
         entryPoint: 'AUDIT_FLOW',
+        openingQuestion: session.messages?.length === 1 && session.messages[0].role === 'user'
+          ? review.platform_type === 'none' ? OPENING_QUESTIONS.noPresence
+            : buildAuditGreeting({ name: review.full_name, presence: review.platform_type,
+              scored: review.scrape_state === 'valid' && Number.isInteger(review.haven_score) })
+          : null,
         auditData: {
           ...qualification, routingState: session.routing_state || null, currentStep: savedStep(session.current_step), presenceType: review.platform_type,
           hasWebsite: review.platform_type === 'website', websiteUrl: textValue(review.website_url, 2048),
@@ -215,8 +221,10 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     const history: HavenMessage[] = [];
     let chars = 0;
     for (const message of [...(session.messages || [])].reverse()) {
-      if (!['user','agent'].includes(message.role) || typeof message.content !== 'string' || (siteSupport && message.isSeedGreeting)) continue;
-      const content = message.content.slice(0,4000);
+      if (!['user','agent'].includes(message.role) || typeof message.content !== 'string') continue;
+      const content = scope !== 'audit' && message.role === 'agent' && message.isSeedGreeting
+        ? publicOpeningQuestion(scope, session.service_id)
+        : message.content.slice(0,4000);
       if (history.length >= 40 || chars+content.length > 24000) break;
       history.unshift({ role: message.role, content }); chars += content.length;
     }

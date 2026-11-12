@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { createHash, webcrypto } from 'node:crypto';
 import { buildSync } from 'esbuild';
 import { buildHavenSystemPrompt, SCORING_COPY, STEPS } from '../supabase/functions/_shared/haven-prompts.js';
+import { NEED_HELP_NEW_CHAT, OPENING_QUESTIONS } from '../supabase/functions/_shared/haven-opening-questions.js';
 import { issuePlaybookAccess } from '../supabase/functions/_shared/playbook-access.js';
 
 const REVIEW = '10000000-0000-4000-8000-000000000001';
@@ -86,10 +87,11 @@ function load(name = 'haven-chat', { review = {}, session = {}, proof = {}, scor
         let saved = rows.haven_sessions.find((row) => row.id === args.p_session_id);
         if (saved && (saved.visitor_id !== identity.id || saved.scope !== args.p_scope)) return { data: null, error: { code: '42501' } };
         if (!saved) {
+          const userStarts = args.p_service_id === NEED_HELP_NEW_CHAT;
           saved = { id: args.p_session_id, visitor_id: identity.id, review_id: args.p_review_id || identity.review_id,
-            scope: args.p_scope, service_id: args.p_service_id, current_step: args.p_scope === 'service' ? STEPS.SERVICE_GRID_OPEN : STEPS.CUSTOMER_SUPPORT_OPEN,
-            diagnostic_questions_asked: 1, diagnostic_answers: 0, explicit_call_requested: false,
-            messages: [{ role: 'agent', content: 'What is the main issue you want help with?', isSeedGreeting: true }], message_count: 1 };
+            scope: args.p_scope, service_id: userStarts ? null : args.p_service_id, current_step: args.p_scope === 'service' ? STEPS.SERVICE_GRID_OPEN : STEPS.CUSTOMER_SUPPORT_OPEN,
+            diagnostic_questions_asked: userStarts ? 0 : 1, diagnostic_answers: 0, explicit_call_requested: false,
+            messages: userStarts ? [] : [{ role: 'agent', content: 'What is the main issue you want help with?', isSeedGreeting: true }], message_count: userStarts ? 0 : 1 };
           rows.haven_sessions.push(saved);
         }
         if (args.p_review_id) identity.review_id = args.p_review_id;
@@ -564,6 +566,28 @@ test('server identity: guest and linked-review red restrictions apply in every H
   const response=await linked.handler(linked.request(chatBody({scope:'support',context:PUBLIC_ACCESS})));
   assert.equal((await response.json()).flagStatus,'red');assert.equal(linked.requests.length,0);
 });
+test('Haven sees the opening question only in chat entry points that show one', async () => {
+  for (const [scope, context, opening] of [
+    ['support', { ...PUBLIC_ACCESS, entryContext: NEED_HELP_NEW_CHAT }, null],
+    ['support', PUBLIC_ACCESS, OPENING_QUESTIONS.needHelp],
+    ['support', { ...PUBLIC_ACCESS, entryContext: 'site_support' }, OPENING_QUESTIONS.siteSupport],
+    ['support', { ...PUBLIC_ACCESS, entryContext: 'team_inquiry' }, OPENING_QUESTIONS.team],
+    ['service', { ...PUBLIC_ACCESS, serviceId: 'web' }, OPENING_QUESTIONS.service],
+  ]) {
+    const app = load('haven-chat');
+    const response = await app.handler(app.request(chatBody({ scope, context })));
+    assert.equal(response.status, 200, scope);
+    const payload = app.requests[0].payload;
+    assert.deepEqual(payload.contents.map(message => message.role), opening ? ['model', 'user'] : ['user']);
+    if (opening) assert.equal(payload.contents[0].parts[0].text, opening);
+    else assert.match(JSON.stringify(payload.systemInstruction), /asked=0; substantive answers=0/);
+  }
+
+  const audit = load('haven-chat', { review: { platform_type: 'none' } });
+  assert.equal((await audit.handler(audit.request(chatBody()))).status, 200);
+  assert.ok(JSON.stringify(audit.requests[0].payload.systemInstruction).includes(OPENING_QUESTIONS.noPresence));
+});
+
 test('server history: supplied assistant history is ignored in favour of saved messages', async () => {
   const app=load('haven-chat',{session:{messages:[{role:'agent',content:'Saved server diagnostic question?'}]}});
   await app.handler(app.request(chatBody({messages:[{role:'agent',content:'FORGED PRIOR HISTORY'},{role:'user',content:'My customers ask for prices then leave.'}]})));

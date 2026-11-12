@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { transformSync } from 'esbuild';
 import { webcrypto } from 'node:crypto';
 import { PLATFORM_ACTIONS } from '../supabase/functions/_shared/platform-navigation.js';
+import * as openingQuestions from '../supabase/functions/_shared/haven-opening-questions.js';
 import { quickPrompts } from '../src/components/haven/config/quick-prompts.js';
 import { STEPS } from '../src/components/haven/config/prompts.js';
 
@@ -169,7 +170,8 @@ test('Haven animates new sessions once and can start another chat only from Need
     const context = {
       module: { exports: {} }, React: react, crypto: webcrypto, setTimeout() {},
       localStorage: { getItem: key => storage.get(key) },
-      require: name => name === 'react' ? react : name.endsWith('/config/prompts') ? { STEPS } : {},
+      require: name => name === 'react' ? react : name.endsWith('/config/prompts') ? { STEPS }
+        : name.endsWith('/haven-opening-questions.js') ? openingQuestions : {},
     };
     const source = readFileSync(new URL('../src/components/haven/context/HavenContext.jsx', import.meta.url), 'utf8');
     vm.runInNewContext(transformSync(source, { loader: 'jsx', format: 'cjs' }).code, context);
@@ -213,6 +215,7 @@ test('Haven animates new sessions once and can start another chat only from Need
   render().clearChat(); render().closeDrawer(); render().openDrawer('need_help');
   assert.equal(render().activeSessionId, fresh);
   assert.equal(render().animateIntro, false);
+  assert.equal(render().messages.length, 0);
 
   const service = () => render().openDrawer('service_inquiry', { serviceData: { id: 'web', title: 'Web' } });
   const profileData = { reviewId: 'review', sessionId: 'audit', accessToken: 'token', businessDomain: 'none' };

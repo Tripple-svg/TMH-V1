@@ -10,9 +10,10 @@ function header({ reducedMotion = false } = {}) {
   const document = { body: { style: { overflow: 'clip' } }, activeElement: null,
     addEventListener: (name, handler) => listeners.set(name, handler),
     removeEventListener: (name) => listeners.delete(name),
-    querySelector: () => ({ scrollIntoView: (options) => scrolls.push(options) }),
+    getElementById: () => destination,
   };
   const focusable = () => ({ focus() { document.activeElement = this; } });
+  const destination = { ...focusable(), scrollIntoView: options => scrolls.push(options) };
   const trigger = focusable(), close = focusable(), link = focusable(), last = focusable();
   const panel = { querySelector: () => close, querySelectorAll: () => [close, link, last],
     contains: (element) => [panel, close, link, last].includes(element), ...focusable() };
@@ -71,7 +72,7 @@ function header({ reducedMotion = false } = {}) {
     return commit();
   }
   commit();
-  return { render, commit, open, document, trigger, close, last, listeners, scrolls, get reviewRequests() { return reviewRequests; } };
+  return { render, commit, open, document, trigger, close, last, destination, listeners, scrolls, get reviewRequests() { return reviewRequests; } };
 }
 
 test('mobile navigation traps Tab, closes on Escape and restores focus and the prior scroll lock', () => {
@@ -100,8 +101,14 @@ test('reduced motion removes the drawer travel and anchor smooth scrolling', () 
   const opened = ui.open();
   const panel = opened.find((node) => node.props.id === 'tmh-mobile-menu');
   assert.equal(panel.props.initial.x, 0); assert.equal(panel.props.transition.duration, 0);
-  opened.find((node) => node.type === 'a' && node.props.href === '#about').props.onClick({ preventDefault() {} });
-  ui.commit();
+  const mobileNav = opened.find(node => node.props['aria-label'] === 'Mobile navigation');
+  mobileNav.props.children.flat().find(node => node.props.href === '#about').props.onClick({ preventDefault() {} });
+  assert.equal(ui.scrolls.length, 0, 'Scroll after the drawer exits');
+  const closing = ui.commit();
+  assert.equal(ui.scrolls.length, 0);
+  closing.find(node => node.type === 'presence' && node.props.onExitComplete).props.onExitComplete();
+  assert.equal(ui.document.activeElement, ui.destination);
+  assert.equal(ui.document.body.style.overflow, 'clip');
   assert.equal(ui.scrolls[0].behavior, 'auto');
   assert.equal(ui.render().some((node) => node.props.id === 'tmh-mobile-menu'), false);
 });

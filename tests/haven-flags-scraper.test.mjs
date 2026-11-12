@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import { SCORING_COPY } from '../supabase/functions/_shared/haven-prompts.js';
+import { NEED_HELP_NEW_CHAT } from '../supabase/functions/_shared/haven-opening-questions.js';
 import { CHAT_NOTICE_VERSION } from '../src/lib/havenIdentity.js';
 
 const source = readFileSync(new URL('../src/components/haven/context/HavenContext.jsx', import.meta.url), 'utf8');
@@ -32,7 +33,7 @@ const ACCESS = { reviewId: '7e4d80fa-a528-4d23-a13c-578240e3ba83', sessionId: 'c
 const IDENTITY = { visitorId: 'fc40998d-e854-4d7a-910a-bad281db7c15', visitorToken: 'b'.repeat(64) };
 const VALID = { ok: true, state: 'valid', summary: 'Readable website content.', score: 20,
   breakdown: { clarity: 4, trust: 4, conversion: 4, technical: 4, content: 4 }, biggestIssue: 'The offer is unclear.' };
-function harness({ scoring = VALID, profile = {}, scope = 'audit', history = [], status = 200,
+function harness({ scoring = VALID, profile = {}, scope = 'audit', history = [], status = 200, startedWithPlus,
   chat = { ok: true, text: 'Here is the next question.', currentStep: 'AWAITING_DIAGNOSTIC_Q2', flagStatus: 'white', chips: [] }, fetchImpl } = {}) {
   let currentProfile = { ...ACCESS, name: 'Ada', brandName: 'Ada Studio', exchangeCount: 0, ...profile };
   let currentSessionState = { id: ACCESS.sessionId, messages: history };
@@ -40,7 +41,7 @@ function harness({ scoring = VALID, profile = {}, scope = 'audit', history = [],
   const requests = [], messages = [], thinking = [];
   const context = {
     setTimeout, clearTimeout, scoreFailureCopy, AbortController, Response, Error, SCORING_COPY, CHAT_NOTICE_VERSION, crypto: webcrypto,
-    getHavenIdentity: () => ({ ...IDENTITY }),
+    getHavenIdentity: () => ({ ...IDENTITY }), NEED_HELP_NEW_CHAT,
     console: { log() {}, warn() {}, error() {} }, navigator: { onLine: true },
     STEPS: { AWAITING_DIAGNOSTIC_Q2: 'AWAITING_DIAGNOSTIC_Q2' }, LEADS: { WARM: 'WARM' }, NAV_ACTION_RULES: [],
     useCallback: (fn) => fn, userProfile: currentProfile, siteSupport: false, setPlaybookHandoff() {},
@@ -53,7 +54,7 @@ function harness({ scoring = VALID, profile = {}, scope = 'audit', history = [],
       return Response.json(url.endsWith('/haven-chat') ? chat : scoring, { status });
     },
     activeScope: scope, activeSessionId: ACCESS.sessionId, activeService: { id: 'web' },
-    currentSession: { id: ACCESS.sessionId, messages: history },
+    currentSession: { id: ACCESS.sessionId, messages: history, startedWithPlus },
     getSessionsForScope: () => [{ id: ACCESS.sessionId }],
     createSession() { throw new Error('Unexpected session creation'); }, addMessage: (...args) => messages.push(args),
     abortControllerRef: { current: null }, activeRequestRef: { current: null },
@@ -164,6 +165,17 @@ test('chat: linked support and service carry ownership proof and separate public
     assert.equal(context.reviewSessionId, ACCESS.sessionId); assert.notEqual(context.sessionId, ACCESS.sessionId);
     assert.match(context.sessionId, /^[a-f\d-]{36}$/i); assert.equal(context.visitorId, IDENTITY.visitorId);
     assert.equal('score' in context, false);
+  }
+});
+
+test('chat: Plus origin travels with access checks and turns, including after the cards disappear', async () => {
+  for (const startedWithPlus of [true, false, undefined]) {
+    const ui = harness({ scope: 'support', startedWithPlus });
+    await ui.recheckHavenAccess();
+    await ui.sendMessage('I have a question about growing my brand.');
+    assert.deepEqual(ui.requests.map(request => request.payload.context.entryContext),
+      Array(2).fill(startedWithPlus === undefined ? null : NEED_HELP_NEW_CHAT));
+    assert.equal(ui.session.serverSessionId, ui.requests[0].payload.context.sessionId);
   }
 });
 
