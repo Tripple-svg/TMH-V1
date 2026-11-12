@@ -314,6 +314,7 @@ export function HavenProvider({ children, siteSupport = false }) {
   const publicSessionIdsRef = useRef(new Map());
   const pendingTurnsRef = useRef(new Map());
   const inFlightTurnsRef = useRef(new Set());
+  const moderationVersionRef = useRef(0);
   const scoringRequestRef = useRef(0);
   const scoringRetryRef = useRef(false);
 
@@ -935,12 +936,16 @@ export function HavenProvider({ children, siteSupport = false }) {
       };
       pendingTurnsRef.current.set(turnKey, { requestId, content, image, payload });
       activeRequest.payload = payload;
+      const moderationVersion = moderationVersionRef.current;
       const result = await callHavenAPI({ ...payload, signal: controller.signal });
       if (activeRequest.stopped) return;
 
       pendingTurnsRef.current.delete(turnKey);
-      if (result.flagStatus) setUserProfile(prev => ({ ...prev, flag_status: result.flagStatus,
-        restrictionReason: result.restrictionReason || null, appealReference: result.appealReference || null }));
+      if (['white', 'yellow', 'red'].includes(result.flagStatus) && (result.flagStatus === 'red' || moderationVersion === moderationVersionRef.current)) {
+        moderationVersionRef.current += 1;
+        setUserProfile(prev => prev.flag_status === 'red' && result.flagStatus !== 'red' ? prev : ({ ...prev, flag_status: result.flagStatus,
+          restrictionReason: result.restrictionReason || null, appealReference: result.appealReference || null }));
+      }
       const { step: newStep, cleanedText: textAfterStep } = parseStepMarker(result.text);
       const { lead: newLead, cleanedText: textAfterLead } = parseLeadMarker(textAfterStep);
       const { navChips: navChipsFromTag, cleanedText } = parseNavChipsFromText(textAfterLead);
@@ -974,7 +979,6 @@ export function HavenProvider({ children, siteSupport = false }) {
         const profileUpdates = {};
         if (result.currentStep || newStep) profileUpdates.currentStep = result.currentStep || newStep;
         if (result.leadTemperature || newLead) profileUpdates.leadTemperature = result.leadTemperature || newLead;
-        if (result.flagStatus) profileUpdates.flag_status = result.flagStatus;
         if (Object.keys(profileUpdates).length > 0) {
           setUserProfile(prev => ({ ...prev, ...profileUpdates }));
         }
@@ -1065,12 +1069,29 @@ export function HavenProvider({ children, siteSupport = false }) {
     if (!sessionId) { sessionId = crypto.randomUUID(); publicSessionIdsRef.current.set(key, sessionId); }
     const context = activeScope === 'audit' ? { ...identity, ...reviewAccess(userProfile) }
       : { ...identity, ...linked, sessionId, serviceId: activeService?.id || currentSession?.serviceId || null, entryContext: supportEntryContext(currentSession?.serviceId) };
+    const moderationVersion = moderationVersionRef.current;
     const result = await callHavenAPI({ action: 'access', context, scope: activeScope });
     if (!['white','yellow','red'].includes(result.flagStatus)) throw new Error('Could not verify your access. Please try again.');
+    if (moderationVersion !== moderationVersionRef.current) return;
+    moderationVersionRef.current += 1;
     setUserProfile((previous) => ({ ...previous, flag_status: result.flagStatus,
       restrictionReason: result.restrictionReason || null, appealReference: result.appealReference || null }));
     return result.flagStatus;
   }, [activeScope, activeSessionId, currentSession, userProfile, activeService]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const refreshAccess = event => {
+      if (event.key !== PROFILE_STORAGE_KEY) return;
+      try {
+        const before = JSON.parse(event.oldValue)?.flag_status;
+        const after = JSON.parse(event.newValue)?.flag_status;
+        if (before !== after && (before === 'red' || after === 'red')) void recheckHavenAccess().catch(() => {});
+      } catch { /* Invalid browser storage is not an access decision. */ }
+    };
+    window.addEventListener('storage', refreshAccess);
+    return () => window.removeEventListener('storage', refreshAccess);
+  }, [isOpen, recheckHavenAccess]);
 
   const value = {
     isOpen, mode, setMode, toggleDrawer, openDrawer, closeDrawer,

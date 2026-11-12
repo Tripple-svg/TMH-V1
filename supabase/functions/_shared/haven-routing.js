@@ -158,7 +158,7 @@ function platformHelpReply(text) {
   if (asksForBookContents(text)) return PLAYBOOK_PREVIEW;
   const navigation=platformNavigationHelp(text);if(navigation)return navigation.text;
   const value = String(text || '').toLowerCase();
-  if (/^(?:tmh|the marketing haven|haven)\s+(?:is|was)\s+(?:(?:really|very|so)\s+)?(?:bad|terrible|useless|rubbish|disappointing)[.!\s]*$/i.test(value.trim())) {
+  if (/^(?:tmh|the marketing haven|haven|your (?:site|website|service|review))\s+(?:sucks|(?:is|was)\s+(?:(?:really|very|so)\s+)?(?:bad|terrible|useless|rubbish|disappointing|a scam))[.!\s]*$/i.test(value.trim())) {
     return 'What specifically went wrong, and what were you trying to do?';
   }
   // Specific platform operations are useful in any Haven conversation. These

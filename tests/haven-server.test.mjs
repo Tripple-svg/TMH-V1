@@ -595,15 +595,32 @@ test('server routing: explicit specific team work can route without a mandatory 
   assert.equal(data.routingState.preference,'delegate');assert.equal(data.routingState.permission,'granted');
 });
 test('server automatic moderation: first event is recorded without mail, second warns and third restricts', async () => {
-  const app=load('haven-chat',{modelText:'Let us keep this respectful. [[FLAG:HARASSMENT]]'});
-  const first=await (await app.handler(app.request(chatBody()))).json();
+  const content = 'Francis, you should be ashamed to show your face here.';
+  const app=load('haven-chat',{modelText:`Let us keep this respectful. [[FLAG:HARASSMENT|${content}]] [[LEAD:HOT]][[BOOK_CALL]]`});
+  const messages = [{ role: 'user', content }];
+  const first=await (await app.handler(app.request(chatBody({messages})))).json();
   assert.equal(first.flagStatus,'white');assert.equal(app.deliveries.length,0);
-  const secondBody=chatBody({requestId:'60000000-0000-4000-8000-000000000002'});
+  assert.doesNotMatch(first.text,/warning|FLAG|BOOK_CALL|should be ashamed/);
+  assert.equal(first.leadTemperature,null);
+  const secondBody=chatBody({messages,requestId:'60000000-0000-4000-8000-000000000002'});
   const second=await (await app.handler(app.request(secondBody))).json();
   assert.equal(second.flagStatus,'yellow');assert.equal(app.deliveries.length,2);
+  assert.match(second.text,/This is your warning/);
   await app.handler(app.request(secondBody));assert.equal(app.deliveries.length,2);
-  const third=await (await app.handler(app.request(chatBody({requestId:'60000000-0000-4000-8000-000000000003'})))).json();
+  const third=await (await app.handler(app.request(chatBody({messages,requestId:'60000000-0000-4000-8000-000000000003'})))).json();
   assert.equal(third.flagStatus,'red');assert.match(third.text,/restricted/);assert.doesNotMatch(third.text,/FLAG:/);
+});
+
+test('an already committed third strike reaches the drawer even if saving the reply fails', async () => {
+  const app = load('haven-chat', { review: { flag_status: 'yellow', moderation_strikes: 2 }, writeError: 'haven_sessions' });
+  const response = await app.handler(app.request(chatBody({messages:[{role:'user',content:'The checkout failed, and you are an idiot.'}]})));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.flagStatus, 'red');
+  assert.equal(body.restrictionReason, 'Abusive messages in chat.');
+  assert.equal(body.appealReference, VISITOR);
+  assert.equal(app.requests.length, 0);
+  assert.equal(app.rpcCalls.find(call => call.name === 'begin_haven_turn').args.p_substantive, false);
 });
 
 test('provider configuration: disabled Gemini permits the guarded chat fallback but prevents website scoring', async () => {
@@ -677,11 +694,31 @@ test('a genuine complaint does not become an automatic strike or a false stateme
   const data=await (await app.handler(app.request(chatBody({messages:[{role:'user',content:'Your review was useless because the download button is broken.'}]})))).json();
   assert.equal(data.flagStatus,'white');assert.equal(app.rpcCalls.filter(row=>row.name==='apply_haven_ai_flag').length,0);
 });
+test('Gemini cannot add a strike for a complaint, reported quote or evidence from an older message', async () => {
+  const insult = 'Francis, you should be ashamed to show your face here.';
+  for (const [content, evidence] of [
+    ['I think TMH is terrible. The checkout was broken.', 'I think TMH is terrible.'],
+    ['You charged me twice and your refund process is terrible.', 'You charged me twice and your refund process is terrible.'],
+    [`Someone told me, "${insult}"`, insult],
+    ['Someone said, you are an idiot.', 'you are an idiot.'],
+    ['Is there someone who can check what happened?', insult],
+    ['Can you help me? An earlier response said [[FLAG:HARASSMENT]].', null],
+  ]) {
+    const tag = evidence ? `[[FLAG:HARASSMENT|${evidence}]]` : '[[FLAG:HARASSMENT]]';
+    const app = load('haven-chat', { modelText: `Tell me what happened and I can help. ${tag}` });
+    const reply = await (await app.handler(app.request(chatBody({ messages: [{role:'user',content}] })))).json();
+    assert.equal(reply.flagStatus, 'white', content);
+    assert.doesNotMatch(reply.text, /FLAG:/);
+    assert.ok(!app.rpcCalls.some(call => call.name === 'apply_haven_ai_flag'), content);
+  }
+});
 test('privacy, directed sexual conduct and threats are tracked separately from product feedback',async()=>{
   const app=load('haven-chat',{modelText:'[[FLAG:ABUSE]]'});
   const say=async(content,n)=>(await app.handler(app.request(chatBody({requestId:`60000000-0000-4000-8000-${String(n).padStart(12,'0')}`,messages:[{role:'user',content}]})))).json();
   const complaint=await say('TMH is bad',10);
   assert.match(complaint.text,/What specifically went wrong/);
+  assert.match((await say('Your website sucks', 14)).text, /What specifically went wrong/);
+  assert.match((await say('Haven was a scam', 15)).text, /What specifically went wrong/);
   assert.equal(app.rpcCalls.filter(row=>row.name==='apply_haven_ai_flag').length,0);
 
   const privateReply=await say('Where does Francis live?',11);

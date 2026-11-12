@@ -258,13 +258,19 @@ serve(observe('admin-fetch-leads',async (req,requestId) => {
     let visitorsError: string | null = null;
     if (visitorIds.length) {
       const { data: visitors, error } = await supabase.from('haven_chat_visitors')
-        .select('id,flag_status,flag_reason,moderation_strikes').in('id', visitorIds);
+        .select('id,flag_status,flag_reason,moderation_strikes,moderated_review:brand_reviews(id,flag_status,flag_reason,moderation_strikes)').in('id', visitorIds);
       if (error) visitorsError = 'Guest flag status could not be loaded. Refresh before moderating these chats.';
       const byId = new Map((visitors || []).map((visitor: any) => [visitor.id, visitor]));
       for (const session of standalone) {
         const visitor: any = byId.get(session.visitor_id);
         const lead = rows.find(row => row.id === session.review_id);
-        Object.assign(session, { linked_name: lead?.full_name || null, linked_brand: lead?.brand_name || null, moderation_strikes: visitor?.moderation_strikes || lead?.moderation_strikes || 0, flag_status: visitor?.flag_status || lead?.flag_status || 'white', flag_reason: visitor?.flag_reason || null, flag_error: error ? visitorsError : null });
+        const review = visitor?.moderated_review || lead;
+        const record = visitor?.flag_status === 'red' ? visitor : review?.flag_status === 'red' ? review
+          : visitor?.flag_status === 'yellow' ? visitor : review?.flag_status === 'yellow' ? review
+            : Number(visitor?.moderation_strikes || 0) > Number(review?.moderation_strikes || 0) ? visitor : review || visitor;
+        Object.assign(session, { linked_name: lead?.full_name || null, linked_brand: lead?.brand_name || null,
+          moderation_strikes: Math.max(visitor?.moderation_strikes || 0, review?.moderation_strikes || 0),
+          flag_status: record?.flag_status || 'white', flag_reason: record?.flag_reason || null, flag_error: visitorsError });
       }
     }
 

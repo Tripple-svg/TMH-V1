@@ -590,7 +590,7 @@ function FlagSelect({ lead, onChange, disabled }) {
       <option value="white">{lead.moderation_strikes === 1 ? "White · 1 recorded strike" : "White · Normal"}</option>
       <option value="yellow">Yellow · Warning</option>
       <option value="red">Red · Restricted</option>
-    </select>{status==='white' && Number(lead.moderation_strikes)>0 && <button type="button" disabled={disabled || (!lead.email && !lead.visitor_id)} onClick={()=>onChange({target:{value:'white'}})} className="text-[10px] text-zinc-400 underline underline-offset-4 disabled:opacity-40">Clear recorded strike</button>}</span>
+    </select>{status==='white' && Number(lead.moderation_strikes)>0 && <button type="button" disabled={disabled || (!lead.email && !lead.visitor_id)} onClick={()=>onChange({target:{value:'white'}})} className="text-[10px] text-zinc-400 underline underline-offset-4 disabled:opacity-40">Clear recorded strike</button>}{lead.flag_reason && <span className="basis-full break-words text-xs text-zinc-400">{lead.flag_reason}</span>}</span>
   );
 }
 

@@ -67,9 +67,24 @@ export async function applyAutomaticFlag(supabase: any, input: { reviewId?: stri
 // Obvious direct abuse is handled even if every model is unavailable. Specific
 // product criticism, legal complaints and quoting an insult are not violations.
 const teamTarget = [...TEAM_NAMES.flatMap(name => [name, name.split(' ')[0]]), 'your founder', 'the founder', 'the ceo', 'your ceo', 'your team member'].join('|');
+const personTarget = `(?:you|your team|${teamTarget})`;
+const abusiveWord = '(?:stupid|idiot|moron|fool|dumb|bitch|asshole|piece of shit|fucking (?:stupid|idiot|moron|fool|dumb|bitch|asshole|useless))';
+const clauseStart = '(?:^|[.!?;,]\\s*|\\n+|\\b(?:and|but)\\s+)';
+const directInsult = new RegExp(`${clauseStart}(?:(?:you(?:'re| are)|(?:${teamTarget}) (?:is|are))\\s+(?:(?:so|an?|absolutely|really)\\s+)*${abusiveWord}\\b(?!\\s+(?:app|bot|review|website|service|answer|reply|question|system|idea|design|process)\\b)|(?:fuck|screw) (?:off\\b|${personTarget}\\b)|you can fuck off\\b)`, 'i');
+const directedThreat = new RegExp(`${clauseStart}(?:(?:i|we)(?:'ll| will| am going to| are going to))\\s+(?:kill|hurt|attack)\\s+(?:${personTarget}|haven|tmh)\\b`, 'i');
 const privateLocation = new RegExp(`^(?:please )?where (?:does|is) (?:${teamTarget})(?:\\s+(?:live|living|staying))?[?!.\\s]*$`, 'i');
 const privateContact = new RegExp(`^(?:please |can you |could you )?(?:what is|what's|tell me|give me|send me|show me|i want|i need)\\b.{0,25}\\b(?:your|${teamTarget})(?:'s)?\\s+(?:home address|private phone|personal phone number|personal email)\\b`, 'i');
-const directedSexual = new RegExp(`^(?:(?:please )?(?:send|show|give) me (?:your|(?:${teamTarget})'s) nudes?\\b|i want to have sex with (?:you|${teamTarget})\\b)`, 'i');
+const directedSexual = new RegExp(`${clauseStart}(?:(?:(?:please|can you|could you) )?(?:send|show|give) me (?:your|(?:${teamTarget})'s) (?:nudes?|naked (?:photos?|pictures?))\\b|i want to have sex with ${personTarget}\\b)`, 'i');
+const moderationMarker = /\[\[FLAG:([^\]\r\n]*)\]\]/gi;
+const moderationCategory = /^(SEXUAL|PERSONAL_INFO|HARASSMENT|ABUSE)\|(.+)$/;
+const explicitTarget = new RegExp(`\\b(?:you|your (?:team|staff|founder|ceo)|${teamTarget})\\b`, 'i');
+const serviceComplaint = /\b(?:booking|checkout|download|payment|refund|review|website)\b|\b(?:charged me|ignored me|did(?:n't| not) reply)\b/i;
+const reportedSpeech = /\b(?:(?:someone|they|a customer|a user|he|she|haven|your assistant) (?:said|wrote|called|asked|told|sent)|i(?:'m| am) (?:reporting|quoting))\b/i;
+
+function unquotedText(text: string) {
+  return text.replace(/"[^"\r\n]*"|“[^”\r\n]*”|‘[^’\r\n]*’|(?<!\w)'[^'\r\n]+'(?!\w)/g, ' ')
+    .trim().toLowerCase().replaceAll('’', "'");
+}
 
 export const PRIVATE_CONTACT_REPLY = 'I can’t share personal numbers or private contact details. The team is at info@themarketinghaven.xyz, or you can use Contact Team Haven below.';
 const namedContact = new RegExp(`\\b(?:${teamTarget})'s\\s+(?:(?:personal|private)\\s+)?(?:whatsapp|phone(?: number)?|number|email|contact details)\\b`, 'i');
@@ -80,13 +95,30 @@ export function requestsPrivateContact(text: string, lastReply: string) {
 }
 
 export function detectHavenAbuse(text: string) {
-  const value = text.trim().toLowerCase().replaceAll('’', "'");
-  if (/^you(?:'re| are)\s+(?:(?:so|an?|absolutely|really)\s+)*(?:stupid|idiot|moron|dumb|fuck\w*|bitch)\b/.test(value)
-    && !/\b(?:because|when|download|payment|broken|error|response|review|booking|website)\b/.test(value)) return 'ABUSE';
-  if (/^(?:i(?:'ll| will| am going to)|we(?:'ll| will))\s+(?:kill|hurt|attack)\s+(?:you|your team|haven|tmh)\b/.test(value)) return 'HARASSMENT';
-  if (privateLocation.test(value) || privateContact.test(value)) return 'PERSONAL_INFO';
+  const unquoted = unquotedText(text);
+  const reportStart = unquoted.search(reportedSpeech);
+  const value = reportStart < 0 ? unquoted : unquoted.slice(0, reportStart).trimEnd();
+  if (directedThreat.test(value)) return 'HARASSMENT';
   if (directedSexual.test(value)) return 'SEXUAL';
+  if (directInsult.test(value)) return 'ABUSE';
+  if (privateLocation.test(value) || privateContact.test(value)) return 'PERSONAL_INFO';
   return null;
+}
+
+export function readModelModeration(reply: string, latest: string) {
+  const markers = [...reply.matchAll(moderationMarker)];
+  const text = reply.replace(moderationMarker, '').replace(/\[\[FLAG:[^\r\n]*/gi, '').trim();
+  if (markers.length !== 1 || /\[\[FLAG:/i.test(latest)) return { text, flag: null };
+  const match = moderationCategory.exec(markers[0][1]);
+  if (!match) return { text, flag: null };
+  const evidence = match[2].trim();
+  const unquoted = unquotedText(latest);
+  const normalizedEvidence = evidence.toLowerCase().replaceAll('’', "'");
+  const evidenceStart = unquoted.indexOf(normalizedEvidence);
+  const supported = evidence.length >= 12 && evidence.length <= 240 && latest.includes(evidence)
+    && evidenceStart >= 0 && explicitTarget.test(evidence) && !serviceComplaint.test(evidence)
+    && !reportedSpeech.test(unquoted.slice(0, evidenceStart + normalizedEvidence.length));
+  return { text, flag: supported ? match[1] : null };
 }
 export function moderationReply(category: string) {
   if (category === 'PERSONAL_INFO') return PRIVATE_CONTACT_REPLY;

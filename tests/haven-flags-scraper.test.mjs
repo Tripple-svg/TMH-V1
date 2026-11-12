@@ -57,6 +57,7 @@ function harness({ scoring = VALID, profile = {}, scope = 'audit', history = [],
     getSessionsForScope: () => [{ id: ACCESS.sessionId }],
     createSession() { throw new Error('Unexpected session creation'); }, addMessage: (...args) => messages.push(args),
     abortControllerRef: { current: null }, activeRequestRef: { current: null },
+    moderationVersionRef: { current: 0 }, useEffect() {}, isOpen: true,
     scoringRequestRef: { current: 0 }, setSessionsForScope(scope, updater) { currentSessionState = updater([currentSessionState])[0]; },
     inFlightTurnsRef: { current: new Set() }, publicSessionIdsRef: { current: new Map() }, pendingTurnsRef: { current: new Map() },
   };
@@ -141,6 +142,19 @@ test('chat: server restriction text is rendered and authoritative red status is 
   const ui = harness({ chat: { ok: true, text: 'Your access is currently restricted.', flagStatus: 'red' } });
   await ui.sendMessage('Help me.'); assert.equal(ui.profile.flag_status, 'red');
   assert.equal(ui.messages.at(-1)[1], 'Your access is currently restricted.');
+});
+test('chat: an older access check cannot undo an immediately applied restriction', async () => {
+  let resolveCheck;
+  const ui = harness({ fetchImpl: async (_url, options) => {
+    if (JSON.parse(options.body).action === 'access') return new Promise(resolve => { resolveCheck = resolve; });
+    return Response.json({ ok: true, text: 'Access restricted.', flagStatus: 'red', restrictionReason: 'Abusive messages in chat.' });
+  } });
+  const check = ui.recheckHavenAccess();
+  await ui.sendMessage('Another message');
+  resolveCheck(Response.json({ ok: true, flagStatus: 'white' }));
+  await check;
+  assert.equal(ui.profile.flag_status, 'red');
+  assert.equal(ui.profile.restrictionReason, 'Abusive messages in chat.');
 });
 test('chat: linked support and service carry ownership proof and separate public session IDs without score claims', async () => {
   for (const scope of ['support', 'service']) {

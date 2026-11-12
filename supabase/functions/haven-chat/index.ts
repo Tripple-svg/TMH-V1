@@ -13,7 +13,7 @@ import { ReviewAccessError, hashReviewToken } from '../_shared/review-access.ts'
 import { prepareConversation, substantiveAnswer, explicitCallRequest, RESTRICTED_MESSAGE, restrictionDetails, REVIEW_CONTEXT_QUESTION, REVIEW_CONTEXT_MARKER, loadLinkedReviewContext } from '../_shared/haven-conversation.ts';
 import { resolveHavenRouting, supportHelpReply, acceptedCallInvitation, inferHavenNeed, isAffirmative, isPlainDecline, directPlaybookReply, CALL_HANDOFF, PLAYBOOK_CHOICES } from '../_shared/haven-routing.js';
 import { geminiProcessingEnabled, geminiModel, geminiGenerationConfig, geminiText } from '../_shared/haven-model.ts';
-import { applyAutomaticFlag, ModerationError, detectHavenAbuse, moderationReply, requestsPrivateContact, PRIVATE_CONTACT_REPLY } from '../_shared/haven-moderation.ts';
+import { applyAutomaticFlag, ModerationError, detectHavenAbuse, moderationReply, readModelModeration, requestsPrivateContact, PRIVATE_CONTACT_REPLY } from '../_shared/haven-moderation.ts';
 import { verifyPlaybookAccess } from '../_shared/playbook-access.js';
 import {havenPlatformState,bookingQuestionReply} from '../_shared/haven-platform-state.js';
 import {platformNavigationHelp, testimonialHelp} from '../_shared/platform-navigation.js';
@@ -100,6 +100,7 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
   }
 
   let supabase: any, activeTurn: { sessionId: string; requestId: string; attemptId: string } | null = null;
+  let restriction: ReturnType<typeof restrictionDetails> | null = null;
   try {
     verifyOrigin(request);
     const body = await readBoundedJson(request);
@@ -164,7 +165,8 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
       || (pendingResource && isPlainDecline(latest) ? 'Of course.' : null);
     const { data: turn, error: turnError } = await supabase.rpc('begin_haven_turn', {
       p_session_id: conversation.session.id, p_turn_id: requestId, p_content: latest,
-      p_has_image: Boolean(screenshot), p_substantive: !siteSupport && !directHelp && substantiveAnswer(latest), p_explicit_call: !siteSupport && (explicitCallRequest(latest) || acceptedCall),
+      p_has_image: Boolean(screenshot), p_substantive: !siteSupport && !directAbuse && !directHelp && substantiveAnswer(latest),
+      p_explicit_call: !siteSupport && !directAbuse && (explicitCallRequest(latest) || acceptedCall),
       p_request_hash: await hashReviewToken(JSON.stringify({ content: latest, screenshot })),
     });
     if (turnError || !turn) throw new HavenRequestError('Could not save your message. Please try again.', 500);
@@ -238,16 +240,18 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
       .map((message: HavenMessage) => message.content || '');
     const groqRepeated = groqFallback && (repeatsRecentQuestion(modelText, recentReplies)
       || (![GROQ_UNAVAILABLE_REPLY, LOOP_SUPPORT_REPLY].includes(lastReply) && repeatsLastReply(modelText, lastReply)));
-    const captured = groqFallback
+    const modelModeration = model === 'gemini' ? readModelModeration(modelText, latest) : { text: modelText, flag: null };
+    const flag = directAbuse || modelModeration.flag;
+    const captured = flag ? { text: moderationReply(flag), memory: session.conversation_memory }
+      : groqFallback
       ? { text: groqRepeated ? LOOP_SUPPORT_REPLY : GROQ_UNAVAILABLE_REPLY, memory: session.conversation_memory }
-      : captureConversationMemory(modelText, session.conversation_memory, latest, requestId);
+      : captureConversationMemory(modelModeration.text || 'What would you like help with?', session.conversation_memory, latest, requestId);
     const askToUseReview = !siteSupport && !directHelp && !directAbuse && !useLinkedReview && !awaitingReviewContext && scope !== 'audit'
-      && platformState.reviewLinked && captured.text.includes(REVIEW_CONTEXT_MARKER) && !captured.text.includes('[[FLAG:');
+      && platformState.reviewLinked && !flag && captured.text.includes(REVIEW_CONTEXT_MARKER);
     let rawText = askToUseReview ? REVIEW_CONTEXT_QUESTION : captured.text.replace(/\[\[REVIEW_CONTEXT:[^\r\n]*?(?:\]\]|$)/g, '').trim();
     if (!rawText.trim()) throw new Error('Empty model response');
     let flagStatus = conversation.flagStatus;
     let warned = false;
-    const flag = directAbuse || rawText.match(/\[\[FLAG:(SEXUAL|PERSONAL_INFO|HARASSMENT|ABUSE)\]\]/)?.[1];
     const moderationReason = flag ? `Haven detected ${flag.toLowerCase().replaceAll('_',' ')} in this conversation.` : undefined;
     if (moderationReason) {
       const moderation = await applyAutomaticFlag(supabase, {
@@ -256,7 +260,8 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
         eventKey: `chat:${conversation.session.id}:${requestId}`, reason: moderationReason,
       });
       flagStatus = moderation.flagStatus;
-      warned = moderation.changed && flagStatus === 'yellow';
+      warned = moderation.strikes === 2 && flagStatus === 'yellow';
+      if (flagStatus === 'red') restriction = restrictionDetails(conversation.visitor, conversation.review, moderationReason);
     }
     const repeated = groqRepeated || (model === 'gemini' && !flag && !askToUseReview
       && (repeatsRecentQuestion(rawText, recentReplies) || repeatsLastReply(rawText,lastReply)));
@@ -268,7 +273,7 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
         ? 'This chat is for help using the TMH site. For marketing advice or help with a project, open Need Help on the homepage.' : rawText,
       routingState: { problemType: 'support', permission: 'none', pendingAction: null },
     } : repeated ? { text: rawText, routingState: { ...(session.routing_state || {}), problemType:session.routing_state?.problemType || 'unknown', permission:'none', pendingAction:null, lastAction:'support_handoff' } }
-      : directAbuse || supportReply ? { text: rawText, routingState: session.routing_state || { problemType: 'unknown', permission: 'none' } }
+      : flag || supportReply ? { text: rawText, routingState: session.routing_state || { problemType: 'unknown', permission: 'none' } }
       : askToUseReview ? { text: rawText, routingState: { ...(session.routing_state || {}), problemType: session.routing_state?.problemType || 'unknown', permission: 'none', pendingAction: null, lastAction: 'clarify' } }
       : playbookReply || resolveHavenRouting(rawText, { scope, ...qualification, bookingStatus, teamInquiry: session.service_id === 'team-inquiry', acceptedCall, playbookVerified, routingState: session.routing_state, serviceId: session.service_id, latestUserText: latest, messages:session.messages||[] });
     rawText = routed.text;
@@ -301,7 +306,7 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     if (proof?.chips && !flag) Object.assign(routingState,{testimonialOffered:true});
     else if (previousRoute?.testimonialOffered) Object.assign(routingState,{testimonialOffered:false});
     const response = { ok: true, ...parsed, ...(openPlaybookSection ? { openPlaybookSection } : {}), ...(openTestimonials ? { openTestimonials } : {}), model, currentStep, leadTemperature, flagStatus, sessionId: session.id, routingState, platformState, providerDiagnostics:diagnostics,
-      ...(flagStatus === 'red' ? restrictionDetails(conversation.visitor, conversation.review, moderationReason) : {}) };
+      ...(restriction || {}) };
     const { error: completionError } = await supabase.rpc('finish_haven_turn', {
       p_session_id: session.id, p_turn_id: requestId, p_attempt_id:activeTurn.attemptId, p_response: { ...response, conversationMemory: repeated ? session.conversation_memory : captured.memory }, p_question: askedQuestion, p_step: currentStep,
     });
@@ -317,6 +322,8 @@ Deno.serve(observe('haven-chat',async (request,traceId) => {
     }
     const known = error instanceof HavenRequestError || error instanceof ReviewAccessError || error instanceof ModerationError;
     logEvent('error','haven-chat.diagnostic_3',traceId);
+    // The strike is already committed even if saving the reply failed.
+    if (restriction) return json({ ok: true, text: RESTRICTED_MESSAGE, chips: [], flagStatus: 'red', model: null, ...restriction });
     const retryAfter=Number((error as any)?.retryAfter)||0;
     if(retryAfter) (headers as Record<string,string>)['Retry-After']=String(retryAfter);
     return json({ ok: false, code:(error as any)?.code||'request_failed',retryAfter,error: known ? error.message : 'Haven is having trouble reaching the AI service. Please try again.' }, known ? error.status : 502);

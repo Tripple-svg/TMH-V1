@@ -103,6 +103,21 @@ test('admin data: linked chats stay under the lead and remain discoverable in sc
   assert.ok(db.calls.filter((call) => call.table === 'haven_sessions').every((call) => !call.fields.split(',').includes('messages')));
 });
 
+test('admin data: a visitor-linked restriction takes effect in chat rows even without a review on the session', async () => {
+  const reason = 'Haven detected harassment in this conversation.';
+  const db = readDatabase({ seed: {
+    haven_sessions: [{ id: 'guest-support', scope: 'support', visitor_id: 'visitor-1', review_id: null }],
+    haven_chat_visitors: [{ id: 'visitor-1', flag_status: 'white', moderation_strikes: 3,
+      moderated_review: { id: 'review-older', flag_status: 'red', flag_reason: reason, moderation_strikes: 3 } }],
+  } });
+  const read = handler('admin-fetch-leads', db.client);
+  const data = await (await read(request({ accessToken: 'test-admin-jwt' }))).json();
+  assert.equal(data.support_sessions[0].flag_status, 'red');
+  assert.equal(data.support_sessions[0].flag_reason, reason);
+  assert.equal(data.support_sessions[0].moderation_strikes, 3);
+  assert.match(db.calls.find(call => call.table === 'haven_chat_visitors').fields, /moderated_review:brand_reviews/);
+});
+
 test('admin data: transcript is authenticated on demand, bounded to200, and strips image/private fields', async () => {
   const db = readDatabase({ seed: { haven_sessions: [{
     id: 'session-detail', scope: 'support', review_id: null, access_token: 'never-return-session-token',

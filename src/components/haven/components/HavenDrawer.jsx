@@ -507,12 +507,12 @@ export default function HavenDrawer() {
     if (!playbookHandoff) return;
     const frame = requestAnimationFrame(() => {
       consumePlaybookHandoff();
-      if (isOpen && activeScope === playbookHandoff.scope && activeSessionId === playbookHandoff.sessionId) {
+      if (isOpen && !isRestricted && activeScope === playbookHandoff.scope && activeSessionId === playbookHandoff.sessionId) {
         handleChipSelect(playbookHandoff.chip || '__SHOP__');
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [playbookHandoff, consumePlaybookHandoff, isOpen, activeScope, activeSessionId, handleChipSelect]);
+  }, [playbookHandoff, consumePlaybookHandoff, isOpen, isRestricted, activeScope, activeSessionId, handleChipSelect]);
 
   const handleNavChipSelect = useCallback((navChip) => {
     if (isRestricted) return;
@@ -688,6 +688,12 @@ export default function HavenDrawer() {
               </div>
 
               {currentSession?.platformState && <p className="shrink-0 border-b border-white/[0.06] px-4 py-2 text-[11px] leading-5 text-zinc-400" aria-label="Context used for the last reply">Last reply used: {[currentSession.platformState.reviewLinked?'saved review':null,currentSession.platformState.playbookAccess==='verified'?'verified Playbook access':null,currentSession.platformState.booking?.status==='confirmed'?'scheduled call':currentSession.platformState.booking?.status==='pending'?'booking in progress':null].filter(Boolean).join(' · ')||'this conversation'}. Checked again when you send a message.</p>}
+
+              {userProfile.flag_status === 'yellow' && (
+                <p role="status" className="shrink-0 border-b border-amber-200/20 bg-amber-200/[0.06] px-4 py-2 text-xs text-amber-200">
+                  Haven chat warning. Another violation will restrict your access.
+                </p>
+              )}
 
               {needsReviewRecovery && (
                 <p role="status" className="relative px-5 py-3 border-b border-white/[0.08] text-xs leading-relaxed text-amber-100/80">

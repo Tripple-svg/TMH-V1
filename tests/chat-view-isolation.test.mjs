@@ -129,10 +129,21 @@ test('only a new Haven reply animates when a conversation already has messages',
 test('a restricted chat only offers an email appeal with the Haven reference', () => {
   const ui = drawer();
   ui.state.userProfile = { flag_status: 'red', restrictionReason: 'Harassment or threats in chat.', appealReference: 'visitor-reference' };
+  ui.state.playbookHandoff = { scope: 'audit', sessionId: 'session' };
   const tree = ui.render();
   assert.ok(tree.some(node => text(node).includes('Harassment or threats in chat.')));
   assert.ok(tree.some(node => node.type === 'a' && text(node) === 'Contact Team Haven' && decodeURIComponent(node.props.href).includes('visitor-reference')));
   assert.ok(!tree.some(node => node.type === 'ChatInput' || node.type === 'HavenScoreCard' || text(node) === 'Check access again'));
+  assert.deepEqual(ui.calls, []);
+});
+
+test('a yellow warning is visible while the visitor can still use chat', () => {
+  const ui = drawer();
+  ui.state.activeScope = 'support';
+  ui.state.userProfile = { flag_status: 'yellow' };
+  const tree = ui.render();
+  assert.ok(tree.some(node => node.props.role === 'status' && text(node).startsWith('Haven chat warning.')));
+  assert.ok(tree.some(node => node.type === 'ChatInput'));
 });
 
 test('Haven animates new sessions once and can start another chat only from Need Help', () => {
